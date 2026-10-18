@@ -19,6 +19,7 @@ export interface CanvasEditorProps {
   onUpdate: (widgetId: string, patch: Partial<Widget>) => void;
   onAdd: (type: WidgetType, x?: number, y?: number) => void;
   renderWidget?: (widget: Widget) => ReactNode;
+  heading?: ReactNode;
 }
 
 export function CanvasEditor({
@@ -28,6 +29,7 @@ export function CanvasEditor({
   onUpdate,
   onAdd,
   renderWidget,
+  heading,
 }: CanvasEditorProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const artboardRef = useRef<HTMLDivElement>(null);
@@ -232,67 +234,77 @@ export function CanvasEditor({
   };
   return (
     <div className="qg-canvas-editor">
-      <div className="qg-canvas-toolbar">
-        <div className="qg-toolbar-cluster">
+      <div className="canvas-heading">
+        <div className="canvas-heading-context">
+          {heading ?? (
+            <strong title={project.window.title || project.name}>
+              {project.window.title || project.name}
+            </strong>
+          )}
+        </div>
+        <div
+          className="canvas-heading-tools"
+          role="toolbar"
+          aria-label={zh ? '画布工具' : 'Canvas tools'}
+        >
           <span className="qg-canvas-mode">
             <MousePointer2 size={14} />
             {zh ? '选择' : 'Select'}
           </span>
-          <span className="qg-toolbar-divider" />
-          <Monitor size={14} />
-          <span>
+          <span className="dimension-label">
+            <Monitor size={14} />
             {width} × {height}
           </span>
-        </div>
-        <div className="qg-toolbar-cluster">
-          <button
-            className={grid ? 'qg-icon-button active' : 'qg-icon-button'}
-            onClick={() => setGrid(!grid)}
-            title={zh ? '网格' : 'Grid'}
-            aria-label={zh ? '切换网格' : 'Toggle grid'}
-            aria-pressed={grid}
-          >
-            <Grid3X3 size={15} />
-          </button>
-          <button
-            className={snap ? 'qg-icon-button active' : 'qg-icon-button'}
-            onClick={() => setSnap(!snap)}
-            title={zh ? '吸附网格（8px）' : 'Snap to grid (8px)'}
-            aria-label={zh ? '切换吸附' : 'Toggle snap'}
-            aria-pressed={snap}
-          >
-            <Magnet size={15} />
-          </button>
-          <span className="qg-toolbar-divider" />
-          <button
-            className="qg-icon-button"
-            onClick={() => changeZoom(-0.1)}
-            aria-label={zh ? '缩小' : 'Zoom out'}
-          >
-            <Minus size={14} />
-          </button>
-          <button
-            className="qg-zoom-value"
-            onClick={() => setZoom(1)}
-            title={zh ? '重置为100%' : 'Reset to 100%'}
-          >
-            {Math.round(zoom * 100)}%
-          </button>
-          <button
-            className="qg-icon-button"
-            onClick={() => changeZoom(0.1)}
-            aria-label={zh ? '放大' : 'Zoom in'}
-          >
-            <Plus size={14} />
-          </button>
-          <button
-            className="qg-icon-button"
-            onClick={fit}
-            aria-label={zh ? '适应画布' : 'Fit canvas'}
-            title={zh ? '适应画布' : 'Fit canvas'}
-          >
-            <Maximize size={14} />
-          </button>
+          <div className="qg-toolbar-cluster">
+            <button
+              className={grid ? 'qg-icon-button active' : 'qg-icon-button'}
+              onClick={() => setGrid(!grid)}
+              title={zh ? '网格' : 'Grid'}
+              aria-label={zh ? '切换网格' : 'Toggle grid'}
+              aria-pressed={grid}
+            >
+              <Grid3X3 size={15} />
+            </button>
+            <button
+              className={snap ? 'qg-icon-button active' : 'qg-icon-button'}
+              onClick={() => setSnap(!snap)}
+              title={zh ? '吸附网格（8px）' : 'Snap to grid (8px)'}
+              aria-label={zh ? '切换吸附' : 'Toggle snap'}
+              aria-pressed={snap}
+            >
+              <Magnet size={15} />
+            </button>
+            <span className="qg-toolbar-divider" />
+            <button
+              className="qg-icon-button"
+              onClick={() => changeZoom(-0.1)}
+              aria-label={zh ? '缩小' : 'Zoom out'}
+            >
+              <Minus size={14} />
+            </button>
+            <button
+              className="qg-zoom-value"
+              onClick={() => setZoom(1)}
+              title={zh ? '重置为100%' : 'Reset to 100%'}
+            >
+              {Math.round(zoom * 100)}%
+            </button>
+            <button
+              className="qg-icon-button"
+              onClick={() => changeZoom(0.1)}
+              aria-label={zh ? '放大' : 'Zoom in'}
+            >
+              <Plus size={14} />
+            </button>
+            <button
+              className="qg-icon-button"
+              onClick={fit}
+              aria-label={zh ? '适应画布' : 'Fit canvas'}
+              title={zh ? '适应画布' : 'Fit canvas'}
+            >
+              <Maximize size={14} />
+            </button>
+          </div>
         </div>
       </div>
       <div

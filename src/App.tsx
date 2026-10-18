@@ -894,12 +894,15 @@ function ProjectWorkspace({
         )}
         <section className="center-panel">
           {section === 'design' && (
-            <>
-              <div className="canvas-heading">
-                <div>
+            <CanvasEditor
+              key={`${activeWindowId}:${activeModule?.id ?? 'window'}`}
+              heading={
+                <>
                   <span>{zh ? '画布' : 'CANVAS'}</span>
                   <ChevronRight size={12} />
-                  <strong>{activeModule ? activeModule.name : activeWindow.name}</strong>
+                  <strong title={activeModule ? activeModule.name : activeWindow.name}>
+                    {activeModule ? activeModule.name : activeWindow.name}
+                  </strong>
                   {activeModule && (
                     <button
                       className="module-exit"
@@ -911,20 +914,14 @@ function ProjectWorkspace({
                       {zh ? '退出模块定义' : 'Exit module'}
                     </button>
                   )}
-                </div>
-                <span className="dimension-label">
-                  {designProject.window.width} × {designProject.window.height}
-                </span>
-              </div>
-              <CanvasEditor
-                key={`${activeWindowId}:${activeModule?.id ?? 'window'}`}
-                project={designProject}
-                selectedId={selectedId}
-                onSelect={store.select}
-                onUpdate={updateWidget}
-                onAdd={addWidget}
-              />
-            </>
+                </>
+              }
+              project={designProject}
+              selectedId={selectedId}
+              onSelect={store.select}
+              onUpdate={updateWidget}
+              onAdd={addWidget}
+            />
           )}
           {section === 'flows' && (
             <FlowEditor

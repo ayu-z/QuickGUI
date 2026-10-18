@@ -630,19 +630,6 @@
   overflow: hidden;
   background: var(--bg, #14161b);
 }
-.qg-canvas-toolbar {
-  height: 43px;
-  flex: none;
-  padding: 0 15px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  border-bottom: 1px solid var(--border, #2d313a);
-  background: var(--panel, #1a1d23);
-  color: var(--muted, #87909f);
-  font-size: 10px;
-}
 .qg-canvas-mode {
   display: flex;
   align-items: center;
@@ -1205,10 +1192,6 @@
   }
   .qg-flow-settings {
     width: 215px;
-  }
-  .qg-canvas-toolbar {
-    padding: 0 9px;
-    gap: 5px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
