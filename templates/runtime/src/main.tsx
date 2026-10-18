@@ -1,22 +1,18 @@
 import { createRoot } from 'react-dom/client';
 import { RuntimeApp } from './runtime/RuntimeApp';
 import { createRuntime } from './runtime/controller';
-import { applyWindow, isDesktop } from './native/bridge';
+import { isDesktop } from './native/bridge';
 import { validateProject } from './core/validation';
 import projectData from '../project.json';
 import './runtime/runtime.css';
 
 const project = validateProject(projectData);
-document.title = project.window.title;
-const engine = createRuntime(project);
-if (isDesktop()) {
-  const config = {
-    ...project.window,
-    icon:
-      project.assets.find((asset) => asset.id === project.window.icon)?.data ?? project.window.icon,
-  };
-  applyWindow(config).catch((error) => console.error('Window configuration:', error));
-}
+const windowId = new URLSearchParams(location.search).get('windowId') ?? 'main';
+document.title =
+  windowId === 'main'
+    ? project.window.title
+    : (project.windows?.find((window) => window.id === windowId)?.config.title ?? project.name);
+const engine = createRuntime(project, { attachOnly: isDesktop() && windowId !== 'main' });
 createRoot(document.getElementById('root')!).render(
-  <RuntimeApp project={project} engine={engine} />,
+  <RuntimeApp project={project} engine={engine} windowId={isDesktop() ? windowId : undefined} />,
 );

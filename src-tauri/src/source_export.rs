@@ -4,7 +4,10 @@ use std::{fs, path::Path};
 include!(concat!(env!("OUT_DIR"), "/export_sources.rs"));
 
 pub fn export(project: &Value, output: &Path) -> Result<(), String> {
-    if project.get("schemaVersion").and_then(Value::as_u64) != Some(1) {
+    if !matches!(
+        project.get("schemaVersion").and_then(Value::as_u64),
+        Some(1 | 2)
+    ) {
         return Err("Unsupported project schema".into());
     }
     if output.exists()
@@ -61,7 +64,8 @@ pub fn export(project: &Value, output: &Path) -> Result<(), String> {
         config["bundle"]["publisher"] = publisher.clone();
     }
     let window = project.get("window").ok_or("Missing window settings")?;
-    let mut native = json!({"label":"preview","url":"index.html?runtime=1","decorations":true});
+    let mut native =
+        json!({"label":"preview","url":"index.html?runtime=1&windowId=main","decorations":true});
     for key in [
         "title",
         "width",
@@ -157,7 +161,8 @@ mod tests {
             serde_json::from_slice(&fs::read(directory.join("project.json")).unwrap()).unwrap();
         assert_eq!(actual, project);
         let entry = fs::read_to_string(directory.join("src/main.tsx")).unwrap();
-        assert!(entry.contains("createRuntime(project)"));
+        assert!(entry.contains("createRuntime(project,"));
+        assert!(entry.contains("attachOnly"));
         assert!(!entry.contains("unexpected()"));
         let config: Value =
             serde_json::from_slice(&fs::read(directory.join("src-tauri/tauri.conf.json")).unwrap())

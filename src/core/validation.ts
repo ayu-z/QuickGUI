@@ -1,6 +1,12 @@
 import { z } from 'zod';
 import type { Json, Project, Widget } from './types';
 import { reactImplementationSchema } from './componentPackage';
+import {
+  listProjectWindows,
+  MAIN_WINDOW_ID,
+  MAX_ADDITIONAL_WINDOWS,
+  WINDOW_ID_PATTERN,
+} from './windows';
 
 const json: z.ZodType<Json> = z.lazy(() =>
   z.union([z.null(), z.boolean(), z.number().finite(), z.string(), z.array(json), z.record(json)]),
@@ -99,7 +105,47 @@ const widget = z
     events: z.record(z.string()),
   })
   .strict();
-export const projectSchema = z
+export const windowConfigSchema = z
+  .object({
+    title: z.string().max(200),
+    width: z.number().min(200).max(10000),
+    height: z.number().min(100).max(10000),
+    minWidth: z.number().min(0),
+    minHeight: z.number().min(0),
+    resizable: z.boolean(),
+    alwaysOnTop: z.boolean(),
+    fullscreen: z.boolean(),
+    maximized: z.boolean(),
+    center: z.boolean(),
+    rememberPosition: z.boolean(),
+    background: z.string(),
+    contentRadius: z.number().min(0).max(500),
+    cornerPreference: z.enum(['system', 'square', 'round', 'small']),
+    icon: z.string().optional(),
+  })
+  .strict();
+
+export const projectWindowSchema = z
+  .object({
+    id: z
+      .string()
+      .regex(WINDOW_ID_PATTERN)
+      .refine(
+        (id) => id !== MAIN_WINDOW_ID && id.trim() === id,
+        'Additional window ID must be safe ASCII and cannot be main',
+      ),
+    name: z
+      .string()
+      .min(1)
+      .max(200)
+      .refine((name) => name.trim().length > 0, 'Window name cannot be blank'),
+    config: windowConfigSchema,
+    widgets: z.array(widget).max(10000),
+    openOnStart: z.boolean(),
+  })
+  .strict();
+
+const projectBaseSchema = z
   .object({
     schemaVersion: z.literal(1),
     id: z.string().min(1),
@@ -109,25 +155,7 @@ export const projectSchema = z
     theme: z
       .object({ mode: z.enum(['light', 'dark', 'system']), tokens: z.record(z.string()) })
       .strict(),
-    window: z
-      .object({
-        title: z.string().max(200),
-        width: z.number().min(200).max(10000),
-        height: z.number().min(100).max(10000),
-        minWidth: z.number().min(0),
-        minHeight: z.number().min(0),
-        resizable: z.boolean(),
-        alwaysOnTop: z.boolean(),
-        fullscreen: z.boolean(),
-        maximized: z.boolean(),
-        center: z.boolean(),
-        rememberPosition: z.boolean(),
-        background: z.string(),
-        contentRadius: z.number().min(0).max(500),
-        cornerPreference: z.enum(['system', 'square', 'round', 'small']),
-        icon: z.string().optional(),
-      })
-      .strict(),
+    window: windowConfigSchema,
     publish: z
       .object({
         appName: z.string().min(1).max(100),
@@ -179,6 +207,7 @@ export const projectSchema = z
                   'http',
                   'emit',
                   'connection',
+                  'window',
                 ]),
                 label: z.string(),
                 position: z.object({ x: z.number(), y: z.number() }).strict(),
@@ -259,6 +288,16 @@ export const projectSchema = z
   })
   .strict();
 
+export const projectSchema = z.discriminatedUnion('schemaVersion', [
+  projectBaseSchema,
+  projectBaseSchema
+    .extend({
+      schemaVersion: z.literal(2),
+      windows: z.array(projectWindowSchema).max(MAX_ADDITIONAL_WINDOWS),
+    })
+    .strict(),
+]);
+
 export function validateProject(raw: unknown): Project {
   const input =
     raw && typeof raw === 'object' && !Array.isArray(raw)
@@ -268,11 +307,11 @@ export function validateProject(raw: unknown): Project {
   if (!input || !Object.hasOwn(input, 'schemaVersion') || input.schemaVersion === undefined) {
     throw new Error(
       english
-        ? 'The project is missing schemaVersion. This designer supports schemaVersion 1. The original file has not been modified.'
-        : '工程缺少 schemaVersion，当前设计器仅支持 schemaVersion 1。原文件未修改。',
+        ? 'The project is missing schemaVersion. This designer supports schemaVersion 1 and 2. The original file has not been modified.'
+        : '工程缺少 schemaVersion，当前设计器支持 schemaVersion 1 和 2。原文件未修改。',
     );
   }
-  if (input.schemaVersion !== 1) {
+  if (input.schemaVersion !== 1 && input.schemaVersion !== 2) {
     const version =
       ['string', 'number', 'boolean'].includes(typeof input.schemaVersion) ||
       input.schemaVersion === null
@@ -280,8 +319,8 @@ export function validateProject(raw: unknown): Project {
         : '(invalid value)';
     throw new Error(
       english
-        ? `Unsupported project schemaVersion ${version}. This designer supports schemaVersion 1. Do not save over the original file. The original file has not been modified.`
-        : `不支持工程 schemaVersion ${version}，当前设计器仅支持 schemaVersion 1。请勿保存覆盖原件；原文件未修改。`,
+        ? `Unsupported project schemaVersion ${version}. This designer supports schemaVersion 1 and 2. Do not save over the original file. The original file has not been modified.`
+        : `不支持工程 schemaVersion ${version}，当前设计器支持 schemaVersion 1 和 2。请勿保存覆盖原件；原文件未修改。`,
     );
   }
   let project: Project;
@@ -313,11 +352,19 @@ export function validateProject(raw: unknown): Project {
     }
     throw error;
   }
-  if (
-    project.window.minWidth > project.window.width ||
-    project.window.minHeight > project.window.height
-  )
-    throw new Error('Window minimum size exceeds its initial size');
+  const windows = listProjectWindows(project);
+  const windowIds = new Set(windows.map((window) => window.id));
+  if (windowIds.size !== windows.length) throw new Error('Duplicate window IDs');
+  for (const window of windows) {
+    if (
+      window.config.minWidth > window.config.width ||
+      window.config.minHeight > window.config.height
+    )
+      throw new Error(`Window minimum size exceeds its initial size: ${window.id}`);
+  }
+  const sceneWidgets = windows.flatMap((window) => window.widgets);
+  if (new Set(sceneWidgets.map((widget) => widget.id)).size !== sceneWidgets.length)
+    throw new Error('Duplicate widget IDs: IDs must be unique across all project windows');
   for (const list of [
     project.widgets,
     project.variables,
@@ -335,39 +382,93 @@ export function validateProject(raw: unknown): Project {
       throw new Error(`Invalid initial type: ${variable.name}`);
   if (new Set(project.variables.map((v) => v.name)).size !== project.variables.length)
     throw new Error('Duplicate variable names');
-  for (const id of [project.window.icon, project.publish.icon, project.publish.shortcutIcon])
+  for (const id of [
+    ...windows.map((window) => window.config.icon),
+    project.publish.icon,
+    project.publish.shortcutIcon,
+  ])
     if (id && !project.assets.some((a) => a.id === id))
       throw new Error(`Missing icon asset: ${id}`);
-  for (const flow of project.flows) validateFlow(flow);
-  const checkWidgets = (widgets: Widget[], ancestors: string[] = []) => {
+  for (const flow of project.flows) {
+    validateFlow(flow);
+    for (const node of flow.nodes.filter((node) => node.kind === 'window')) {
+      if (project.schemaVersion !== 2) throw new Error('Window flow nodes require schemaVersion 2');
+      const { action, windowId } = node.config;
+      if (typeof action !== 'string' || !['open', 'close', 'focus'].includes(action))
+        throw new Error(`Invalid window action: ${node.id}`);
+      if (typeof windowId !== 'string' || !windowIds.has(windowId))
+        throw new Error(`Missing window target: ${String(windowId)}`);
+      if (action === 'close' && windowId === MAIN_WINDOW_ID)
+        throw new Error('Window flow nodes cannot close the main window');
+    }
+  }
+  const variableIds = new Set(
+    project.variables.flatMap((variable) => [variable.id, variable.name]),
+  );
+  const flowIds = new Set(project.flows.map((flow) => flow.id));
+  const modules = new Map(project.modules.map((module) => [module.id, module]));
+  const checkWidgets = (widgets: Widget[]) => {
     const ids = new Set(widgets.map((w) => w.id));
+    if (ids.size !== widgets.length) throw new Error('Duplicate widget IDs within a module');
+    const byId = new Map(widgets.map((widget) => [widget.id, widget]));
     for (const w of widgets) {
       widgetCodeSchema.parse({ props: w.props, style: w.style, states: w.states });
       if (w.parentId && !ids.has(w.parentId)) throw new Error(`Missing parent: ${w.parentId}`);
-      let parent = w.parentId;
-      const seen = new Set([w.id]);
-      while (parent) {
-        if (seen.has(parent)) throw new Error('Cyclic parent reference');
-        seen.add(parent);
-        parent = widgets.find((x) => x.id === parent)?.parentId;
-      }
       for (const binding of Object.values(w.bindings))
-        if (
-          !project.variables.some((v) => v.id === binding.variable || v.name === binding.variable)
-        )
+        if (!variableIds.has(binding.variable))
           throw new Error(`Missing variable: ${binding.variable}`);
       for (const flowId of Object.values(w.events))
-        if (!project.flows.some((f) => f.id === flowId)) throw new Error(`Missing flow: ${flowId}`);
+        if (!flowIds.has(flowId)) throw new Error(`Missing flow: ${flowId}`);
       if (w.type === 'module') {
-        const module = project.modules.find((m) => m.id === w.moduleId);
-        if (!module) throw new Error(`Missing module: ${w.moduleId}`);
-        if (ancestors.includes(module.id)) throw new Error('Cyclic module reference');
-        checkWidgets(module.widgets, [...ancestors, module.id]);
+        if (w.moduleId === undefined || !modules.has(w.moduleId))
+          throw new Error(`Missing module: ${w.moduleId}`);
       }
     }
+    const complete = new Set<string>();
+    for (const widget of widgets) {
+      let cursor: string | undefined = widget.id;
+      const visiting = new Set<string>();
+      while (cursor && !complete.has(cursor)) {
+        if (visiting.has(cursor)) throw new Error('Cyclic parent reference');
+        visiting.add(cursor);
+        cursor = byId.get(cursor)?.parentId;
+      }
+      for (const id of visiting) complete.add(id);
+    }
   };
-  checkWidgets(project.widgets);
-  for (const module of project.modules) checkWidgets(module.widgets, [module.id]);
+  for (const window of windows) checkWidgets(window.widgets);
+  const indegree = new Map(project.modules.map((module) => [module.id, 0]));
+  const moduleEdges = new Map<string, string[]>();
+  for (const module of project.modules) {
+    checkWidgets(module.widgets);
+    const ids = new Set(module.widgets.map((widget) => widget.id));
+    for (const property of Object.values(module.exposedProps)) {
+      const valid =
+        module.implementation?.kind === 'react'
+          ? property.widgetId === '$component'
+          : ids.has(property.widgetId);
+      if (!valid)
+        throw new Error(
+          `Missing exposed widget target in module ${module.id}: ${property.widgetId}`,
+        );
+    }
+    const children = module.widgets
+      .filter((widget) => widget.type === 'module')
+      .map((widget) => widget.moduleId!);
+    moduleEdges.set(module.id, children);
+    for (const child of children) indegree.set(child, indegree.get(child)! + 1);
+  }
+  const queue = [...indegree].filter(([, degree]) => degree === 0).map(([id]) => id);
+  let visited = 0;
+  for (let index = 0; index < queue.length; index++) {
+    visited++;
+    for (const child of moduleEdges.get(queue[index]) ?? []) {
+      const degree = indegree.get(child)! - 1;
+      indegree.set(child, degree);
+      if (degree === 0) queue.push(child);
+    }
+  }
+  if (visited !== modules.size) throw new Error('Cyclic module reference');
   return project;
 }
 

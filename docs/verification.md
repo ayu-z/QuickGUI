@@ -47,3 +47,13 @@ TinyCC 多编译单元动态库的全局内部符号 `parse_flags` 与 Apple Hei
 - 浏览器与原生建议文件名覆盖中文、路径符号、Windows 保留名称和 UTF-8 长度边界；完整工程名保存在工程内。
 - 命名弹窗截图已目视核验；原生保存对话框未执行系统 UI 点击测试。
 - `npx tauri build --debug --bundles app` 通过，macOS 调试包更新为 61.56 MiB，路径仍为 `target/debug/bundle/macos/QuickGUI.app`。
+
+## 多窗口增量验证（2026-10-18）
+
+- `npm run check`：129 项单元测试及 TypeScript 检查通过。
+- `npm run build`、`npm run test:e2e`：生产构建与 21 项浏览器交互通过。多窗口用例覆盖独立布局、属性、模块、草稿/撤销保护、恢复、完整导出，以及从真实控件事件经窗口流程节点开关子窗口。
+- `cargo test --workspace -- --include-ignored`：34 项引擎、20 项原生宿主、14 项 runner/C 测试全部通过。覆盖窗口引用、代际、关闭重开、旧销毁事件、全组清理及真实 C 取消；前期子任务环境限制的本地协议 bind 检查已在当前环境通过。
+- 子原生控制器测试确认只订阅/连接共享运行时，不重复启动或编译；销毁子视图不会调用共享运行时停止/关闭。
+- 独立源码重新安装依赖、前端生产构建和 `cargo check --workspace` 通过。修复测试发现的既有模板 esbuild 锁文件不一致问题，保留原依赖声明。
+- 独立前端生产构建实际在浏览器运行，子窗口双向输入同步主窗口，流程重开后保留共享值，无页面异常。
+- macOS 设计器调试包重新生成：`target/debug/bundle/macos/QuickGUI.app`（63.38 MiB）。本轮未另打独立应用安装包，也未进行原生多窗口自动点击、Windows/Intel Mac、签名公证或耐久验收。

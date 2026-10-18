@@ -2,6 +2,7 @@
 mod connections;
 mod history;
 mod types;
+mod windows;
 mod worker;
 pub use connections::{test_connection, Connection, ConnectionTestResult};
 pub use history::{AlarmRecord, HistorySample, HistoryStore, RetentionPolicy};
@@ -39,6 +40,7 @@ pub fn validate_flow(flow: &Flow) -> Result<Vec<usize>, String> {
         "http",
         "emit",
         "connection",
+        "window",
     ];
     for (i, node) in flow.nodes.iter().enumerate() {
         if node.id.is_empty() || ids.insert(node.id.as_str(), i).is_some() {
@@ -104,14 +106,10 @@ pub struct Engine {
 
 impl Engine {
     pub fn new(project: Project) -> Result<Self, String> {
-        if project.schema_version != 1 {
-            return Err(format!(
-                "Unsupported project schema {}",
-                project.schema_version
-            ));
-        }
+        windows::validate(&project)?;
         let mut snapshot = RuntimeSnapshot {
             revision: project.revision,
+            window_state: windows::initial(&project),
             ..Default::default()
         };
         let mut ids = BTreeSet::new();
@@ -187,6 +185,8 @@ impl Engine {
         next.observer = self.observer.clone();
         next.event_observer = self.event_observer.clone();
         if next.project.id == self.project.id {
+            next.snapshot.window_state =
+                windows::reconcile(&self.project, &next.project, &self.snapshot.window_state);
             for variable in &next.project.variables {
                 if let Some(previous) = self
                     .project
@@ -223,6 +223,24 @@ impl Engine {
         self.snapshot.running = false;
         self.snapshot.active_nodes.clear();
         self.notify();
+    }
+    pub fn window_action(&mut self, action: &str, window_id: &str) -> Result<(), String> {
+        windows::validate_action(&self.project, action, window_id)?;
+        let state = &mut self.snapshot.window_state;
+        if action == "close" {
+            state.open.retain(|id| id != window_id);
+            if state.focused == window_id {
+                state.focused = "main".into();
+            }
+        } else {
+            if !state.open.iter().any(|id| id == window_id) {
+                state.open.push(window_id.to_owned());
+            }
+            state.focused = window_id.to_owned();
+        }
+        state.revision = state.revision.saturating_add(1);
+        self.notify();
+        Ok(())
     }
     pub fn set_variable(&mut self, name: &str, value: Value) -> Result<(), String> {
         let variable = self
@@ -446,6 +464,10 @@ impl Engine {
         let text = |key: &str| node.config.get(key).and_then(Value::as_str).unwrap_or("");
         match node.kind.as_str() {
             "event" => Ok(input),
+            "window" => {
+                self.window_action(text("action"), text("windowId"))?;
+                Ok(input)
+            }
             "read" => self
                 .resolve_variable(text("variable"))
                 .and_then(|v| self.snapshot.values.get(&v.id))
@@ -720,7 +742,7 @@ mod tests {
     #[test]
     fn unknown_schema_and_readonly_writes_fail() {
         let mut p = fixture();
-        p.schema_version = 2;
+        p.schema_version = 3;
         assert!(Engine::new(p).is_err());
         let mut p = fixture();
         p.variables[0].read_only = true;
@@ -728,6 +750,88 @@ mod tests {
             .unwrap()
             .set_variable("count", json!(3))
             .is_err());
+    }
+    fn multi_window_fixture() -> Project {
+        let mut project = fixture();
+        project.schema_version = 2;
+        project.windows = Some(vec![ProjectWindow {
+            id: "details".into(),
+            name: "Details".into(),
+            config: project.window.clone(),
+            widgets: Vec::new(),
+            open_on_start: false,
+        }]);
+        project
+    }
+    #[tokio::test]
+    async fn windows_share_flow_values_and_close_without_stopping_the_engine() {
+        let mut project = multi_window_fixture();
+        project.flows[0].nodes[1].kind = "window".into();
+        project.flows[0].nodes[1].config = BTreeMap::from([
+            ("action".into(), json!("open")),
+            ("windowId".into(), json!("details")),
+        ]);
+        let mut engine = Engine::new(project).unwrap();
+        assert_eq!(engine.snapshot().window_state.open, ["main"]);
+        let result = engine
+            .run_flow("f", json!(42), CancellationToken::new(), None)
+            .await
+            .unwrap();
+        assert_eq!(result.window_state.open, ["main", "details"]);
+        assert_eq!(result.values["v"].value, json!(42));
+        engine.window_action("open", "details").unwrap();
+        assert_eq!(engine.snapshot().window_state.open, ["main", "details"]);
+        engine.window_action("close", "details").unwrap();
+        assert_eq!(engine.snapshot().window_state.open, ["main"]);
+        engine.window_action("focus", "details").unwrap();
+        assert_eq!(engine.snapshot().window_state.focused, "details");
+        assert_eq!(engine.snapshot().values["v"].value, json!(42));
+        assert!(engine.window_action("close", "main").is_err());
+        assert!(engine.window_action("open", "unknown").is_err());
+    }
+    #[test]
+    fn window_hot_updates_preserve_visibility_and_only_initialize_new_windows() {
+        let mut project = multi_window_fixture();
+        project.windows.as_mut().unwrap()[0].open_on_start = true;
+        let mut engine = Engine::new(project.clone()).unwrap();
+        engine.window_action("close", "details").unwrap();
+        engine.set_variable("count", json!(7)).unwrap();
+        let state = engine.snapshot().window_state;
+        project.revision += 1;
+        project.windows.as_mut().unwrap()[0].config.title = "Changed".into();
+        engine.apply_project(project.clone()).unwrap();
+        assert_eq!(engine.snapshot().window_state, state);
+        assert_eq!(engine.snapshot().values["v"].value, json!(7));
+        engine.window_action("focus", "details").unwrap();
+        project.windows.as_mut().unwrap()[0].id = "alarms".into();
+        project.revision += 1;
+        engine.apply_project(project).unwrap();
+        assert_eq!(engine.snapshot().window_state.open, ["main", "alarms"]);
+        assert_eq!(engine.snapshot().window_state.focused, "main");
+        assert_eq!(engine.snapshot().values["v"].value, json!(7));
+    }
+    #[test]
+    fn window_schema_and_invalid_actions_cannot_replace_an_active_engine() {
+        let project = multi_window_fixture();
+        let mut engine = Engine::new(project.clone()).unwrap();
+        let mut invalid = project.clone();
+        invalid.schema_version = 1;
+        assert!(engine.apply_project(invalid).is_err());
+        let mut invalid = project.clone();
+        invalid.windows = None;
+        assert!(engine.apply_project(invalid).is_err());
+        let mut invalid = project.clone();
+        invalid.windows.as_mut().unwrap()[0].id = "main".into();
+        assert!(engine.apply_project(invalid).is_err());
+        let mut invalid = project;
+        invalid.flows[0].nodes[1].kind = "window".into();
+        invalid.flows[0].nodes[1].config = BTreeMap::from([
+            ("action".into(), json!("close")),
+            ("windowId".into(), json!("main")),
+        ]);
+        assert!(engine.apply_project(invalid).is_err());
+        assert_eq!(engine.project().schema_version, 2);
+        assert_eq!(engine.snapshot().window_state.open, ["main"]);
     }
     #[test]
     fn script_contract_is_camel_case() {

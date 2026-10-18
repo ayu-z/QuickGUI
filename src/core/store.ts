@@ -1,15 +1,18 @@
-import type { Project, Widget } from './types';
-import { cloneSubtree, createProject, createWidget } from './project';
+import type { Project, Widget, WindowConfig } from './types';
+import { cloneSubtree, createProject, createWidget, uid } from './project';
 import { validateProject } from './validation';
+import { getProjectWindow, listProjectWindows, MAX_ADDITIONAL_WINDOWS } from './windows';
 
 export type Section = 'design' | 'flows' | 'scripts' | 'data' | 'connections';
 export interface ProjectRecovery {
   project: Project;
   drafts: Record<string, string>;
+  activeWindowId?: string;
 }
 export interface EditorState {
   project: Project | null;
   selectedId: string | null;
+  activeWindowId: string;
   section: Section;
   inspector: 'widget' | 'window';
   drafts: Record<string, string>;
@@ -25,6 +28,22 @@ export interface EditorState {
 }
 export const STORAGE_KEY = 'quickgui.project.v1';
 export const CLOSED_STORAGE_KEY = 'quickgui.closed-project.v1';
+function validWindowId(project: Project, id: unknown): string {
+  return typeof id === 'string' && listProjectWindows(project).some((window) => window.id === id)
+    ? id
+    : 'main';
+}
+function editorSelection(
+  project: Project,
+  windowId: string,
+  selectedId: string | null,
+): string | null {
+  return selectedId &&
+    (getProjectWindow(project, windowId).widgets.some((widget) => widget.id === selectedId) ||
+      project.modules.some((module) => module.widgets.some((widget) => widget.id === selectedId)))
+    ? selectedId
+    : null;
+}
 function parseRecovery(raw: string): ProjectRecovery {
   const saved = JSON.parse(raw);
   const project = validateProject(saved.project);
@@ -36,11 +55,11 @@ function parseRecovery(raw: string): ProjectRecovery {
     Object.values(drafts).some((value) => typeof value !== 'string')
   )
     throw new Error('Invalid editor recovery drafts');
-  return { project, drafts };
+  return { project, drafts, activeWindowId: validWindowId(project, saved.activeWindowId) };
 }
 export function loadRecovery(): Pick<
   EditorState,
-  'project' | 'drafts' | 'closedRecovery' | 'recoveryError'
+  'project' | 'drafts' | 'closedRecovery' | 'recoveryError' | 'activeWindowId'
 > {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -49,18 +68,23 @@ export function loadRecovery(): Pick<
       return {
         project: null,
         drafts: {},
+        activeWindowId: 'main',
         closedRecovery: closed ? parseRecovery(closed) : undefined,
       };
     }
-    if (raw) return parseRecovery(raw);
+    if (raw) {
+      const recovery = parseRecovery(raw);
+      return { ...recovery, activeWindowId: recovery.activeWindowId ?? 'main' };
+    }
   } catch (error) {
     return {
       project: null,
       drafts: {},
+      activeWindowId: 'main',
       recoveryError: `Recovery was not applied: ${String(error)}. The original recovery data has been preserved.`,
     };
   }
-  return { project: createProject(), drafts: {} };
+  return { project: createProject(), drafts: {}, activeWindowId: 'main' };
 }
 
 export class EditorStore {
@@ -68,12 +92,15 @@ export class EditorStore {
   private state: EditorState;
   private timer?: ReturnType<typeof setTimeout>;
   constructor(project?: Project) {
-    const recovered = project ? { project, drafts: {} } : loadRecovery();
+    const recovered = project ? { project, drafts: {}, activeWindowId: 'main' } : loadRecovery();
+    const activeWidgets = recovered.project
+      ? getProjectWindow(recovered.project, recovered.activeWindowId).widgets
+      : [];
     this.state = {
       ...recovered,
       selectedId:
-        recovered.project?.widgets.find((widget) => widget.id === 'start_button')?.id ??
-        recovered.project?.widgets[0]?.id ??
+        activeWidgets.find((widget) => widget.id === 'start_button')?.id ??
+        activeWidgets[0]?.id ??
         null,
       section: 'design',
       inspector: 'widget',
@@ -110,13 +137,105 @@ export class EditorStore {
     if (this.state.project && !this.state.closing)
       this.set({ inspector: 'window', selectedId: null, section: 'design' });
   };
+  setActiveWindow = (id: string) => {
+    if (!this.state.project || this.state.closing) return;
+    getProjectWindow(this.state.project, id);
+    this.set({ activeWindowId: id, selectedId: null, inspector: 'window', section: 'design' });
+    this.scheduleSave();
+  };
+  addWindow = (name: string): string | undefined => {
+    if (!this.state.project || this.state.closing) return;
+    if ((this.state.project.windows?.length ?? 0) >= MAX_ADDITIONAL_WINDOWS)
+      throw new Error(`最多支持 ${MAX_ADDITIONAL_WINDOWS} 个附加窗口 / Too many windows`);
+    const trimmed = name.trim();
+    if (!trimmed || trimmed.length > 200 || /[\u0000-\u001f\u007f]/.test(trimmed))
+      throw new Error('窗口名称应为 1–200 个有效字符 / Enter a valid window name');
+    const id = uid('window');
+    this.update((project) => {
+      project.schemaVersion = 2;
+      const config: WindowConfig = {
+        ...structuredClone(project.window),
+        title: trimmed,
+        fullscreen: false,
+        maximized: false,
+        alwaysOnTop: false,
+        center: true,
+      };
+      project.windows = [
+        ...(project.windows ?? []),
+        { id, name: trimmed, config, widgets: [], openOnStart: false },
+      ];
+    });
+    this.setActiveWindow(id);
+    return id;
+  };
+  renameWindow = (id: string, name: string) => {
+    if (!this.state.project || this.state.closing) return;
+    if (id === 'main')
+      throw new Error(
+        '请在窗口属性中设置主窗口标题 / Edit the main window title in window properties',
+      );
+    const trimmed = name.trim();
+    if (!trimmed || trimmed.length > 200 || /[\u0000-\u001f\u007f]/.test(trimmed))
+      throw new Error('窗口名称应为 1–200 个有效字符 / Enter a valid window name');
+    getProjectWindow(this.state.project, id);
+    this.update((project) => {
+      project.windows!.find((window) => window.id === id)!.name = trimmed;
+    });
+  };
+  updateWindow = (id: string, patch: Partial<WindowConfig>) => {
+    if (!this.state.project || this.state.closing) return;
+    getProjectWindow(this.state.project, id);
+    this.update((project) => {
+      Object.assign(getProjectWindow(project, id).config, patch);
+    });
+  };
+  setWindowOpenOnStart = (id: string, openOnStart: boolean) => {
+    if (!this.state.project || this.state.closing) return;
+    if (id === 'main')
+      throw new Error('主窗口始终在启动时打开 / The main window always opens on startup');
+    getProjectWindow(this.state.project, id);
+    this.update((project) => {
+      project.windows!.find((window) => window.id === id)!.openOnStart = openOnStart;
+    });
+  };
+  deleteWindow = (id: string) => {
+    const project = this.state.project;
+    if (!project || this.state.closing) return;
+    if (id === 'main') throw new Error('不能删除主窗口 / The main window cannot be deleted');
+    const window = getProjectWindow(project, id);
+    if (window.widgets.some((widget) => Object.hasOwn(this.state.drafts, widget.id)))
+      throw new Error(
+        '此窗口有未应用的 CODE 草稿，请先应用或还原草稿 / Resolve this window’s CODE drafts before deleting it',
+      );
+    const references = project.flows.filter((flow) =>
+      flow.nodes.some((node) => node.kind === 'window' && node.config.windowId === id),
+    );
+    if (references.length)
+      throw new Error(
+        `请先移除流程中的窗口引用 / Remove window references from flows: ${references.map((flow) => flow.name).join(', ')}`,
+      );
+    this.update((next) => {
+      next.windows = next.windows!.filter((window) => window.id !== id);
+    });
+    const activeWindowId = validWindowId(this.state.project!, this.state.activeWindowId);
+    this.set({
+      activeWindowId,
+      selectedId: editorSelection(this.state.project!, activeWindowId, this.state.selectedId),
+      inspector: activeWindowId !== this.state.activeWindowId ? 'window' : this.state.inspector,
+    });
+  };
   update = (mutator: (project: Project) => void) => {
     if (!this.state.project || this.state.closing) return;
     const next = structuredClone(this.state.project);
     mutator(next);
     next.revision = this.state.project.revision + 1;
+    const activeWindowId = validWindowId(next, this.state.activeWindowId);
     this.set({
       project: next,
+      ...(activeWindowId !== this.state.activeWindowId
+        ? { activeWindowId, selectedId: null, inspector: 'window' as const }
+        : {}),
       past: [...this.state.past.slice(-99), this.state.project],
       future: [],
       dirty: true,
@@ -125,30 +244,39 @@ export class EditorStore {
   };
   updateWidget = (id: string, patch: Partial<Widget>) =>
     this.update((project) => {
-      const widget = project.widgets.find((w) => w.id === id);
+      const widget = getProjectWindow(project, this.state.activeWindowId).widgets.find(
+        (w) => w.id === id,
+      );
       if (widget) Object.assign(widget, patch, { id });
     });
   addWidget = (type: Widget['type'], x = 48, y = 48) => {
     if (!this.state.project || this.state.closing) return;
     const widget = createWidget(type, x, y);
     this.update((p) => {
-      p.widgets.push(widget);
+      getProjectWindow(p, this.state.activeWindowId).widgets.push(widget);
     });
     this.select(widget.id);
   };
   deleteWidget = (id: string) => {
     if (!this.state.project || this.state.closing) return;
+    if (
+      !getProjectWindow(this.state.project, this.state.activeWindowId).widgets.some(
+        (widget) => widget.id === id,
+      )
+    )
+      return;
     const toDelete = new Set([id]);
     for (let changed = true; changed;) {
       changed = false;
-      for (const w of this.state.project.widgets)
+      for (const w of getProjectWindow(this.state.project, this.state.activeWindowId).widgets)
         if (w.parentId && toDelete.has(w.parentId) && !toDelete.has(w.id)) {
           toDelete.add(w.id);
           changed = true;
         }
     }
     this.update((p) => {
-      p.widgets = p.widgets.filter((w) => !toDelete.has(w.id));
+      const widgets = getProjectWindow(p, this.state.activeWindowId).widgets;
+      widgets.splice(0, widgets.length, ...widgets.filter((w) => !toDelete.has(w.id)));
     });
     const drafts = { ...this.state.drafts };
     for (const key of toDelete) delete drafts[key];
@@ -156,11 +284,12 @@ export class EditorStore {
   };
   duplicateWidget = (id: string) => {
     if (!this.state.project || this.state.closing) return;
-    const original = this.state.project.widgets.find((w) => w.id === id);
+    const widgets = getProjectWindow(this.state.project, this.state.activeWindowId).widgets;
+    const original = widgets.find((w) => w.id === id);
     if (!original) return;
-    const copies = cloneSubtree(this.state.project.widgets, id);
+    const copies = cloneSubtree(widgets, id);
     const copy = copies.find((w) => w.parentId === original.parentId)!;
-    this.update((p) => p.widgets.push(...copies));
+    this.update((p) => getProjectWindow(p, this.state.activeWindowId).widgets.push(...copies));
     this.select(copy.id);
   };
   setDraft = (id: string, text: string | undefined) => {
@@ -175,11 +304,14 @@ export class EditorStore {
     if (!this.state.project || this.state.closing) return;
     const previous = this.state.past.at(-1);
     if (!previous) return;
+    const activeWindowId = validWindowId(previous, this.state.activeWindowId);
     this.set({
       project: { ...previous, revision: this.state.project.revision + 1 },
       past: this.state.past.slice(0, -1),
       future: [this.state.project, ...this.state.future],
       dirty: true,
+      activeWindowId,
+      selectedId: editorSelection(previous, activeWindowId, this.state.selectedId),
     });
     this.scheduleSave();
   };
@@ -187,20 +319,25 @@ export class EditorStore {
     if (!this.state.project || this.state.closing) return;
     const next = this.state.future[0];
     if (!next) return;
+    const activeWindowId = validWindowId(next, this.state.activeWindowId);
     this.set({
       project: { ...next, revision: this.state.project.revision + 1 },
       past: [...this.state.past, this.state.project],
       future: this.state.future.slice(1),
       dirty: true,
+      activeWindowId,
+      selectedId: editorSelection(next, activeWindowId, this.state.selectedId),
     });
     this.scheduleSave();
   };
-  replaceProject = (project: Project, drafts: Record<string, string> = {}) => {
+  replaceProject = (project: Project, drafts: Record<string, string> = {}, windowId = 'main') => {
     if (this.state.closing) throw new Error('Wait for the current project to finish closing');
     const validated = validateProject(project);
+    const activeWindowId = validWindowId(validated, windowId);
     this.set({
       project: validated,
-      selectedId: validated.widgets[0]?.id ?? null,
+      selectedId: getProjectWindow(validated, activeWindowId).widgets[0]?.id ?? null,
+      activeWindowId,
       drafts: { ...drafts },
       past: [],
       future: [],
@@ -215,7 +352,11 @@ export class EditorStore {
   /** Persist before stopping the runtime. Failed storage writes leave the editor active. */
   beginClose = (keepRecovery = true) => {
     if (!this.state.project || this.state.closing) return;
-    const recovery = { project: this.state.project, drafts: { ...this.state.drafts } };
+    const recovery = {
+      project: this.state.project,
+      drafts: { ...this.state.drafts },
+      activeWindowId: this.state.activeWindowId,
+    };
     if (keepRecovery) localStorage.setItem(CLOSED_STORAGE_KEY, JSON.stringify(recovery));
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ closed: true }));
     clearTimeout(this.timer);
@@ -237,6 +378,7 @@ export class EditorStore {
     this.set({
       project: null,
       selectedId: null,
+      activeWindowId: 'main',
       drafts: {},
       past: [],
       future: [],
@@ -255,14 +397,18 @@ export class EditorStore {
   restoreClosedProject = () => {
     const recovery = this.state.closedRecovery;
     if (!recovery) return;
-    this.replaceProject(recovery.project, recovery.drafts);
+    this.replaceProject(recovery.project, recovery.drafts, recovery.activeWindowId);
   };
   saveRecovery = () => {
     if (!this.state.project || this.state.closing || this.state.recoveryError) return;
     try {
       localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ project: this.state.project, drafts: this.state.drafts }),
+        JSON.stringify({
+          project: this.state.project,
+          drafts: this.state.drafts,
+          activeWindowId: this.state.activeWindowId,
+        }),
       );
       this.set({ dirty: false, savedAt: Date.now() });
     } catch (error) {

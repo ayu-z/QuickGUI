@@ -61,6 +61,19 @@ export interface WindowConfig {
   cornerPreference: 'system' | 'square' | 'round' | 'small';
   icon?: string;
 }
+export interface ProjectWindow {
+  id: string;
+  name: string;
+  config: WindowConfig;
+  widgets: Widget[];
+  openOnStart: boolean;
+}
+export type WindowAction = 'open' | 'close' | 'focus';
+export interface RuntimeWindowState {
+  open: string[];
+  focused: string;
+  revision: number;
+}
 export interface PublishConfig {
   appName: string;
   identifier: string;
@@ -91,7 +104,8 @@ export type NodeKind =
   | 'script'
   | 'http'
   | 'emit'
-  | 'connection';
+  | 'connection'
+  | 'window';
 export interface FlowNode {
   id: string;
   kind: NodeKind;
@@ -147,13 +161,15 @@ export interface Connection {
   config: Record<string, Json>;
 }
 export interface Project {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   id: string;
   name: string;
   revision: number;
   locale: Locale;
   theme: { mode: ThemeMode; tokens: Record<string, string> };
   window: WindowConfig;
+  /** Additional windows only. The fixed main window remains in window/widgets. */
+  windows?: ProjectWindow[];
   publish: PublishConfig;
   widgets: Widget[];
   variables: Variable[];
@@ -185,6 +201,7 @@ export interface RuntimeSnapshot {
   revision: number;
   projectId?: string;
   sequence?: number;
+  windowState?: RuntimeWindowState;
 }
 export interface ScriptRequest {
   source: string;

@@ -14,6 +14,12 @@ pub struct Project {
     pub locale: String,
     pub theme: Value,
     pub window: WindowConfig,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_windows",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub windows: Option<Vec<ProjectWindow>>,
     pub publish: Value,
     #[serde(default)]
     pub widgets: Vec<Value>,
@@ -54,6 +60,42 @@ pub struct WindowConfig {
     pub icon: Option<String>,
     #[serde(flatten)]
     pub extra: JsonMap,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectWindow {
+    pub id: String,
+    pub name: String,
+    pub config: WindowConfig,
+    pub widgets: Vec<Value>,
+    pub open_on_start: bool,
+}
+
+fn deserialize_windows<'de, D>(deserializer: D) -> Result<Option<Vec<ProjectWindow>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    // Missing is legacy v1; an explicitly present field must be an array, never null.
+    Vec::<ProjectWindow>::deserialize(deserializer).map(Some)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeWindowState {
+    pub open: Vec<String>,
+    pub focused: String,
+    pub revision: u64,
+}
+
+impl Default for RuntimeWindowState {
+    fn default() -> Self {
+        Self {
+            open: vec!["main".into()],
+            focused: "main".into(),
+            revision: 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -138,6 +180,8 @@ pub struct RuntimeLog {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeSnapshot {
+    #[serde(default)]
+    pub window_state: RuntimeWindowState,
     #[serde(default)]
     pub project_id: String,
     #[serde(default)]

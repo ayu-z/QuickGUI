@@ -26,7 +26,7 @@ export function exportProject(project: Project, drafts: Record<string, string> =
     {
       'quickgui.json': strToU8(serializeProject(project)),
       'README.txt': strToU8(
-        'QuickGUI project format v1\nOpen quickgui.json or this .qgui archive in QuickGUI.\nAssets and C sources are embedded. Credentials should not be stored in project files.\n',
+        `QuickGUI project format v${project.schemaVersion}\nOpen quickgui.json or this .qgui archive in QuickGUI.\nAssets and C sources are embedded. Credentials should not be stored in project files.\n`,
       ),
     },
     { level: 6 },

@@ -1,4 +1,4 @@
-use crate::{session, HostState};
+use crate::{begin_work, project_work, session, HostState};
 use quickgui_engine::{HistoryStore, Project, RuntimeSnapshot};
 use serde_json::Value;
 use std::{
@@ -143,7 +143,10 @@ pub async fn query_history(
     state: State<'_, HostState>,
     variable_id: String,
     limit: Option<usize>,
+    generation: Option<u64>,
 ) -> Result<Value, String> {
+    project_work(&state, window.label(), generation, false)?;
+    let _work = begin_work(&state, window.label(), generation)?;
     let recorder = recorder(&state, window.label())?;
     recorder.flush().await?;
     tauri::async_runtime::spawn_blocking(move || {
@@ -163,7 +166,10 @@ pub async fn query_alarms(
     window: WebviewWindow,
     state: State<'_, HostState>,
     limit: Option<usize>,
+    generation: Option<u64>,
 ) -> Result<Value, String> {
+    project_work(&state, window.label(), generation, false)?;
+    let _work = begin_work(&state, window.label(), generation)?;
     let recorder = recorder(&state, window.label())?;
     recorder.flush().await?;
     tauri::async_runtime::spawn_blocking(move || {
@@ -183,7 +189,10 @@ pub async fn ack_alarm(
     window: WebviewWindow,
     state: State<'_, HostState>,
     id: i64,
+    generation: Option<u64>,
 ) -> Result<(), String> {
+    project_work(&state, window.label(), generation, false)?;
+    let _work = begin_work(&state, window.label(), generation)?;
     let recorder = recorder(&state, window.label())?;
     recorder.flush().await?;
     tauri::async_runtime::spawn_blocking(move || {

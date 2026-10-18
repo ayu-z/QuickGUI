@@ -4,7 +4,7 @@ use quickgui_engine::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::{BTreeSet, HashMap, VecDeque},
     fs,
     path::PathBuf,
     sync::{
@@ -20,6 +20,7 @@ mod history;
 mod project_file;
 mod scheduler;
 mod source_export;
+mod windows;
 
 #[derive(Clone)]
 struct Session {
@@ -37,6 +38,15 @@ struct HostState {
     sessions: Mutex<HashMap<String, Session>>,
     preview: Mutex<Option<Value>>,
     preview_config: Mutex<Option<WindowConfig>>,
+    child_configs: Mutex<HashMap<String, WindowConfig>>,
+    window_projects: Mutex<HashMap<String, String>>,
+    committed_preview: Mutex<Option<Value>>,
+    latest_snapshots: Mutex<HashMap<String, RuntimeSnapshot>>,
+    window_sync_ticket: Mutex<Option<windows::SyncTicket>>,
+    applied_window_state: Mutex<Option<(String, u64)>>,
+    pending_window_open: Mutex<Option<(String, u64, String)>>,
+    retiring_windows: Mutex<HashMap<String, VecDeque<u64>>>,
+    closing_windows: Mutex<HashMap<String, u64>>,
     builds: Mutex<HashMap<String, CancellationToken>>,
     lifecycle: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     next_epoch: AtomicU64,
@@ -88,6 +98,9 @@ fn project_work(
     allow_closed: bool,
 ) -> Result<ProjectWork, String> {
     let mut projects = state.projects.lock().map_err(|e| e.to_string())?;
+    if windows::is_child(label) && projects.get("preview").is_some_and(|p| p.closed) {
+        return Err("The HMI project is closed".into());
+    }
     let current = projects.entry(label.to_owned()).or_default();
     if generation.unwrap_or(0) != current.generation {
         return Err("Project generation changed; the stale operation was cancelled".into());
@@ -104,6 +117,9 @@ pub(crate) fn begin_work(
     generation: Option<u64>,
 ) -> Result<TrackedWork, String> {
     let mut projects = state.projects.lock().map_err(|e| e.to_string())?;
+    if windows::is_child(label) && projects.get("preview").is_some_and(|p| p.closed) {
+        return Err("The HMI project is closed".into());
+    }
     let current = projects.entry(label.to_owned()).or_default();
     if generation.unwrap_or(0) != current.generation {
         return Err("Project generation changed; the stale operation was cancelled".into());
@@ -130,8 +146,10 @@ fn invalidate_project(state: &HostState, label: &str) -> Result<ProjectWork, Str
         closed: true,
         ..Default::default()
     };
-    if let Ok(active) = session(state, label) {
-        active.cancellation.cancel();
+    if !windows::is_child(label) {
+        if let Ok(active) = session(state, label) {
+            active.cancellation.cancel();
+        }
     }
     if let Some(build) = state.builds.lock().map_err(|e| e.to_string())?.get(label) {
         build.cancel();
@@ -193,10 +211,13 @@ async fn close_project(
 ) -> Result<CloseProjectResult, String> {
     let label = window.label().to_owned();
     close_project_state(&state, label.clone(), || {
-        if label != "preview" {
-            if let Some(preview) = app.get_webview_window("preview") {
-                preview.destroy().map_err(|e| e.to_string())?;
+        for (label, view) in app.webview_windows() {
+            if windows::is_child(&label) {
+                windows::destroy_view(&view)?;
             }
+        }
+        if let Some(preview) = app.get_webview_window("preview") {
+            windows::destroy_view(&preview)?;
         }
         Ok(())
     })
@@ -206,65 +227,110 @@ async fn close_project(
 async fn close_project_state<F>(
     state: &HostState,
     label: String,
-    close_preview: F,
+    close_windows: F,
 ) -> Result<CloseProjectResult, String>
 where
     F: FnOnce() -> Result<(), String> + Send,
 {
-    let current_work = invalidate_project(&state, &label)?;
-    let preview_work = if label != "preview" {
-        Some(invalidate_project(&state, "preview")?)
-    } else {
-        None
-    };
-    let lock = lifecycle(&state, &label)?;
-    let _guard = lock.lock().await;
-    let preview_lock = if label != "preview" {
-        Some(lifecycle(&state, "preview")?)
-    } else {
-        None
-    };
-    let _preview_guard = match &preview_lock {
-        Some(lock) => Some(lock.lock().await),
-        None => None,
-    };
-    wait_for_work(&current_work).await?;
-    if let Some(work) = &preview_work {
+    let owner = windows::owner(&label).to_owned();
+    let mut retired = Vec::new();
+    for view in windows::group_labels(state, &owner)? {
+        retired.push((view.clone(), invalidate_project(state, &view)?));
+    }
+    *state.window_sync_ticket.lock().map_err(|e| e.to_string())? = None;
+    state
+        .closing_windows
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clear();
+    *state
+        .applied_window_state
+        .lock()
+        .map_err(|e| e.to_string())? = None;
+    let owner_labels: Vec<_> = retired
+        .iter()
+        .map(|(label, _)| label.clone())
+        .filter(|label| !windows::is_child(label))
+        .collect();
+    let locks = owner_labels
+        .iter()
+        .map(|label| lifecycle(state, label))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut guards = Vec::new();
+    for lock in &locks {
+        guards.push(lock.lock().await);
+    }
+    // Include a child reserved by a window-creation task before owner invalidation.
+    for view in windows::group_labels(state, &owner)? {
+        if !retired.iter().any(|(label, _)| *label == view) {
+            retired.push((view.clone(), invalidate_project(state, &view)?));
+        }
+    }
+    for (_, work) in &retired {
         wait_for_work(work).await?;
     }
-    let current_epoch = flush_session(&state, &label).await?;
-    let preview_epoch = if label != "preview" {
-        flush_session(&state, "preview").await?
-    } else {
-        None
-    };
-    // A failed flush or preview close leaves every stopped session available for a retry.
-    close_preview()?;
+    let mut epochs = Vec::new();
+    for owner in &owner_labels {
+        epochs.push((owner.clone(), flush_session(state, owner).await?));
+    }
+    // Preserve stopped sessions if durability or native teardown fails, so retry works.
+    close_windows()?;
     {
         let mut sessions = state.sessions.lock().map_err(|e| e.to_string())?;
-        if sessions
-            .get(&label)
-            .is_some_and(|session| Some(session.epoch) == current_epoch)
-        {
-            sessions.remove(&label);
-        }
-        if label != "preview"
-            && sessions
-                .get("preview")
-                .is_some_and(|session| Some(session.epoch) == preview_epoch)
-        {
-            sessions.remove("preview");
+        for (owner, epoch) in epochs {
+            if sessions
+                .get(&owner)
+                .is_some_and(|session| Some(session.epoch) == epoch)
+            {
+                sessions.remove(&owner);
+            }
         }
     }
     *state.preview.lock().map_err(|e| e.to_string())? = None;
+    *state.committed_preview.lock().map_err(|e| e.to_string())? = None;
     *state.preview_config.lock().map_err(|e| e.to_string())? = None;
-    let generation = state
-        .projects
+    state
+        .child_configs
         .lock()
         .map_err(|e| e.to_string())?
-        .get(&label)
-        .ok_or("Project generation is unavailable")?
-        .generation;
+        .clear();
+    state
+        .window_projects
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clear();
+    state
+        .pending_window_open
+        .lock()
+        .map_err(|e| e.to_string())?
+        .take();
+    for owner in owner_labels {
+        state
+            .latest_snapshots
+            .lock()
+            .map_err(|e| e.to_string())?
+            .remove(&owner);
+    }
+    let generation = {
+        let projects = state.projects.lock().map_err(|e| e.to_string())?;
+        projects
+            .get(&label)
+            .or_else(|| projects.get(&owner))
+            .map(|p| p.generation)
+    };
+    // label is always included for root commands; child callers use their own lease.
+    let generation = match generation {
+        Some(value) => value,
+        None => {
+            state
+                .projects
+                .lock()
+                .map_err(|e| e.to_string())?
+                .get(&owner)
+                .ok_or("Project generation is unavailable")?
+                .generation
+        }
+    };
     Ok(CloseProjectResult { generation })
 }
 
@@ -342,7 +408,7 @@ fn session(state: &HostState, label: &str) -> Result<Session, String> {
         .sessions
         .lock()
         .map_err(|e| e.to_string())?
-        .get(label)
+        .get(windows::owner(label))
         .cloned()
         .ok_or_else(|| "Runtime is not started for this window".into())
 }
@@ -371,6 +437,16 @@ fn require_current(
         .is_some_and(|project| project.closed)
     {
         return Err("The project is closed".into());
+    }
+    if windows::is_child(label)
+        && state
+            .projects
+            .lock()
+            .map_err(|e| e.to_string())?
+            .get("preview")
+            .is_some_and(|p| p.closed)
+    {
+        return Err("The HMI project is closed".into());
     }
     if session(state, label)?.epoch != active.epoch
         || engine.project().id != active.project_id
@@ -442,12 +518,16 @@ async fn runtime_start(
     project: Value,
     generation: Option<u64>,
 ) -> Result<RuntimeSnapshot, String> {
+    if windows::is_child(window.label()) {
+        return Err("Child HMI windows must attach to the shared runtime".into());
+    }
     let lock = lifecycle(&state, window.label())?;
     let _guard = lock.lock().await;
     window
         .is_visible()
         .map_err(|_| "The runtime window has already closed")?;
     let work = project_work(&state, window.label(), generation, true)?;
+    let document = project.clone();
     let project: Project = serde_json::from_value(project).map_err(|e| e.to_string())?;
     let event_sources = scheduler::sources(&project)?;
     // Reject invalid edits before cancelling the currently running version.
@@ -483,11 +563,12 @@ async fn runtime_start(
             .join("runtime")
             .join(window.label());
         fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
-        let reporter = window.clone();
+        let reporter = app.clone();
+        let reporter_owner = window.label().to_owned();
         history::Recorder::open(
             directory.join(format!("{project_key}.sqlite")),
             Arc::new(move |error| {
-                let _ = reporter.emit("storage-error", error);
+                windows::broadcast_event(&reporter, &reporter_owner, "storage-error", error);
             }),
         )
         .await?
@@ -499,20 +580,64 @@ async fn runtime_start(
     let recording_project = Arc::new(project.clone());
     let recording_history = recorder.clone();
     let event_generation = work.generation;
-    let listener = window.clone();
+    let epoch = state.next_epoch.fetch_add(1, Ordering::Relaxed);
+    let listener = app.clone();
+    let owner_label = window.label().to_owned();
+    let window_project = recording_project.clone();
     let observer = Arc::new(move |snapshot: RuntimeSnapshot| {
+        let state = listener.state::<HostState>();
+        let current = session(&state, &owner_label)
+            .is_ok_and(|s| s.epoch == epoch && s.revision == snapshot.revision)
+            && state
+                .projects
+                .lock()
+                .ok()
+                .and_then(|p| p.get(&owner_label).cloned())
+                .is_some_and(|p| p.generation == event_generation && !p.closed);
+        if !current {
+            return;
+        }
         if recording_project.revision == snapshot.revision {
             recording_history.record(recording_project.clone(), snapshot.clone());
         }
-        let _ = emit_snapshot(&listener, &snapshot, event_generation);
+        windows::broadcast_snapshot(&listener, &owner_label, &snapshot);
+        if owner_label == "preview" {
+            windows::queue_sync(
+                listener.clone(),
+                window_project.clone(),
+                &snapshot,
+                epoch,
+                event_generation,
+            );
+        }
     });
-    let listener = window.clone();
+    let listener = app.clone();
+    let event_owner = window.label().to_owned();
     let event_observer = Arc::new(move |event: quickgui_engine::RuntimeEvent| {
-        let _ = listener.emit("runtime-event", event);
+        if session(&listener.state::<HostState>(), &event_owner)
+            .is_ok_and(|s| s.epoch == epoch && !s.cancellation.is_cancelled())
+        {
+            windows::broadcast_event(&listener, &event_owner, "runtime-event", event);
+        }
     });
     let project_id = project.id.clone();
     let revision = project.revision;
     let initial_project = Arc::new(project.clone());
+    let pending_window = {
+        let mut pending = state
+            .pending_window_open
+            .lock()
+            .map_err(|e| e.to_string())?;
+        if window.label() == "preview"
+            && pending
+                .as_ref()
+                .is_some_and(|(id, revision, _)| id == &project.id && *revision <= project.revision)
+        {
+            pending.take().map(|(_, _, id)| id)
+        } else {
+            None
+        }
+    };
     let (engine, snapshot, booted) = if let Some(previous) = previous {
         previous.cancellation.cancel();
         let mut engine = previous.engine.lock().await;
@@ -528,11 +653,17 @@ async fn runtime_start(
         }
         engine.set_observer(observer);
         engine.set_event_observer(event_observer);
+        if let Some(id) = &pending_window {
+            let _ = engine.window_action("open", id);
+        }
         (previous.engine.clone(), engine.snapshot(), booted)
     } else {
         let mut engine = checked_engine;
         engine.set_observer(observer);
         engine.set_event_observer(event_observer);
+        if let Some(id) = &pending_window {
+            let _ = engine.window_action("open", id);
+        }
         let snapshot = engine.snapshot();
         (
             Arc::new(tokio::sync::Mutex::new(engine)),
@@ -546,7 +677,7 @@ async fn runtime_start(
         booted,
         project_id,
         history: Some(recorder.clone()),
-        epoch: state.next_epoch.fetch_add(1, Ordering::Relaxed),
+        epoch,
         revision,
     };
     {
@@ -564,9 +695,85 @@ async fn runtime_start(
         .lock()
         .map_err(|e| e.to_string())?
         .insert(window.label().into(), next.clone());
-    recorder.record(initial_project, snapshot.clone());
+    recorder.record(initial_project.clone(), snapshot.clone());
+    windows::broadcast_snapshot(&app, window.label(), &snapshot);
+    if window.label() == "preview" {
+        *state.committed_preview.lock().map_err(|e| e.to_string())? = Some(document.clone());
+        state
+            .window_projects
+            .lock()
+            .map_err(|e| e.to_string())?
+            .insert("preview".into(), initial_project.id.clone());
+        for (label, child) in app.webview_windows() {
+            if windows::is_child(&label) {
+                let _ = windows::emit_project(&child, &document);
+            }
+        }
+        windows::queue_sync(
+            app.clone(),
+            initial_project,
+            &snapshot,
+            epoch,
+            event_generation,
+        );
+    }
     scheduler::start(next, event_sources, runner_path(&app).ok());
     Ok(snapshot)
+}
+
+#[tauri::command]
+async fn runtime_attach(
+    window: WebviewWindow,
+    state: State<'_, HostState>,
+    generation: Option<u64>,
+) -> Result<RuntimeSnapshot, String> {
+    project_work(&state, window.label(), generation, false)?;
+    let active = session(&state, window.label())?;
+    if windows::is_child(window.label()) {
+        let registered = state
+            .window_projects
+            .lock()
+            .map_err(|e| e.to_string())?
+            .get(window.label())
+            .cloned();
+        if registered.as_deref() != Some(active.project_id.as_str()) {
+            return Err("The child window is not attached to this project".into());
+        }
+    }
+    if let Some(snapshot) = state
+        .latest_snapshots
+        .lock()
+        .map_err(|e| e.to_string())?
+        .get(windows::owner(window.label()))
+        .cloned()
+        .filter(|snapshot| {
+            snapshot.project_id == active.project_id && snapshot.revision == active.revision
+        })
+    {
+        project_work(&state, window.label(), generation, false)?;
+        return Ok(snapshot);
+    }
+    let engine = active.engine.lock().await;
+    project_work(&state, window.label(), generation, false)?;
+    require_current(&state, window.label(), &active, &engine)?;
+    Ok(engine.snapshot())
+}
+
+#[tauri::command]
+async fn runtime_window_action(
+    window: WebviewWindow,
+    state: State<'_, HostState>,
+    action: String,
+    window_id: String,
+    generation: Option<u64>,
+) -> Result<RuntimeSnapshot, String> {
+    project_work(&state, window.label(), generation, false)?;
+    let active = session(&state, window.label())?;
+    let mut engine = active.engine.lock().await;
+    project_work(&state, window.label(), generation, false)?;
+    require_current(&state, window.label(), &active, &engine)?;
+    engine.window_action(&action, &window_id)?;
+    Ok(engine.snapshot())
 }
 
 #[tauri::command]
@@ -582,6 +789,7 @@ async fn runtime_run_flow(
     let active = session(&state, window.label())?;
     let host = runner_path(&app).ok().map(ScriptHost::new);
     let mut engine = active.engine.lock().await;
+    project_work(&state, window.label(), generation, false)?;
     require_current(&state, window.label(), &active, &engine)?;
     let result = engine
         .run_flow(
@@ -609,7 +817,11 @@ async fn runtime_set_variable(
     require_current(&state, window.label(), &active, &engine)?;
     engine.set_variable(&name, value)?;
     let snapshot = engine.snapshot();
-    let _ = emit_snapshot(&window, &snapshot, generation.unwrap_or(0));
+    windows::broadcast_snapshot(
+        window.app_handle(),
+        windows::owner(window.label()),
+        &snapshot,
+    );
     Ok(snapshot)
 }
 
@@ -629,7 +841,7 @@ async fn runtime_stop(
     state: State<'_, HostState>,
     generation: Option<u64>,
 ) -> Result<RuntimeSnapshot, String> {
-    let lock = lifecycle(&state, window.label())?;
+    let lock = lifecycle(&state, windows::owner(window.label()))?;
     let _guard = lock.lock().await;
     project_work(&state, window.label(), generation, false)?;
     let active = session(&state, window.label())?;
@@ -648,24 +860,29 @@ fn apply_config(
     window: &WebviewWindow,
     config: &WindowConfig,
 ) -> Result<WindowApplyResult, String> {
-    if ![
-        config.width,
-        config.height,
-        config.min_width,
-        config.min_height,
-    ]
-    .iter()
-    .all(|v| v.is_finite() && *v >= 100.0 && *v <= 16384.0)
+    if !(200.0..=10000.0).contains(&config.width)
+        || !(100.0..=10000.0).contains(&config.height)
+        || !(0.0..=config.width).contains(&config.min_width)
+        || !(0.0..=config.height).contains(&config.min_height)
     {
-        return Err("Window dimensions must be between 100 and 16384 logical pixels".into());
+        return Err("Invalid window dimensions or minimum size".into());
     }
     let map = |e: tauri::Error| e.to_string();
     let state = window.state::<HostState>();
-    let previous = state
-        .preview_config
-        .lock()
-        .map_err(|e| e.to_string())?
-        .clone();
+    let previous = if windows::is_child(window.label()) {
+        state
+            .child_configs
+            .lock()
+            .map_err(|e| e.to_string())?
+            .get(window.label())
+            .cloned()
+    } else {
+        state
+            .preview_config
+            .lock()
+            .map_err(|e| e.to_string())?
+            .clone()
+    };
     let resized = previous.as_ref().is_none_or(|old| {
         old.width != config.width
             || old.height != config.height
@@ -736,7 +953,12 @@ fn apply_config(
     let mut warnings = Vec::new();
     if let Some(reference) = &config.icon {
         let state = window.state::<HostState>();
-        let project = state.preview.lock().ok().and_then(|p| p.clone());
+        let project = state
+            .committed_preview
+            .lock()
+            .ok()
+            .and_then(|p| p.clone())
+            .or_else(|| state.preview.lock().ok().and_then(|p| p.clone()));
         let icon = project
             .as_ref()
             .and_then(|p| p.get("assets"))
@@ -797,12 +1019,8 @@ fn clamp_position(
 }
 
 fn restore_position(window: &WebviewWindow) -> bool {
-    let Some(position) = window
-        .app_handle()
-        .path()
-        .app_data_dir()
-        .ok()
-        .and_then(|dir| fs::read(dir.join("preview-position.json")).ok())
+    let Some(position) = windows::position_path(window)
+        .and_then(|path| fs::read(path).ok())
         .and_then(|bytes| serde_json::from_slice::<[i32; 2]>(&bytes).ok())
     else {
         return false;
@@ -897,19 +1115,23 @@ fn apply_corner(_window: &WebviewWindow, preference: &str, warnings: &mut Vec<St
 
 #[tauri::command]
 fn apply_window(
-    app: tauri::AppHandle,
+    window: WebviewWindow,
     state: State<'_, HostState>,
     config: WindowConfig,
-    preview: bool,
 ) -> Result<WindowApplyResult, String> {
-    if !preview {
+    if windows::id(window.label()).is_none() {
         return Err("Window settings are only applied to the preview/runtime window".into());
     }
-    let window = app
-        .get_webview_window("preview")
-        .ok_or("Open the preview first")?;
     let result = apply_config(&window, &config)?;
-    *state.preview_config.lock().map_err(|e| e.to_string())? = Some(config);
+    if windows::is_child(window.label()) {
+        state
+            .child_configs
+            .lock()
+            .map_err(|e| e.to_string())?
+            .insert(window.label().into(), config);
+    } else {
+        *state.preview_config.lock().map_err(|e| e.to_string())? = Some(config);
+    }
     Ok(result)
 }
 
@@ -920,6 +1142,7 @@ async fn open_preview(
     state: State<'_, HostState>,
     project: Value,
     generation: Option<u64>,
+    window_id: Option<String>,
 ) -> Result<WindowApplyResult, String> {
     let lock = lifecycle(&state, window.label())?;
     let _guard = lock.lock().await;
@@ -936,7 +1159,23 @@ async fn open_preview(
         Some(lock) => Some(lock.lock().await),
         None => None,
     };
-    let _: Project = serde_json::from_value(project.clone()).map_err(|e| e.to_string())?;
+    let parsed: Project = serde_json::from_value(project.clone()).map_err(|e| e.to_string())?;
+    if let Some(id) = &window_id {
+        if id != "main"
+            && !parsed
+                .windows
+                .as_deref()
+                .unwrap_or_default()
+                .iter()
+                .any(|w| w.id == *id)
+        {
+            return Err(format!("Unknown preview window: {id}"));
+        }
+        *state
+            .pending_window_open
+            .lock()
+            .map_err(|e| e.to_string())? = Some((parsed.id.clone(), parsed.revision, id.clone()));
+    }
     let config: WindowConfig = serde_json::from_value(
         project
             .get("window")
@@ -949,6 +1188,11 @@ async fn open_preview(
     let is_new = existing.is_none();
     if is_new {
         *state.preview_config.lock().map_err(|e| e.to_string())? = None;
+        *state.committed_preview.lock().map_err(|e| e.to_string())? = None;
+        *state
+            .applied_window_state
+            .lock()
+            .map_err(|e| e.to_string())? = None;
         invalidate_project(&state, "preview")?;
     }
     let window = match existing {
@@ -964,18 +1208,60 @@ async fn open_preview(
         .build()
         .map_err(|e| e.to_string())?,
     };
-    let result = apply_config(&window, &config)?;
-    *state.preview_config.lock().map_err(|e| e.to_string())? = Some(config);
-    window
-        .emit("project-updated", project)
-        .map_err(|e| e.to_string())?;
+    let result = if is_new {
+        state
+            .window_projects
+            .lock()
+            .map_err(|e| e.to_string())?
+            .insert("preview".into(), parsed.id.clone());
+        let result = apply_config(&window, &config)?;
+        *state.preview_config.lock().map_err(|e| e.to_string())? = Some(config);
+        result
+    } else {
+        WindowApplyResult {
+            warnings: Vec::new(),
+        }
+    };
+    windows::emit_project(&window, &project)?;
     window.show().map_err(|e| e.to_string())?;
-    window.set_focus().map_err(|e| e.to_string())?;
+    if is_new || window_id.as_deref() == Some("main") {
+        window.set_focus().map_err(|e| e.to_string())?;
+    }
+    if let Some(id) = window_id {
+        if let Ok(active) = session(&state, "preview") {
+            if active.project_id == parsed.id
+                && active.revision == parsed.revision
+                && !active.cancellation.is_cancelled()
+            {
+                let mut engine = active.engine.lock().await;
+                if engine.project().id == parsed.id && engine.project().revision == parsed.revision
+                {
+                    engine.window_action("open", &id)?;
+                    state
+                        .pending_window_open
+                        .lock()
+                        .map_err(|e| e.to_string())?
+                        .take();
+                }
+            }
+        }
+    }
     Ok(result)
 }
 
 #[tauri::command]
-fn get_preview_project(state: State<'_, HostState>) -> Result<Value, String> {
+fn get_preview_project(
+    window: WebviewWindow,
+    state: State<'_, HostState>,
+) -> Result<Value, String> {
+    if windows::is_child(window.label()) {
+        return state
+            .committed_preview
+            .lock()
+            .map_err(|e| e.to_string())?
+            .clone()
+            .ok_or_else(|| "The shared HMI runtime is not ready".into());
+    }
     state
         .preview
         .lock()
@@ -1073,6 +1359,8 @@ pub fn run() {
             close_project,
             test_connection,
             runtime_start,
+            runtime_attach,
+            runtime_window_action,
             runtime_run_flow,
             runtime_set_variable,
             runtime_snapshot,
@@ -1093,50 +1381,106 @@ pub fn run() {
         .on_window_event(|window, event| {
             let state = window.state::<HostState>();
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                if let Ok(lock) = lifecycle(&state, window.label()) {
-                    api.prevent_close();
-                    let window = window.clone();
-                    tauri::async_runtime::spawn(async move {
-                        let _guard = lock.lock().await;
-                        if let Ok(active) = session(&window.state::<HostState>(), window.label()) {
-                            active.cancellation.cancel();
-                            let engine = active.engine.lock().await;
-                            let snapshot = engine.snapshot();
-                            let project = Arc::new(engine.project().clone());
-                            if let Some(recorder) = active.history {
-                                if let Err(error) =
-                                    recorder.record_and_flush(project, snapshot).await
-                                {
-                                    let _ = window.emit("storage-error", error);
-                                }
+                api.prevent_close();
+                let app = window.app_handle().clone();
+                let label = window.label().to_owned();
+                tauri::async_runtime::spawn(async move {
+                    if windows::is_child(&label) {
+                        if let Err(error) = windows::close_child(app.clone(), label.clone()).await {
+                            if let Some(window) = app.get_webview_window(&label) {
+                                let _ = window.emit("storage-error", error);
                             }
                         }
-                        let _ = window.destroy();
-                    });
-                }
+                        return;
+                    }
+                    let state = app.state::<HostState>();
+                    let destroy_app = app.clone();
+                    let result = close_project_state(&state, label.clone(), move || {
+                        for (label, view) in destroy_app.webview_windows() {
+                            if windows::is_child(&label) {
+                                windows::destroy_view(&view)?;
+                            }
+                        }
+                        if let Some(primary) = destroy_app.get_webview_window("preview") {
+                            windows::destroy_view(&primary)?;
+                        }
+                        Ok(())
+                    })
+                    .await;
+                    match result {
+                        Ok(_) => {
+                            if let Some(window) = app.get_webview_window(&label) {
+                                let _ = windows::destroy_view(&window);
+                            }
+                        }
+                        Err(error) => {
+                            if let Some(window) = app.get_webview_window(&label) {
+                                let _ = window.emit("storage-error", error);
+                            }
+                        }
+                    }
+                });
             }
             if let tauri::WindowEvent::Moved(position) = event {
-                let remember = state
-                    .preview_config
-                    .lock()
-                    .ok()
-                    .and_then(|v| v.as_ref().map(|v| v.remember_position))
-                    .unwrap_or(false);
-                if window.label() == "preview"
-                    && remember
+                let config = if windows::is_child(window.label()) {
+                    state
+                        .child_configs
+                        .lock()
+                        .ok()
+                        .and_then(|values| values.get(window.label()).cloned())
+                } else {
+                    state
+                        .preview_config
+                        .lock()
+                        .ok()
+                        .and_then(|value| value.clone())
+                };
+                if windows::id(window.label()).is_some()
+                    && config.is_some_and(|config| config.remember_position)
                     && !window.is_maximized().unwrap_or(false)
                     && !window.is_fullscreen().unwrap_or(false)
                 {
-                    if let Ok(dir) = window.app_handle().path().app_data_dir() {
-                        let _ = fs::create_dir_all(&dir);
-                        let _ = fs::write(
-                            dir.join("preview-position.json"),
-                            format!("[{},{}]", position.x, position.y),
-                        );
+                    if let Some(webview) = window.app_handle().get_webview_window(window.label()) {
+                        if let Some(path) = windows::position_path(&webview) {
+                            if let Some(parent) = path.parent() {
+                                let _ = fs::create_dir_all(parent);
+                            }
+                            let _ = fs::write(path, format!("[{},{}]", position.x, position.y));
+                        }
                     }
                 }
             }
             if matches!(event, tauri::WindowEvent::Destroyed) {
+                if !windows::destroyed_lease_current(&state, window.label()) {
+                    return;
+                }
+                let _ = invalidate_project(&state, window.label());
+                if let Ok(mut configs) = state.child_configs.lock() {
+                    configs.remove(window.label());
+                }
+                if let Ok(mut projects) = state.window_projects.lock() {
+                    projects.remove(window.label());
+                }
+                if matches!(window.label(), "main" | "preview") {
+                    if let Ok(mut applied) = state.applied_window_state.lock() {
+                        *applied = None;
+                    }
+                    if let Ok(mut ticket) = state.window_sync_ticket.lock() {
+                        *ticket = None;
+                    }
+                    let _ = invalidate_project(&state, "preview");
+                    for (label, child) in window.app_handle().webview_windows() {
+                        if windows::is_child(&label) {
+                            let _ = invalidate_project(&state, &label);
+                            let _ = windows::destroy_view(&child);
+                        }
+                    }
+                    if window.label() == "main" {
+                        if let Some(primary) = window.app_handle().get_webview_window("preview") {
+                            let _ = windows::destroy_view(&primary);
+                        }
+                    }
+                }
                 if window.label() == "preview" {
                     if let Some(designer) = window.app_handle().get_webview_window("main") {
                         let _ = designer.emit("preview-closed", ());

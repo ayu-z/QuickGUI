@@ -7,9 +7,16 @@ import type {
   RuntimeValue,
   ScriptRequest,
   ScriptResponse,
+  WindowAction,
 } from '../core/types';
 import { uid } from '../core/project';
 import { validateFlow } from '../core/validation';
+import {
+  applyWindowAction,
+  initialWindowState,
+  reconcileWindowState,
+  validateWindowActions,
+} from './windowState';
 
 export type ScriptExecutor = (request: ScriptRequest) => Promise<ScriptResponse>;
 export class RuntimeController {
@@ -24,10 +31,12 @@ export class RuntimeController {
   private history: Record<string, number[]> = {};
   private timers: ReturnType<typeof setInterval>[] = [];
   private booted = new Set<string>();
+  private activated = false;
   constructor(
     project: Project,
     private executeScript?: ScriptExecutor,
   ) {
+    validateWindowActions(project);
     this.project = project;
     this.snapshot = {
       values: Object.fromEntries(
@@ -40,6 +49,7 @@ export class RuntimeController {
       running: true,
       activeNodes: [],
       revision: project.revision,
+      windowState: initialWindowState(project),
     };
   }
   getSnapshot = () => this.snapshot;
@@ -63,6 +73,10 @@ export class RuntimeController {
     });
   }
   clearLogs = () => this.publish({ logs: [] });
+  windowAction = (action: WindowAction, windowId: string): void => {
+    const state = this.snapshot.windowState ?? initialWindowState(this.project);
+    this.publish({ windowState: applyWindowAction(this.project, state, action, windowId) });
+  };
   getHistory(id: string) {
     return this.history[id] ?? [];
   }
@@ -91,7 +105,15 @@ export class RuntimeController {
     }
   };
   applyProject = (project: Project) => {
+    validateWindowActions(project);
     for (const flow of project.flows) validateFlow(flow);
+    if (
+      this.activated &&
+      project.id === this.project.id &&
+      project.revision === this.snapshot.revision
+    )
+      return;
+    this.activated = true;
     this.abort.abort();
     this.abort = new AbortController();
     this.generation++;
@@ -109,10 +131,18 @@ export class RuntimeController {
           ? old
           : { value: v.initial, quality: 'good', timestamp: Date.now() };
     }
+    const windowState = sameProject
+      ? reconcileWindowState(
+          this.project,
+          project,
+          this.snapshot.windowState ?? initialWindowState(this.project),
+        )
+      : initialWindowState(project);
     this.project = project;
     this.publish({
       values,
       revision: project.revision,
+      windowState,
       activeNodes: [],
       running: true,
       ...(!sameProject ? { logs: [] } : {}),
@@ -127,6 +157,7 @@ export class RuntimeController {
     this.publish({ running: false, activeNodes: [] });
   };
   start = () => {
+    this.activated = true;
     this.abort = new AbortController();
     this.publish({ running: true });
     this.scheduleEvents();
@@ -237,6 +268,9 @@ export class RuntimeController {
     let value = input;
     switch (node.kind) {
       case 'event':
+        break;
+      case 'window':
+        this.windowAction(String(c.action) as WindowAction, String(c.windowId));
         break;
       case 'read': {
         const id = this.project.variables.find(

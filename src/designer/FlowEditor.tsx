@@ -23,6 +23,7 @@ import {
   GitBranch,
   Globe,
   MessageSquare,
+  PanelsTopLeft,
   Plus,
   Radio,
   Trash2,
@@ -30,6 +31,7 @@ import {
 } from 'lucide-react';
 import type { Flow, FlowNode, Json, Locale, NodeKind, Project } from '../core/types';
 import { Field, NumberInput, Toggle } from './Fields';
+import { listProjectWindows } from '../core/windows';
 import '@xyflow/react/dist/style.css';
 import './designer.css';
 
@@ -45,6 +47,7 @@ const nodeInfo: Record<NodeKind, { icon: typeof Zap; zh: string; en: string; col
   http: { icon: Globe, zh: 'HTTP 请求', en: 'HTTP', color: '#38bdf8' },
   emit: { icon: Radio, zh: '发送事件', en: 'Emit', color: '#f472b6' },
   connection: { icon: Globe, zh: '设备请求', en: 'Device request', color: '#2dd4bf' },
+  window: { icon: PanelsTopLeft, zh: '窗口操作', en: 'Window', color: '#a78bfa' },
 };
 type QuickNode = Node<{ model: FlowNode; active: boolean; locale: Locale }, 'quickgui'>;
 function FlowCard({ data, selected }: NodeProps<QuickNode>) {
@@ -70,14 +73,16 @@ function FlowCard({ data, selected }: NodeProps<QuickNode>) {
             ? `${model.config.operator ?? 'gt'} ${model.config.value ?? 0}`
             : model.kind === 'math'
               ? `${model.config.operation ?? 'add'} ${model.config.operand ?? 1}`
-              : String(
-                  model.config.message ||
-                    model.config.scriptId ||
-                    model.config.connectionId ||
-                    model.config.url ||
-                    model.config.event ||
-                    (locale === 'zh-CN' ? '点击配置' : 'Click to configure'),
-                );
+              : model.kind === 'window'
+                ? `${model.config.action} · ${model.config.windowId}`
+                : String(
+                    model.config.message ||
+                      model.config.scriptId ||
+                      model.config.connectionId ||
+                      model.config.url ||
+                      model.config.event ||
+                      (locale === 'zh-CN' ? '点击配置' : 'Click to configure'),
+                  );
   return (
     <div
       className={`qg-flow-card ${selected ? 'selected' : ''} ${active ? 'running' : ''}`}
@@ -198,6 +203,7 @@ export function FlowEditor({ project, onChange, activeNodes = [], locale }: Flow
       http: { url: '', method: 'GET' },
       emit: { event: 'custom-event' },
       connection: { connectionId: project.connections[0]?.id ?? '' },
+      window: { action: 'open', windowId: project.windows?.[0]?.id ?? 'main' },
     };
     const node: FlowNode = {
       id: id(),
@@ -707,6 +713,52 @@ export function FlowEditor({ project, onChange, activeNodes = [], locale }: Flow
                       onChange={(event) => updateConfig('event', event.target.value)}
                     />
                   </Field>
+                )}
+                {selectedNode.kind === 'window' && (
+                  <>
+                    <Field label={zh ? '目标窗口' : 'Target window'}>
+                      <select
+                        value={String(selectedNode.config.windowId ?? 'main')}
+                        onChange={(event) =>
+                          updateNode({
+                            config: {
+                              ...selectedNode.config,
+                              windowId: event.target.value,
+                              action:
+                                event.target.value === 'main' &&
+                                selectedNode.config.action === 'close'
+                                  ? 'open'
+                                  : selectedNode.config.action,
+                            },
+                          })
+                        }
+                      >
+                        {listProjectWindows(project).map((window) => (
+                          <option key={window.id} value={window.id}>
+                            {window.name}
+                            {window.id === 'main' ? (zh ? '（主窗口）' : ' (main)') : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label={zh ? '窗口操作' : 'Window action'}>
+                      <select
+                        value={String(selectedNode.config.action ?? 'open')}
+                        onChange={(event) => updateConfig('action', event.target.value)}
+                      >
+                        <option value="open">{zh ? '打开窗口' : 'Open window'}</option>
+                        <option value="focus">{zh ? '聚焦窗口' : 'Focus window'}</option>
+                        <option value="close" disabled={selectedNode.config.windowId === 'main'}>
+                          {zh ? '关闭子窗口' : 'Close secondary window'}
+                        </option>
+                      </select>
+                    </Field>
+                    <p className="qg-field-hint">
+                      {zh
+                        ? '所有窗口共享变量和流程。打开或聚焦已存在的窗口会复用原窗口；关闭子窗口不会停止共享流程。'
+                        : 'Windows share variables and flows. Open/focus reuses the existing window. Closing a secondary window keeps shared flows running.'}
+                    </p>
+                  </>
                 )}
                 {selectedNode.kind === 'connection' && (
                   <>

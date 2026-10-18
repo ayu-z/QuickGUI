@@ -1,13 +1,19 @@
-import { useEffect, useMemo, useSyncExternalStore } from 'react';
-import type { Json, Project, Widget } from '../core/types';
+import { useEffect, useMemo } from 'react';
+import type { Project } from '../core/types';
 import { RuntimeController } from './engine';
-import { Scene } from './WidgetRenderer';
+import { RuntimeWindows } from './RuntimeWindows';
 import './runtime.css';
 
-export function RuntimeApp({ project, engine }: { project: Project; engine?: RuntimeController }) {
+export function RuntimeApp({
+  project,
+  engine,
+  windowId,
+}: {
+  project: Project;
+  engine?: RuntimeController;
+  windowId?: string;
+}) {
   const owned = useMemo(() => engine ?? new RuntimeController(project), [engine]);
-  const snapshot = useSyncExternalStore(owned.subscribe, owned.getSnapshot);
-  const activeProject = owned.getProject();
   useEffect(() => {
     owned.applyProject(project);
   }, [project, owned]);
@@ -17,21 +23,9 @@ export function RuntimeApp({ project, engine }: { project: Project; engine?: Run
     },
     [engine, owned],
   );
-  const onEvent = (widget: Widget, event: string, payload: Json) => {
-    try {
-      const binding = widget.bindings.value;
-      if (event === 'change' && binding?.mode === 'twoWay')
-        owned.setVariable(binding.variable, payload);
-      const flow = widget.events[event];
-      if (flow)
-        void owned.runFlow(flow, payload).catch((error) => owned.log(String(error), 'error'));
-    } catch (error) {
-      owned.log(String(error), 'error');
-    }
-  };
   return (
     <div className="qg-runtime-app">
-      <Scene project={activeProject} values={snapshot.values} onEvent={onEvent} />
+      <RuntimeWindows project={project} engine={owned} windowId={windowId} />
     </div>
   );
 }

@@ -1,5 +1,46 @@
 # 变动日志
 
+## 2026-10-18 — 同一 HMI 工程多窗口
+
+### 目的与行为
+
+- 支持固定主窗口与最多 31 个附加窗口：新增、切换、重命名、删除确认、独立布局/属性/图标、启动开关、撤销重做及活动窗口恢复。
+- 控件增删改、复制、模块实例与变量/流程引用检查覆盖对应窗口；窗口切换保留 CODE 草稿，含未应用草稿或流程引用的窗口不能直接删除。
+- 新增“窗口操作”流程节点，支持打开、聚焦、关闭附加窗口。窗口共享变量与业务流程，重复打开复用窗口，关闭附加窗口保留共享值与调度。
+- 浏览器使用可拖动的多窗口预览工作区；桌面及独立运行应用使用原生窗口。用户预览打开当前窗口，后续热更新保留人工关闭状态。
+- 原生子窗口只连接 preview 运行会话，共享 Engine、定时源和 SQLite，保留各自请求代际；全组关闭取消待处理任务，过期同步票据不能重开窗口。位置按工程及窗口分别记录，普通热更新不抢焦点。
+- v1 工程原样读写；使用附加窗口或窗口节点时升级为 v2。v2 保留主窗口字段，新增 windows 数组；旧设计器拒绝版本号，未知字段和无效引用不会静默丢弃。原始工程、CLI/原生源码导出均保留完整窗口定义。
+- 浏览器重复应用同一工程修订号不会取消在途启动流程或重复启动；子原生视图不重复编译、初始化或停止共享会话。
+
+### 源文件操作
+
+- 新增 `src/core/windows.ts`：窗口枚举、访问及仅用于渲染的投影。
+- 新增 `src/panels/WindowManager.tsx`：窗口管理列表及创建/重命名/删除弹窗。
+- 新增 `src/runtime/RuntimeWindows.tsx`、`src/runtime/windowState.ts`：浏览器窗口工作区及共享可见状态。
+- 新增 `crates/quickgui-engine/src/windows.rs`：原生窗口格式、引用与动作校验、状态迁移。
+- 新增 `src-tauri/src/windows.rs`：原生窗口路由、同步计划、视图代际及分窗口位置存储。
+- 新增 `tests/project-windows.test.ts`、`tests/project-windows-store.test.ts`、`tests/multi-window-runtime.test.ts`、`tests/native-window-controller.test.ts`、`tests/e2e/multi-window.spec.ts`：格式、编辑恢复、共享运行状态、子视图连接与真实浏览器交互回归。
+- 修改 `src/core/types.ts`、`src/core/validation.ts`、`src/core/archive.ts`、`tests/project-compatibility.test.ts`：v1/v2 契约、所有窗口内容校验及归档版本说明。
+- 修改 `src/core/store.ts`、`src/App.tsx`、`src/styles.css`：当前窗口编辑状态、管理入口、预览和跨窗口引用保护。
+- 修改 `src/designer/FlowEditor.tsx`：窗口节点配置与目标选择。
+- 修改 `src/runtime/engine.ts`、`src/runtime/controller.ts`、`src/runtime/RuntimeApp.tsx`、`src/runtime/runtime.css`、`src/native/bridge.ts`：窗口动作、共享数据和原生子视图连接。
+- 修改 `crates/quickgui-engine/src/types.rs`、`crates/quickgui-engine/src/lib.rs`：窗口模型、快照、流程动作与状态回归。
+- 修改 `src-tauri/src/lib.rs`、`src-tauri/src/history.rs`、`src-tauri/src/close_project_tests.rs`、`src-tauri/capabilities/main.json`：组生命周期、共享历史、独立视图代际及窗口权限。
+- 修改 `scripts/export-project.mjs`、`src-tauri/src/source_export.rs`、`templates/runtime/src/main.tsx`：完整多窗口源码交付及独立运行入口。
+- 修改 `templates/runtime/package-lock.json`：同步现有 esbuild `^0.28.2` 声明，修复独立导出工程的 `npm ci` 锁文件不一致错误，并去重相同版本的间接包；未新增依赖或改动依赖声明。
+- 修改 `README.md`、`docs/architecture.md`、`docs/project-compatibility.md`、`docs/verification.md`、`CHANGELOG.md`：使用方式、共享会话、兼容性与验证说明。
+- 无源文件删除或重命名；v2 工程需本次多窗口能力对应的设计器/运行代码。
+
+### 验证与限制
+
+- `npm run check`：TypeScript 检查与 129 项单元测试通过。初次全量检查中旧重复 ID 错误消息断言失败，保留 Duplicate 标识后复核通过。
+- `npm run build`、`npm run test:e2e`：生产构建及 21 项真实浏览器测试通过，覆盖窗口创建/切换/属性/模块、草稿保护、导出重开、共享值、标题拖动、真实控件事件经窗口流程节点开关子窗口。
+- `cargo test --workspace -- --include-ignored`：34 项引擎、20 项原生宿主及 14 项 runner/C 测试全部通过，包含真实 C 关闭取消。子任务环境曾禁止 localhost bind，已在当前环境复核全部协议回环通过。
+- 独立多窗口工程实际重新导出后 `npm ci`、`npm run build`、`cargo check --workspace` 通过。第一次 `npm ci` 因既有模板锁文件与 esbuild 声明不一致失败，同步模板锁后重新导出、安装和构建成功；本次安装审计为 0 个已知漏洞，沿用 npm 的安装脚本策略，未扩大脚本授权。
+- 实际运行独立前端生产构建，验证子窗口双向输入同步主窗口、流程打开窗口、关闭重开保留共享值，无页面异常。
+- `npx tauri build --debug --bundles app` 通过，更新 `target/debug/bundle/macos/QuickGUI.app`（63.38 MiB）。保留既有 Monaco 大包及混合导入构建提示。
+- Prettier、Rust 格式检查与 Git 差异检查通过。截图已目视核验浏览器多窗口布局；原生系统多窗口自动点击、Windows/Intel Mac 实机、签名公证与耐久验收未执行。独立源码已做前端构建和原生编译检查，本轮未另打独立应用安装包。
+
 ## 2026-10-18 — 提交身份使用本机 Git 配置
 
 - 按用户要求，将已有 3 条本地提交的作者及提交者从 `Codex <codex@localhost>` 更新为 `ayu-z <yuzuihong@live.com>`。本机未设置全局 name/email，本次使用当前仓库已有的明确配置，未改写任何 Git 身份配置；后续提交直接使用 Git 配置。

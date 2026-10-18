@@ -40,8 +40,8 @@ function freezeDeep(value: unknown): void {
   Object.freeze(value);
 }
 
-describe('schemaVersion 1 compatibility without silent data loss', () => {
-  it.each([2, 99, '1', null])(
+describe('project compatibility without silent data loss', () => {
+  it.each([3, 99, '1', '2', null])(
     'rejects unsupported schemaVersion %s before interpreting the project',
     (schemaVersion) => {
       const input = { ...fixture(), schemaVersion, futureSubsystem: { mustNotDisappear: true } };

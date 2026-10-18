@@ -2,7 +2,7 @@ use super::*;
 use serde_json::json;
 use std::time::Duration;
 
-fn project(id: &str) -> Project {
+pub(super) fn project(id: &str) -> Project {
     serde_json::from_value(json!({
         "schemaVersion":1,"id":id,"name":"Close test","revision":1,"locale":"en","theme":{},"publish":{},
         "window":{"title":"Close test","width":800,"height":600,"minWidth":200,"minHeight":200,"resizable":true,"alwaysOnTop":false,"fullscreen":false,"maximized":false,"center":true,"rememberPosition":false,"background":"#000000","contentRadius":0,"cornerPreference":"system"},
@@ -10,7 +10,7 @@ fn project(id: &str) -> Project {
     })).unwrap()
 }
 
-fn install_session(
+pub(super) fn install_session(
     state: &HostState,
     label: &str,
     project: Project,
@@ -109,6 +109,38 @@ async fn close_invalidates_a_start_waiting_for_the_lifecycle_lock() {
     assert!(queued.await.unwrap().is_err());
     assert_eq!(closing.await.unwrap().unwrap().generation, 1);
     assert!(state.sessions.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn project_close_invalidates_every_hmi_child_and_cancels_the_shared_engine_once() {
+    let state = HostState::default();
+    let primary = install_session(&state, "preview", project("multi"), None);
+    for label in ["preview", "preview__one", "preview__two"] {
+        state
+            .projects
+            .lock()
+            .unwrap()
+            .insert(label.into(), ProjectWork::default());
+    }
+    let work = begin_work(&state, "preview__two", Some(0)).unwrap();
+    let child_token = work.cancellation.clone();
+    let task = tokio::spawn(async move {
+        work.cancellation.cancelled().await;
+        drop(work);
+    });
+    *state.pending_window_open.lock().unwrap() = Some(("multi".into(), 1, "one".into()));
+    let result = close_project_state(&state, "preview".into(), || Ok(()))
+        .await
+        .unwrap();
+    task.await.unwrap();
+    assert_eq!(result.generation, 1);
+    assert!(primary.cancellation.is_cancelled() && child_token.is_cancelled());
+    assert!(state.sessions.lock().unwrap().is_empty());
+    assert!(state.pending_window_open.lock().unwrap().is_none());
+    for label in ["preview", "preview__one", "preview__two"] {
+        assert!(project_work(&state, label, Some(0), true).is_err());
+        assert!(state.projects.lock().unwrap().get(label).unwrap().closed);
+    }
 }
 
 #[tokio::test]

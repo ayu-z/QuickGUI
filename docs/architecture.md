@@ -8,7 +8,7 @@
 
 ## 单一工程模型
 
-`Project` schemaVersion=1 是唯一源模型，所有可引用对象具有稳定 ID。序列化的公开类型在 `src/core/types.ts`；输入校验在 `src/core/validation.ts`。
+`Project` 是唯一源模型，支持单窗口 schemaVersion=1 和多窗口 schemaVersion=2，所有可引用对象具有稳定 ID。序列化的公开类型在 `src/core/types.ts`；输入校验在 `src/core/validation.ts`。两种格式保留 `window/widgets` 作为固定主窗口，v2 的 `windows` 数组保存附加窗口的名称、配置、控件与启动开关。所有窗口共享工程级变量、流程和资源；只在渲染层投影当前窗口，运行与保存始终接收完整工程。
 
 局部 CODE 仅接受 `props/style/states`，不能重写对象 ID、类型或树。无效草稿按控件 ID 保留，不进入预览版本。画布、表单和合法 CODE 更新通过同一个事务历史支持撤销/重做。缓存、构建目录和运行记录不作为工程源文件。
 
@@ -26,18 +26,19 @@
 
 节点配置：
 
-| 节点       | 配置                                            |
-| ---------- | ----------------------------------------------- |
-| event      | trigger=manual/startup/interval，intervalMs     |
-| read/write | variable；write 可选 value，否则透传输入        |
-| math       | operation=add/subtract/multiply/divide，operand |
-| condition  | operator=gt/gte/lt/lte/eq/neq，value            |
-| delay      | ms                                              |
-| log        | message                                         |
-| script     | scriptId                                        |
-| http       | url、method、body                               |
-| connection | connectionId                                    |
-| emit       | event                                           |
+| 节点       | 配置                                             |
+| ---------- | ------------------------------------------------ |
+| event      | trigger=manual/startup/interval，intervalMs      |
+| read/write | variable；write 可选 value，否则透传输入         |
+| math       | operation=add/subtract/multiply/divide，operand  |
+| condition  | operator=gt/gte/lt/lte/eq/neq，value             |
+| delay      | ms                                               |
+| log        | message                                          |
+| script     | scriptId                                         |
+| http       | url、method、body                                |
+| connection | connectionId                                     |
+| emit       | event                                            |
+| window     | action=open/close/focus，windowId；不能关闭 main |
 
 定时器由原生会话管理；热更新取消旧调度，忙时跳过采样 tick，防止积压。显式命令不会通过丢弃策略伪装成功。事件节点按 ID 触发，定时源不会顺带触发同图其他事件入口。
 
@@ -51,7 +52,9 @@ C ABI v2 支持 JSON、字符串和数字输入/输出；变量写集与模块�
 
 ## 原生宿主和导出
 
-设计器和预览窗口分别持有运行会话，窗口配置只作用于预览/生成应用。系统不支持的窗口能力返回诊断。图标由工程资产引用，应用和桌面快捷方式图标由发布构建生成。
+设计器和预览组分别持有运行会话。每个预览/独立应用组由 `preview` 主窗口持有 Engine、调度与 SQLite；附加窗口只连接已有会话、提交命令与订阅快照，不创建重复的启动/定时源。窗口配置只作用于预览/生成应用。系统不支持的窗口能力返回诊断。图标由工程资产引用，应用和桌面快捷方式图标由发布构建生成。
+
+运行快照的 `windowState` 保存打开窗口 ID、聚焦窗口及独立修订号，普通变量变化不改变窗口修订号。热更新保留已有窗口可见状态，新增窗口按 `openOnStart` 初始化、移除已删除窗口。每个物理窗口保留独立请求代际，业务调用再路由到所属会话；子窗口关闭不取消共享引擎，全组关闭使窗口同步票据与在途请求失效，阻止迟到任务重开窗口。
 
 源码导出包含运行组件、Engine、C SDK、原生宿主及必要构建入口；JSON作为数据文件导入，不插入代码字符串。目标目录必须为空，避免覆盖已有开发工程。运行器不会携带设计器的 Monaco/画布编辑模块。
 
@@ -59,6 +62,6 @@ C ABI v2 支持 JSON、字符串和数字输入/输出；变量写集与模块�
 
 已实现的 React 组件包保留 TSX/CSS 源码、属性默认值、事件声明和编译产物；导入先解析验证，信任确认后才运行。ShadowRoot 只做样式隔离。源码导出提取组件文件并提供 esbuild 重建。
 
-SQLite 按工程及运行窗口隔离保存持久变量、变化数值采样、日志和报警。写入使用有界后台队列与事务，查询前刷新；持久值按稳定ID与类型恢复。报警确认和恢复正常是两个独立动作。
+SQLite 按工程及运行会话组隔离保存持久变量、变化数值采样、日志和报警；同组主/子窗口共享数据。写入使用有界后台队列与事务，查询前刷新；持久值按稳定ID与类型恢复。报警确认和恢复正常是两个独立动作。
 
 工业协议包、复杂可重入子流程、完整 SCADA 报表与冗余、角色权限以及远程多用户协作通过后续独立模块扩展。

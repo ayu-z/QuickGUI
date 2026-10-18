@@ -84,26 +84,44 @@ export const testConnection = (connection: Connection) =>
   invokeProject<ConnectionTestResult>('test_connection', { connection });
 export const runtimeStart = (project: Project) =>
   invokeProject<RuntimeSnapshot>('runtime_start', { project });
+export const attachRuntime = () => invokeProject<RuntimeSnapshot>('runtime_attach');
+export const windowAction = (action: 'open' | 'close' | 'focus', windowId: string) =>
+  invokeProject<RuntimeSnapshot>('runtime_window_action', { action, windowId });
 export const runFlow = (flowId: string, input: Json = null) =>
   invokeProject<RuntimeSnapshot>('runtime_run_flow', { flowId, input });
 export const setVariable = (name: string, value: Json) =>
   invokeProject<RuntimeSnapshot>('runtime_set_variable', { name, value });
 export const snapshot = () => invoke<RuntimeSnapshot>('runtime_snapshot');
 export const stop = () => invokeProject<RuntimeSnapshot>('runtime_stop');
-export const openPreview = (project: Project) =>
-  invokeProject<{ warnings: string[] }>('open_preview', { project });
+export const openPreview = (project: Project, windowId?: string) =>
+  invokeProject<{ warnings: string[] }>('open_preview', { project, windowId });
 export const closePreview = () => invoke<void>('close_preview');
 export const onPreviewClosed = (callback: () => void) => listen('preview-closed', callback);
 export const getPreviewProject = () => invoke<Project>('get_preview_project');
 export const applyWindow = (config: WindowConfig) =>
-  invoke<{ warnings: string[] }>('apply_window', { config, preview: true });
+  invoke<{ warnings: string[] }>('apply_window', { config });
 export const saveProject = (project: Project, path?: string) =>
   invoke<string | null>('save_project', { project, path });
 export const loadProject = (path?: string) => invoke<Project | null>('load_project', { path });
 export const exportSource = (project: Project, outputDir?: string) =>
   invoke<string | null>('export_source', { project, outputDir });
-export const onProjectUpdated = (callback: (project: Project) => void) =>
-  listen<Project>('project-updated', (event) => callback(event.payload));
+export const onProjectUpdated = async (callback: (project: Project) => void) => {
+  await currentGeneration();
+  return listen<Project | { project: Project; projectGeneration: number }>(
+    'project-updated',
+    (event) => {
+      if (closing) return;
+      if (
+        !('schemaVersion' in event.payload) &&
+        'projectGeneration' in event.payload &&
+        'project' in event.payload
+      ) {
+        if (event.payload.projectGeneration !== observedGeneration) return;
+        callback(event.payload.project as Project);
+      } else callback(event.payload as Project);
+    },
+  );
+};
 export const onRuntimeSnapshot = async (callback: (value: RuntimeSnapshot) => void) => {
   const epoch = bridgeEpoch;
   await currentGeneration();
@@ -163,8 +181,9 @@ export interface AlarmRecord {
   acknowledged: boolean;
 }
 export const queryHistory = (variableId: string, limit = 1000) =>
-  invoke<HistorySample[]>('query_history', { variableId, limit });
-export const queryAlarms = (limit = 1000) => invoke<AlarmRecord[]>('query_alarms', { limit });
-export const ackAlarm = (id: number) => invoke<void>('ack_alarm', { id });
+  invokeProject<HistorySample[]>('query_history', { variableId, limit });
+export const queryAlarms = (limit = 1000) =>
+  invokeProject<AlarmRecord[]>('query_alarms', { limit });
+export const ackAlarm = (id: number) => invokeProject<void>('ack_alarm', { id });
 export const onStorageError = (callback: (error: string) => void) =>
   listen<string>('storage-error', (event) => callback(event.payload));

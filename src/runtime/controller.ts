@@ -28,7 +28,10 @@ export class NativeRuntimeController extends RuntimeController {
       logs: this.updateError ? [...snapshot.logs, this.updateError] : snapshot.logs,
     });
   };
-  constructor(project: Project) {
+  constructor(
+    project: Project,
+    private readonly options: { attachOnly?: boolean } = {},
+  ) {
     super(project, native.executeC);
     this.revision = project.revision;
     this.requestedProjectId = project.id;
@@ -45,7 +48,9 @@ export class NativeRuntimeController extends RuntimeController {
         this.unlisten = unlisten;
         this.storageUnlisten = storageUnlisten;
         if (this.closing) return;
-        this.accept(await native.runtimeStart(project));
+        this.accept(
+          await (this.options.attachOnly ? native.attachRuntime() : native.runtimeStart(project)),
+        );
       })
       .catch((error) => this.log(String(error), 'error'));
   }
@@ -59,9 +64,26 @@ export class NativeRuntimeController extends RuntimeController {
   };
   override applyProject = (project: Project) => {
     if (this.disposed || this.closing) return;
+    if (
+      this.options.attachOnly &&
+      project.id === this.project.id &&
+      project.revision < this.project.revision
+    )
+      return;
     if (this.revision === project.revision && this.requestedProjectId === project.id) return;
     this.revision = project.revision;
     this.requestedProjectId = project.id;
+    if (this.options.attachOnly) {
+      // Only the owner applies/compiles project revisions. Child views receive
+      // already committed documents and attach to the existing engine state.
+      this.project = project;
+      this.ready = this.ready
+        .then(async () => {
+          if (!this.disposed && !this.closing) this.accept(await native.attachRuntime());
+        })
+        .catch((error) => this.log(String(error), 'error'));
+      return;
+    }
     this.ready = this.ready
       .then(async () => {
         if (this.disposed || this.closing) return;
@@ -116,6 +138,15 @@ export class NativeRuntimeController extends RuntimeController {
       throw error;
     }
   };
+  override windowAction = (action: 'open' | 'close' | 'focus', windowId: string) => {
+    if (this.disposed || this.closing) return;
+    void this.ready
+      .then(async () => {
+        if (!this.disposed && !this.closing)
+          this.accept(await native.windowAction(action, windowId));
+      })
+      .catch((error) => this.log(String(error), 'error'));
+  };
   override stop = () => {
     void native
       .stop()
@@ -127,7 +158,10 @@ export class NativeRuntimeController extends RuntimeController {
     const project = this.project;
     this.ready = this.ready
       .then(async () => {
-        if (!this.disposed && !this.closing) this.accept(await native.runtimeStart(project));
+        if (!this.disposed && !this.closing)
+          this.accept(
+            await (this.options.attachOnly ? native.attachRuntime() : native.runtimeStart(project)),
+          );
       })
       .catch((error) => this.log(String(error), 'error'));
   };
@@ -150,6 +184,17 @@ export class NativeRuntimeController extends RuntimeController {
     }
   }
 }
-export function createRuntime(project: Project): RuntimeController {
-  return native.isDesktop() ? new NativeRuntimeController(project) : new RuntimeController(project);
+export function createRuntime(
+  project: Project,
+  options: { attachOnly?: boolean } = {},
+): RuntimeController {
+  const windowId =
+    typeof location === 'undefined'
+      ? 'main'
+      : (new URLSearchParams(location.search).get('windowId') ?? 'main');
+  return native.isDesktop()
+    ? new NativeRuntimeController(project, {
+        attachOnly: options.attachOnly ?? windowId !== 'main',
+      })
+    : new RuntimeController(project);
 }

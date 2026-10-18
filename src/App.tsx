@@ -65,7 +65,8 @@ import { CodeEditor } from './designer/CodeEditor';
 import { RuntimeApp } from './runtime/RuntimeApp';
 import { createRuntime } from './runtime/controller';
 import { RuntimeController } from './runtime/engine';
-import { Scene } from './runtime/WidgetRenderer';
+import { RuntimeWindows } from './runtime/RuntimeWindows';
+import { getProjectWindow, listProjectWindows, projectForWindow } from './core/windows';
 import * as native from './native/bridge';
 import './designer/designer.css';
 import { ConnectionsPanel } from './panels/ConnectionsPanel';
@@ -74,8 +75,10 @@ import { HistoryPanel } from './panels/HistoryPanel';
 import { importComponentPackage, exportComponentPackage } from './core/componentPackage';
 import { WelcomeScreen } from './panels/WelcomeScreen';
 import { ProjectNameDialog } from './panels/ProjectNameDialog';
+import { WindowManager } from './panels/WindowManager';
 
 function PreviewWindow() {
+  const windowId = new URLSearchParams(location.search).get('windowId') ?? 'main';
   const [project, setProject] = useState<Project>();
   const [error, setError] = useState('');
   useEffect(() => {
@@ -105,11 +108,11 @@ function PreviewWindow() {
   }, []);
   const [engine, setEngine] = useState<RuntimeController>();
   useEffect(() => {
-    if (project && !engine) setEngine(createRuntime(project));
-  }, [project, engine]);
+    if (project && !engine) setEngine(createRuntime(project, { attachOnly: windowId !== 'main' }));
+  }, [project, engine, windowId]);
   useEffect(() => () => engine?.dispose(), [engine]);
   return project && engine ? (
-    <RuntimeApp project={project} engine={engine} />
+    <RuntimeApp project={project} engine={engine} windowId={windowId} />
   ) : (
     <div className="loading-screen">{error || 'Loading preview…'}</div>
   );
@@ -142,7 +145,7 @@ function ProjectWorkspace({
   store: EditorStore;
   state: EditorState & { project: Project };
 }) {
-  const { project, section, selectedId, drafts } = state;
+  const { project, section, selectedId, drafts, activeWindowId } = state;
   const [engine] = useState(() => createRuntime(project));
   const mounted = useRef(true);
   useEffect(() => {
@@ -182,25 +185,43 @@ function ProjectWorkspace({
   const t = translations[project.locale],
     zh = project.locale === 'zh-CN';
   const activeModule = project.modules.find((m) => m.id === moduleId);
+  const activeWindow = getProjectWindow(project, activeWindowId);
+  const windowProject = projectForWindow(project, activeWindowId);
   const designProject = activeModule
     ? {
-        ...project,
+        ...windowProject,
         widgets: activeModule.widgets,
-        window: { ...project.window, width: activeModule.width, height: activeModule.height },
+        window: {
+          ...windowProject.window,
+          title: activeModule.name,
+          width: activeModule.width,
+          height: activeModule.height,
+        },
       }
-    : project;
+    : windowProject;
+  useEffect(() => {
+    setModuleId(null);
+    setFilter('');
+  }, [activeWindowId]);
+  useEffect(() => {
+    if (moduleId && !activeModule) setModuleId(null);
+  }, [moduleId, activeModule]);
   const selected = designProject.widgets.find((w) => w.id === selectedId);
+  const inspectActiveWindow = () => {
+    setModuleId(null);
+    store.inspectWindow();
+  };
   const notify = (text: string, error = false) => {
     if (!mounted.current) return;
     setToast({ text, error });
   };
-  const enqueuePreview = (next: Project) => {
+  const enqueuePreview = (next: Project, windowId?: string) => {
     const generation = previewGeneration.current;
     const task = previewQueue.current
       .catch(() => {})
       .then(async () => {
         if (!mounted.current || state.closing || generation !== previewGeneration.current) return;
-        const result = await native.openPreview(next);
+        const result = await native.openPreview(next, windowId);
         if (result.warnings.length) notify(result.warnings.join('\n'));
       });
     previewQueue.current = task;
@@ -365,7 +386,7 @@ function ProjectWorkspace({
     widget.props = Object.fromEntries(
       Object.entries(module.exposedProps).map(([key, value]) => [key, value.default]),
     );
-    store.update((p) => p.widgets.push(widget));
+    store.update((p) => getProjectWindow(p, activeWindowId).widgets.push(widget));
     setModuleId(null);
     store.select(widget.id);
     store.setSection('design');
@@ -498,7 +519,10 @@ function ProjectWorkspace({
     const generation = previewGeneration.current;
     try {
       if (native.isDesktop()) {
-        await enqueuePreview(project);
+        await enqueuePreview(project, activeWindowId);
+      } else {
+        engine.applyProject(project);
+        engine.windowAction('open', activeWindowId);
       }
       if (generation === previewGeneration.current) setPreview(true);
     } catch (e) {
@@ -509,16 +533,6 @@ function ProjectWorkspace({
     if (!snapshot.running) engine.start();
     const flow = project.flows[0];
     if (flow) void engine.runFlow(flow.id).catch((e) => notify(errorText(e), true));
-  };
-  const onRuntimeEvent = (widget: Widget, event: string, payload: Json) => {
-    try {
-      if (event === 'change' && widget.bindings.value?.mode === 'twoWay')
-        engine.setVariable(widget.bindings.value.variable, payload);
-      const flow = widget.events[event];
-      if (flow) void engine.runFlow(flow, payload).catch((e) => notify(errorText(e), true));
-    } catch (e) {
-      notify(errorText(e), true);
-    }
   };
   const tabs: [Section, typeof LayoutDashboard, string][] = [
     ['design', LayoutDashboard, t.design],
@@ -693,7 +707,7 @@ function ProjectWorkspace({
           <button
             className={`icon-button ${state.inspector === 'window' ? 'selected' : ''}`}
             title={t.window}
-            onClick={store.inspectWindow}
+            onClick={inspectActiveWindow}
           >
             <Monitor size={16} />
           </button>
@@ -702,6 +716,23 @@ function ProjectWorkspace({
       <main className="workspace-body">
         {section === 'design' && (
           <aside className="left-panel">
+            <WindowManager
+              project={project}
+              activeWindowId={activeWindowId}
+              locale={project.locale}
+              onSelect={(id) => {
+                setModuleId(null);
+                setFilter('');
+                store.setActiveWindow(id);
+              }}
+              onCreate={(name) => {
+                setModuleId(null);
+                store.addWindow(name);
+              }}
+              onRename={store.renameWindow}
+              onDelete={store.deleteWindow}
+              onStartup={store.setWindowOpenOnStart}
+            />
             <div className="left-tabs">
               {(['layers', 'library', 'modules', 'assets'] as const).map((tab) => (
                 <button
@@ -725,10 +756,10 @@ function ProjectWorkspace({
                 </div>
                 <button
                   className={`window-row ${state.inspector === 'window' ? 'active' : ''}`}
-                  onClick={store.inspectWindow}
+                  onClick={inspectActiveWindow}
                 >
                   <Monitor size={15} />
-                  <span>{project.window.title}</span>
+                  <span>{activeModule ? activeModule.name : activeWindow.name}</span>
                   <ChevronDown size={12} />
                 </button>
                 <div className="layer-list">
@@ -868,7 +899,7 @@ function ProjectWorkspace({
                 <div>
                   <span>{zh ? '画布' : 'CANVAS'}</span>
                   <ChevronRight size={12} />
-                  <strong>{activeModule ? activeModule.name : project.window.title}</strong>
+                  <strong>{activeModule ? activeModule.name : activeWindow.name}</strong>
                   {activeModule && (
                     <button
                       className="module-exit"
@@ -886,6 +917,7 @@ function ProjectWorkspace({
                 </span>
               </div>
               <CanvasEditor
+                key={`${activeWindowId}:${activeModule?.id ?? 'window'}`}
                 project={designProject}
                 selectedId={selectedId}
                 onSelect={store.select}
@@ -900,8 +932,15 @@ function ProjectWorkspace({
               onChange={(flows) =>
                 store.update((p) => {
                   p.flows = flows;
+                  if (flows.some((flow) => flow.nodes.some((node) => node.kind === 'window'))) {
+                    p.schemaVersion = 2;
+                    p.windows ??= [];
+                  }
                   const ids = new Set(flows.map((f) => f.id));
-                  for (const w of [...p.widgets, ...p.modules.flatMap((m) => m.widgets)])
+                  for (const w of [
+                    ...listProjectWindows(p).flatMap((window) => window.widgets),
+                    ...p.modules.flatMap((m) => m.widgets),
+                  ])
                     w.events = Object.fromEntries(
                       Object.entries(w.events).filter(([, id]) => ids.has(id)),
                     );
@@ -984,12 +1023,9 @@ function ProjectWorkspace({
           <aside className="right-panel">
             {state.inspector === 'window' ? (
               <WindowInspector
-                project={project}
-                onWindowChange={(patch) =>
-                  store.update((p) => {
-                    Object.assign(p.window, patch);
-                  })
-                }
+                key={activeWindowId}
+                project={windowProject}
+                onWindowChange={(patch) => store.updateWindow(activeWindowId, patch)}
                 onPublishChange={(patch) =>
                   store.update((p) => {
                     Object.assign(p.publish, patch);
@@ -1033,7 +1069,7 @@ function ProjectWorkspace({
                     ? '在画布或图层中选择控件，使用 UI / CODE 调整属性和样式。'
                     : 'Select a widget in the canvas or layers. Edit its properties with UI / CODE.'}
                 </p>
-                <button className="button" onClick={store.inspectWindow}>
+                <button className="button" onClick={inspectActiveWindow}>
                   <Monitor size={14} />
                   {t.window}
                 </button>
@@ -1053,7 +1089,8 @@ function ProjectWorkspace({
         </button>
         <div className="status-spacer" />
         <span>
-          {project.widgets.length} {zh ? '个控件' : 'widgets'}
+          {activeWindow.widgets.length} {zh ? '个控件' : 'widgets'} ·{' '}
+          {listProjectWindows(project).length} {zh ? '个窗口' : 'windows'}
         </span>
         {Object.keys(drafts).length > 0 && (
           <span className="draft-warning">
@@ -1249,11 +1286,15 @@ function ProjectWorkspace({
       )}
       {preview && !native.isDesktop() && (
         <div className="modal-backdrop">
-          <div className="preview-modal">
+          <div
+            className={`preview-modal ${(project.windows?.length ?? 0) > 0 ? 'preview-workspace-modal' : ''}`}
+          >
             <header>
               <div>
                 <Monitor size={16} />
-                <strong>{project.window.title}</strong>
+                <strong>
+                  {(project.windows?.length ?? 0) > 0 ? project.name : project.window.title}
+                </strong>
                 <span className="live-pill">LIVE</span>
               </div>
               <button
@@ -1265,12 +1306,7 @@ function ProjectWorkspace({
               </button>
             </header>
             <div className="preview-scroll">
-              <Scene
-                project={project}
-                values={snapshot.values}
-                interactive
-                onEvent={onRuntimeEvent}
-              />
+              <RuntimeWindows project={project} engine={engine} />
             </div>
             <footer>
               <span>
@@ -1279,7 +1315,9 @@ function ProjectWorkspace({
                   : 'Shared renderer and bindings · C execution needs desktop'}
               </span>
               <span>
-                {project.window.width} × {project.window.height}
+                {(project.windows?.length ?? 0) > 0
+                  ? `${listProjectWindows(project).length} ${zh ? '个窗口 · 共享运行状态' : 'windows · shared runtime'}`
+                  : `${project.window.width} × ${project.window.height}`}
               </span>
             </footer>
           </div>
@@ -1772,8 +1810,13 @@ function DataPanel({
                     title="Delete"
                     onClick={() => {
                       if (
-                        project.widgets.some((w) =>
-                          Object.values(w.bindings).some((b) => b.variable === v.id),
+                        [
+                          ...listProjectWindows(project).flatMap((window) => window.widgets),
+                          ...project.modules.flatMap((module) => module.widgets),
+                        ].some((w) =>
+                          Object.values(w.bindings).some(
+                            (b) => b.variable === v.id || b.variable === v.name,
+                          ),
                         ) ||
                         project.flows.some((f) => f.nodes.some((n) => n.config.variable === v.id))
                       )
