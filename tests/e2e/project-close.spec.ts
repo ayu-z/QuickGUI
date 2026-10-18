@@ -69,6 +69,10 @@ test('save and close downloads a project and does not silently create another pr
   await page.reload();
   await expect(page.getByTestId('no-project')).toBeVisible();
   await page.getByRole('button', { name: '新建工程', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: '新建工程', exact: true })
+    .getByRole('button', { name: '创建工程', exact: true })
+    .click();
   await expect(page.getByTestId('design-canvas')).toBeVisible();
   await expect(page.locator('.qg-design-widget')).toHaveCount(0);
   await expect(page.locator('.project-switch')).toContainText('未命名工程');

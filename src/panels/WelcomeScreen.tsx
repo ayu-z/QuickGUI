@@ -6,6 +6,7 @@ import { createEmptyProject, createProject } from '../core/project';
 import { importProject } from '../core/archive';
 import { errorText, validateProject } from '../core/validation';
 import * as native from '../native/bridge';
+import { ProjectNameDialog } from './ProjectNameDialog';
 
 export function WelcomeScreen({ store, state }: { store: EditorStore; state: EditorState }) {
   const locale =
@@ -14,6 +15,7 @@ export function WelcomeScreen({ store, state }: { store: EditorStore; state: Edi
   const zh = locale === 'zh-CN';
   const [error, setError] = useState('');
   const [pending, setPending] = useState<Project>();
+  const [creating, setCreating] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const mounted = useRef(true);
   useEffect(() => {
@@ -73,14 +75,7 @@ export function WelcomeScreen({ store, state }: { store: EditorStore; state: Edi
               : 'The project is closed. Source files and runtime history remain in their original locations.'}
           </p>
           <div className="welcome-actions">
-            <button
-              className="button primary"
-              onClick={() => {
-                const project = createEmptyProject(zh ? '未命名工程' : 'Untitled project');
-                project.locale = locale;
-                store.replaceProject(project);
-              }}
-            >
+            <button className="button primary" onClick={() => setCreating(true)}>
               <FilePlus2 size={16} />
               {zh ? '新建工程' : 'New project'}
             </button>
@@ -121,6 +116,19 @@ export function WelcomeScreen({ store, state }: { store: EditorStore; state: Edi
       <footer className="statusbar">
         <span>{zh ? '所有工程任务已停止' : 'Project tasks stopped'}</span>
       </footer>
+      {creating && (
+        <ProjectNameDialog
+          mode="create"
+          initialName={zh ? '未命名工程' : 'Untitled project'}
+          locale={locale}
+          onCancel={() => setCreating(false)}
+          onConfirm={(name) => {
+            const project = createEmptyProject(name);
+            project.locale = locale;
+            store.replaceProject(project);
+          }}
+        />
+      )}
       <input
         hidden
         ref={input}

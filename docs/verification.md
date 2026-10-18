@@ -37,3 +37,13 @@ TinyCC 多编译单元动态库的全局内部符号 `parse_flags` 与 Apple Hei
 - C功能验证曾出现1秒预算超时，单项未复现；测试预算增加后全量通过。专门的100ms超时和取消验证未改变，生产超时策略未改变。
 
 本轮 macOS 调试包已重新生成：`target/debug/bundle/macos/QuickGUI.app`（61.53 MiB），包含关闭工程和严格格式校验。
+
+## 工程命名增量验证（2026-10-18）
+
+- `npm run check`：67 项前端单测与类型检查通过；`npm run build` 通过。
+- `npm run test:e2e`：16 项浏览器测试通过，包含新建/重命名、空白和长名拒绝、首尾空格归一化、弹窗焦点循环及 Escape/Enter、导出文件名与 JSON、自动保存和关闭后恢复。
+- 重命名前后实际导出的工程 ID、窗口配置、发布配置和控件内容一致；新建替换仍经过安全关闭确认。
+- `cargo test --workspace`：39 项常规测试通过，11 项显式忽略的 C 测试本轮未执行；C 源码、SDK、编译和执行协议未变更。
+- 浏览器与原生建议文件名覆盖中文、路径符号、Windows 保留名称和 UTF-8 长度边界；完整工程名保存在工程内。
+- 命名弹窗截图已目视核验；原生保存对话框未执行系统 UI 点击测试。
+- `npx tauri build --debug --bundles app` 通过，macOS 调试包更新为 61.56 MiB，路径仍为 `target/debug/bundle/macos/QuickGUI.app`。

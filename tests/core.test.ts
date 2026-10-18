@@ -2,10 +2,25 @@ import { describe, expect, it } from 'vitest';
 import { strToU8, zipSync } from 'fflate';
 import { cloneSubtree, createProject, createWidget } from '../src/core/project';
 import { parseWidgetCode, validateProject, validateFlow } from '../src/core/validation';
-import { exportProject, importProject } from '../src/core/archive';
+import { exportProject, importProject, projectFilename } from '../src/core/archive';
 import { RuntimeController } from '../src/runtime/engine';
 
 describe('portable project contract', () => {
+  it('suggests portable filenames without changing the archived display name', () => {
+    const project = createProject();
+    project.name = '泵站/线路\\A:*?"<>|. ';
+    expect(projectFilename(project.name)).toBe('泵站_线路_A_______.qgui');
+    expect(importProject(exportProject(project)).name).toBe(project.name);
+    expect(projectFilename('  一号泵站 HMI  ')).toBe('一号泵站 HMI.qgui');
+    expect(projectFilename('con.backup')).toBe('_con.backup.qgui');
+    expect(projectFilename('LPT1')).toBe('_LPT1.qgui');
+    expect(projectFilename('COM¹')).toBe('_COM¹.qgui');
+    expect(projectFilename('COM10')).toBe('COM10.qgui');
+    expect(projectFilename('...')).toBe('project.qgui');
+    expect(projectFilename('   ')).toBe('project.qgui');
+    expect(projectFilename('泵'.repeat(200))).toBe(`${'泵'.repeat(66)}.qgui`);
+  });
+
   it('copies a container with its descendants and remaps identities without changing bindings', () => {
     const parent = createWidget('panel');
     const child = createWidget('text');

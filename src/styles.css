@@ -1477,3 +1477,51 @@ a {
   flex-wrap: wrap;
   margin-top: 20px;
 }
+.project-name-modal {
+  width: 520px;
+}
+.project-name-modal > header strong {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.project-name-modal > header strong svg {
+  color: var(--accent);
+}
+.project-name-modal form {
+  padding: 22px;
+}
+.project-name-field {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  margin-bottom: 9px;
+}
+.project-name-modal input {
+  width: 100%;
+  height: 38px;
+  padding: 9px 11px;
+  font-size: 13px;
+}
+.project-name-modal input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+.project-name-meta {
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  margin-top: 9px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.7;
+}
+.project-name-meta > span:last-child {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.project-name-modal .settings-actions {
+  margin-top: 17px;
+}
+.project-name-modal .form-error {
+  color: var(--danger);
+}

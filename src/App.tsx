@@ -8,6 +8,7 @@ import {
   Copy,
   Download,
   FilePlus2,
+  FilePenLine,
   FolderOpen,
   GitBranch,
   Image,
@@ -51,7 +52,7 @@ import {
   uid,
   widgetNames,
 } from './core/project';
-import { download, exportProject, importProject } from './core/archive';
+import { download, exportProject, importProject, projectFilename } from './core/archive';
 import { errorText, validateProject } from './core/validation';
 import { translations } from './core/i18n';
 import type { Json, Project, Widget, ComponentModule, Variable, Connection } from './core/types';
@@ -72,6 +73,7 @@ import { ProjectSettings } from './panels/ProjectSettings';
 import { HistoryPanel } from './panels/HistoryPanel';
 import { importComponentPackage, exportComponentPackage } from './core/componentPackage';
 import { WelcomeScreen } from './panels/WelcomeScreen';
+import { ProjectNameDialog } from './panels/ProjectNameDialog';
 
 function PreviewWindow() {
   const [project, setProject] = useState<Project>();
@@ -156,6 +158,7 @@ function ProjectWorkspace({
     () => localStorage.getItem('quickgui.theme') ?? 'dark',
   );
   const [settings, setSettings] = useState(false);
+  const [nameAction, setNameAction] = useState<'create' | 'rename' | null>(null);
   const [preview, setPreview] = useState(false),
     [exportMenu, setExportMenu] = useState(false),
     [projectMenu, setProjectMenu] = useState(false);
@@ -410,7 +413,7 @@ function ProjectWorkspace({
         const bytes = exportProject(project, drafts);
         if (native.isDesktop()) {
           if (!(await native.saveProject(project))) return;
-        } else download(`${project.name}.qgui`, bytes as BlobPart);
+        } else download(projectFilename(project.name), bytes as BlobPart);
       }
       store.beginClose(!saveToFile);
       previewGeneration.current++;
@@ -430,7 +433,7 @@ function ProjectWorkspace({
   const exportOriginal = () => {
     try {
       const bytes = exportProject(project, drafts);
-      download(`${project.name}.qgui`, bytes as BlobPart);
+      download(projectFilename(project.name), bytes as BlobPart);
       notify(zh ? '工程已导出' : 'Project exported');
     } catch (e) {
       notify(errorText(e), true);
@@ -543,13 +546,21 @@ function ProjectWorkspace({
             <div className="dropdown project-dropdown">
               <button
                 onClick={() => {
-                  const next = createEmptyProject(zh ? '未命名工程' : 'Untitled project');
-                  next.locale = project.locale;
-                  requestClose(next);
+                  setProjectMenu(false);
+                  setNameAction('create');
                 }}
               >
                 <FilePlus2 size={15} />
                 {t.new}
+              </button>
+              <button
+                onClick={() => {
+                  setProjectMenu(false);
+                  setNameAction('rename');
+                }}
+              >
+                <FilePenLine size={15} />
+                {zh ? '重命名工程' : 'Rename project'}
               </button>
               <button onClick={() => requestClose()}>
                 <X size={15} />
@@ -1139,6 +1150,30 @@ function ProjectWorkspace({
             </section>
           </div>
         </div>
+      )}
+      {nameAction && (
+        <ProjectNameDialog
+          mode={nameAction}
+          initialName={
+            nameAction === 'rename' ? project.name : zh ? '未命名工程' : 'Untitled project'
+          }
+          locale={project.locale}
+          onCancel={() => setNameAction(null)}
+          onConfirm={(name) => {
+            const action = nameAction;
+            setNameAction(null);
+            if (action === 'create') {
+              const next = createEmptyProject(name);
+              next.locale = project.locale;
+              requestClose(next);
+            } else if (name !== project.name) {
+              store.update((p) => {
+                p.name = name;
+              });
+              notify(zh ? '工程名称已保存' : 'Project name saved');
+            }
+          }}
+        />
       )}
       {settings && (
         <ProjectSettings

@@ -1,5 +1,37 @@
 # 变动日志
 
+## 2026-10-18 — 新建命名与工程重命名
+
+### 目的与行为
+
+- 欢迎页及工程菜单的新建入口先填写工程名称，再创建空工程；有当前工程时沿用保存/恢复副本/取消的安全关闭流程。
+- 增加“工程名称 → 重命名工程”，自动保存并支持撤销、导出和恢复。重命名保留工程 ID、窗口标题、发布应用名与控件内容。
+- 命名去除首尾空格，拒绝空名称、超过 200 字符或包含控制字符的输入；支持中英文、Enter 确认、Escape 取消与弹窗内 Tab 焦点循环。
+- 浏览器下载与原生保存对话框使用工程名作为建议文件名，处理路径符号、Windows 保留名称及 UTF-8 长度；仅调整建议文件名，工程内名称完整保留。
+
+### 源文件操作
+
+- 新增 `src/panels/ProjectNameDialog.tsx`：可复用的创建/重命名弹窗及输入、键盘校验。
+- 新增 `tests/e2e/project-name.spec.ts`：命名、取消、键盘、导出文件、自动保存与恢复回归。
+- 修改 `src/App.tsx`：工程菜单入口、新建安全关闭衔接、重命名及建议导出文件名。
+- 修改 `src/panels/WelcomeScreen.tsx`：欢迎页新建工程命名入口。
+- 修改 `src/styles.css`：命名弹窗布局与校验样式。
+- 修改 `src/core/archive.ts`、`tests/core.test.ts`：跨平台建议文件名及完整工程名称保留验证。
+- 修改 `src-tauri/src/lib.rs`、`src-tauri/src/project_file.rs`：原生保存建议名称、特殊字符与 UTF-8 边界测试。
+- 修改 `tests/e2e/project-close.spec.ts`：新建时增加命名确认步骤。
+- 修改 `README.md`、`docs/verification.md`、`CHANGELOG.md`：使用说明与本次验证记录。
+- 无源文件删除或重命名，无依赖、工程 schema 或迁移变更。
+
+### 验证与限制
+
+- `npm run check`：类型检查与 67 项单元测试通过。
+- `npm run build`：通过；保留已有 Monaco 大包及原生桥接静态/动态混合导入提示。
+- `npm run test:e2e`：16 项浏览器测试通过。实际下载并解压 `.qgui`，验证新名称及工程 ID/窗口/发布配置不变；截图检查命名弹窗布局。
+- `cargo test --workspace`：23 项引擎、12 项原生宿主、4 项 runner 常规测试通过；11 项显式忽略的真实 C/原生 C 测试本次未执行，本次未改 C、SDK 或执行协议。
+- `cargo fmt --all --check`、`git diff --check`：通过。
+- `npx tauri build --debug --bundles app`：通过，更新 `target/debug/bundle/macos/QuickGUI.app`（61.56 MiB）。
+- 原生保存文件名算法已测试，原生系统保存对话框未做实际点击验收；Windows/Intel Mac、签名公证及耐久验证仍未完成。
+
 ## 2026-10-18 — 关闭工程与兼容性保护
 
 ### 行为

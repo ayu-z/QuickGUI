@@ -998,14 +998,14 @@ async fn save_project(
     project: Value,
     path: Option<String>,
 ) -> Result<Option<String>, String> {
-    let _: Project = serde_json::from_value(project.clone()).map_err(|e| e.to_string())?;
+    let parsed: Project = serde_json::from_value(project.clone()).map_err(|e| e.to_string())?;
     let path = match path {
         Some(path) => PathBuf::from(path),
         None => match app
             .dialog()
             .file()
             .add_filter("QuickGUI project", &["qgui", "json"])
-            .set_file_name("project.qgui")
+            .set_file_name(project_file::suggested_filename(&parsed.name))
             .blocking_save_file()
         {
             Some(path) => path.into_path().map_err(|e| e.to_string())?,

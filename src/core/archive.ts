@@ -3,6 +3,21 @@ import type { Project } from './types';
 import { serializeProject } from './project';
 import { validateProject } from './validation';
 
+// Keep these portable filename rules in sync with native project_file::suggested_filename.
+export function projectFilename(name: string): string {
+  let stem = '';
+  let bytes = 0;
+  for (const character of name.trim().replace(/[<>:"/\\|?*\u0000-\u001f\u007f-\u009f]/g, '_')) {
+    const size = strToU8(character).length;
+    if (bytes + size > 200) break;
+    stem += character;
+    bytes += size;
+  }
+  stem = stem.replace(/[ .]+$/, '') || 'project';
+  if (/^(CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\.|$)/i.test(stem)) stem = `_${stem}`;
+  return `${stem}.qgui`;
+}
+
 export function exportProject(project: Project, drafts: Record<string, string> = {}): Uint8Array {
   if (Object.keys(drafts).length)
     throw new Error('Resolve unapplied CODE drafts before exporting.');
