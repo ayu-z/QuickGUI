@@ -1,5 +1,19 @@
 # 变动日志
 
+## 2026-10-18 — 重绘折叠 Q LOGO 并校准桌面图标尺寸
+
+- 按提供的品牌展示图重建较厚的折叠丝带 Q，保留青/蓝/紫/粉/金渐变和开放内孔，保存为 `public/quickgui.svg`，统一顶部品牌、欢迎页与浏览器 favicon。顶部缩至 28px、欢迎页缩至 64px，保持透明留白与适度投影。
+- 将同一组矢量路径和渐变保存到 `src-tauri/icons/app.svg`，标志居中缩至 84%，增加白色圆角底板。对照本机计算器与系统设置图标的实际不透明边界，将底板从铺满画布改为 1024px 画布内的 816px，四边各留 104px 透明空间，主体比例均为 79.6875%。通过现有 Tauri 流程生成 PNG、ICO 和 ICNS，不嵌入品牌展示图片。
+- 界面与桌面分别使用对应目录中的副本，运行、构建和独立源码不引用 `QuickGUI_Icons`；该用户素材目录保持原样且不纳入本次提交。工程自定义应用图标和快捷方式图标沿用原规则。
+- 修改 `public/quickgui.svg`、`src-tauri/icons/app.svg`：参考图重绘后的透明界面 LOGO 和带安全边距的白底桌面矢量源。
+- 修改 `src-tauri/icons/32x32.png`、`src-tauri/icons/64x64.png`、`src-tauri/icons/128x128.png`、`src-tauri/icons/128x128@2x.png`、`src-tauri/icons/icon.png`、`src-tauri/icons/icon.ico`、`src-tauri/icons/icon.icns`：重新生成并纳入版本控制的桌面图标资源。
+- 修改 `src/styles.css`、`README.md`、`CHANGELOG.md`：透明 LOGO 布局、图标来源/构建说明和本次记录。无源文件新增、删除或重命名，无工程格式、依赖或迁移变更。
+- 设计规格：厚折叠丝带 Q、青蓝紫粉金渐变、透明界面版本与白底桌面版本，不含文字或截图。曾调用内置 imagegen，但未返回可保存文件；最终按已读取的本地参考图重建 SVG，未使用 API/CLI 回退。
+- 验证：`npm run icons` 生成最终图标成功；XML 核验路径/渐变一致且无位图或外部引用。实际解码 PNG、ICNS 后与本机系统图标比较不透明主体比例，确认白底已留出系统一致的边距；亮/暗主题顶部、欢迎页与小尺寸 favicon 均检查显示和裁切。
+- `npm run check` 的类型检查及 195 项单测、`npm run build`、36 项浏览器 E2E、`cargo test --workspace` 的 65 项常规测试均通过。保留已有 Monaco 大包及桥接混合导入提示；本次未修改 C SDK、工作进程协议或 C 编译路径，未重复执行默认忽略的真实 C/AOT 专项。
+- `npx tauri build --debug --bundles app` 通过，更新 `target/debug/bundle/macos/QuickGUI.app`（67.31 MiB）。包内 ICNS 与最终源图标逐字节一致，生产 favicon 与透明 SVG 一致；最终 PNG/ICNS 主体比例均为 79.6875%，与本机两个系统图标解码后的主体边界相同。浏览器实测顶部 28×28、欢迎页 64×64，亮/暗主题无异常；对比图及报告位于忽略的 `artifacts/brand-refit/`。
+- Prettier 与 Git 差异检查通过。Windows/Intel Mac 实机、原生系统桌面图标缓存刷新、签名与公证本轮未验收；不以文件格式检查或本机构建代替系统实机验收。
+
 ## 2026-10-18 — v3 画布操作、详细属性与跨工程组件
 
 ### 目的与行为

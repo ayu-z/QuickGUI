@@ -127,9 +127,10 @@ a {
   white-space: nowrap;
 }
 .brand img {
-  width: 27px;
-  height: 27px;
-  border-radius: 7px;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  object-fit: contain;
 }
 .brand strong {
   font-size: 16px;
@@ -1442,11 +1443,11 @@ a {
 }
 .welcome-logo {
   display: block;
-  width: 56px;
-  height: 56px;
+  width: 64px;
+  height: 64px;
   margin: 0 auto 25px;
-  border-radius: 14px;
-  box-shadow: 0 10px 45px #8b5cf629;
+  object-fit: contain;
+  filter: drop-shadow(0 8px 18px #a855f733);
 }
 .welcome-content h1 {
   font-size: 27px;
