@@ -35,6 +35,8 @@ import { listProjectWindows } from '../core/windows';
 import { JsonValueField } from '../panels/JsonValueField';
 import { assertJsonPath } from '../core/jsonValue';
 import type { JsonPath } from '../core/types';
+import { createFlowNodeConfig, flowNodePorts, type SerialAction } from '../core/flowV4';
+import { FlowMapFieldsEditor, FlowValueRefEditor } from './FlowValueRefEditor';
 import '@xyflow/react/dist/style.css';
 import './designer.css';
 
@@ -51,47 +53,76 @@ const nodeInfo: Record<NodeKind, { icon: typeof Zap; zh: string; en: string; col
   emit: { icon: Radio, zh: '发送事件', en: 'Emit', color: '#f472b6' },
   connection: { icon: Globe, zh: '设备请求', en: 'Device request', color: '#2dd4bf' },
   window: { icon: PanelsTopLeft, zh: '窗口操作', en: 'Window', color: '#a78bfa' },
+  serial: { icon: Radio, zh: '串口操作', en: 'Serial', color: '#2dd4bf' },
+  map: { icon: Binary, zh: '数据映射', en: 'Map data', color: '#60a5fa' },
+  append: { icon: ArrowDownToLine, zh: '有界追加', en: 'Bounded append', color: '#34d399' },
 };
+const serialActions = [
+  ['scan', '扫描串口', 'Scan serial ports'],
+  ['filter', 'VID/PID 过滤', 'VID/PID filter'],
+  ['open', '打开串口', 'Open serial port'],
+  ['close', '关闭串口', 'Close serial port'],
+  ['listenStart', '开始监听', 'Start listening'],
+  ['listenStop', '停止监听', 'Stop listening'],
+  ['send', '串口发送', 'Serial send'],
+  ['setReconnect', '设置重连', 'Set reconnect'],
+  ['resetCounters', '重置串口计数', 'Reset serial counters'],
+] as const;
 type QuickNode = Node<{ model: FlowNode; active: boolean; locale: Locale }, 'quickgui'>;
 function FlowCard({ data, selected }: NodeProps<QuickNode>) {
   const { model, active, locale } = data,
     info = nodeInfo[model.kind],
-    Icon = info.icon;
+    Icon = info.icon,
+    ports = flowNodePorts(model);
   const detail =
     model.kind === 'event'
-      ? model.config.trigger === 'interval'
-        ? `${model.config.intervalMs ?? 1000} ms`
-        : model.config.trigger === 'startup'
+      ? model.config.trigger === 'serial'
+        ? `Serial · ${model.config.event} ${model.config.connectionId ?? ''}`
+        : model.config.trigger === 'controlledInterval'
           ? locale === 'zh-CN'
-            ? '运行时启动'
-            : 'Runtime startup'
-          : locale === 'zh-CN'
-            ? '等待 UI 事件'
-            : 'Waiting for UI event'
-      : model.kind === 'read' || model.kind === 'write'
-        ? String(model.config.variable || '—')
-        : model.kind === 'delay'
-          ? `${model.config.ms ?? 250} ms`
-          : model.kind === 'condition'
-            ? `${model.config.operator ?? 'gt'} ${model.config.value ?? 0}`
-            : model.kind === 'math'
-              ? `${model.config.operation ?? 'add'} ${model.config.operand ?? 1}`
-              : model.kind === 'window'
-                ? `${model.config.action} · ${model.config.windowId}`
-                : String(
-                    model.config.message ||
-                      model.config.scriptId ||
-                      model.config.connectionId ||
-                      model.config.url ||
-                      model.config.event ||
-                      (locale === 'zh-CN' ? '点击配置' : 'Click to configure'),
-                  );
+            ? '受控定时 · 动态间隔'
+            : 'Controlled interval'
+          : model.config.trigger === 'interval'
+            ? `${model.config.intervalMs ?? 1000} ms`
+            : model.config.trigger === 'startup'
+              ? locale === 'zh-CN'
+                ? '运行时启动'
+                : 'Runtime startup'
+              : locale === 'zh-CN'
+                ? '等待 UI 事件'
+                : 'Waiting for UI event'
+      : model.kind === 'serial'
+        ? `${serialActions.find((action) => action[0] === model.config.action)?.[locale === 'zh-CN' ? 1 : 2] ?? model.config.action} · ${model.config.connectionId ?? ''}`
+        : model.kind === 'map'
+          ? String(model.config.operation ?? 'value')
+          : model.kind === 'append'
+            ? `${model.config.variable ?? '—'} · ${model.config.maxItems ?? 500}`
+            : model.kind === 'read' || model.kind === 'write'
+              ? String(model.config.variable || '—')
+              : model.kind === 'delay'
+                ? `${model.config.ms ?? 250} ms`
+                : model.kind === 'condition'
+                  ? `${model.config.operator ?? 'gt'} ${model.config.value ?? 0}`
+                  : model.kind === 'math'
+                    ? `${model.config.operation ?? 'add'} ${model.config.operand ?? 1}`
+                    : model.kind === 'window'
+                      ? `${model.config.action} · ${model.config.windowId}`
+                      : String(
+                          model.config.message ||
+                            model.config.scriptId ||
+                            model.config.connectionId ||
+                            model.config.url ||
+                            model.config.event ||
+                            (locale === 'zh-CN' ? '点击配置' : 'Click to configure'),
+                        );
   return (
     <div
       className={`qg-flow-card ${selected ? 'selected' : ''} ${active ? 'running' : ''}`}
       style={{ '--node-color': info.color } as React.CSSProperties}
     >
-      {model.kind !== 'event' && <Handle type="target" position={Position.Left} id="input" />}
+      {ports.inputs.map((port) => (
+        <Handle key={port} type="target" position={Position.Left} id={port} />
+      ))}
       <div className="qg-flow-card-header">
         <span className="qg-node-icon">
           <Icon size={16} />
@@ -100,26 +131,23 @@ function FlowCard({ data, selected }: NodeProps<QuickNode>) {
         {active && <Activity size={13} className="qg-node-active" />}
       </div>
       <div className="qg-flow-card-detail">{detail}</div>
-      {model.kind === 'condition' ? (
-        <>
-          <span className="qg-handle-label true">true</span>
-          <span className="qg-handle-label false">false</span>
+      {ports.outputs.map((port, index) => (
+        <span key={port}>
+          {ports.outputs.length > 1 && (
+            <span className={`qg-handle-label ${index ? 'false' : 'true'}`}>{port}</span>
+          )}
           <Handle
             type="source"
             position={Position.Right}
-            id="true"
-            style={{ top: '42%', background: '#34d399' }}
+            id={port}
+            style={
+              ports.outputs.length > 1
+                ? { top: index ? '78%' : '42%', background: index ? '#f87171' : '#34d399' }
+                : undefined
+            }
           />
-          <Handle
-            type="source"
-            position={Position.Right}
-            id="false"
-            style={{ top: '78%', background: '#f87171' }}
-          />
-        </>
-      ) : (
-        <Handle type="source" position={Position.Right} id="output" />
-      )}
+        </span>
+      ))}
     </div>
   );
 }
@@ -132,6 +160,7 @@ export interface FlowEditorProps {
   activeNodes?: string[];
   locale: Locale;
   onRequestUpgrade?: (apply: () => void) => void;
+  onRequestV4?: (apply: () => void) => void;
 }
 export function FlowEditor({
   project,
@@ -139,6 +168,7 @@ export function FlowEditor({
   activeNodes = [],
   locale,
   onRequestUpgrade,
+  onRequestV4,
 }: FlowEditorProps) {
   const [selectedFlowId, setSelectedFlowId] = useState(project.flows[0]?.id ?? '');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -199,34 +229,36 @@ export function FlowEditor({
     setSelectedFlowId(flowId);
     setSelectedNodeId(null);
   };
-  const addNode = (kind: NodeKind) => {
+  const addNode = (kind: NodeKind, preset?: Record<string, Json>) => {
     if (!flow) return;
-    const defaults: Record<NodeKind, Record<string, Json>> = {
-      event: { trigger: 'manual' },
-      read: { variable: project.variables[0]?.id ?? '' },
-      write: { variable: project.variables[0]?.id ?? '' },
-      condition: { operator: 'gt', value: 0 },
-      math: { operation: 'add', operand: 1 },
-      delay: { ms: 250 },
-      log: { message: zh ? '流程执行' : 'Flow executed' },
-      script: { scriptId: project.scripts[0]?.id ?? '' },
-      http: { url: '', method: 'GET' },
-      emit: { event: 'custom-event' },
-      connection: { connectionId: project.connections[0]?.id ?? '' },
-      window: { action: 'open', windowId: project.windows?.[0]?.id ?? 'main' },
+    const apply = () => {
+      const node: FlowNode = {
+        id: id(),
+        kind,
+        label: nodeInfo[kind][zh ? 'zh' : 'en'],
+        config: {
+          ...createFlowNodeConfig(
+            kind,
+            project,
+            typeof preset?.action === 'string' ? (preset.action as SerialAction) : undefined,
+          ),
+          ...preset,
+        },
+        position: {
+          x: 80 + (flow.nodes.length % 4) * 245,
+          y: 100 + Math.floor(flow.nodes.length / 4) * 160,
+        },
+      };
+      updateFlow({ nodes: [...flow.nodes, node] });
+      setSelectedNodeId(node.id);
     };
-    const node: FlowNode = {
-      id: id(),
-      kind,
-      label: nodeInfo[kind][zh ? 'zh' : 'en'],
-      config: defaults[kind],
-      position: {
-        x: 80 + (flow.nodes.length % 4) * 245,
-        y: 100 + Math.floor(flow.nodes.length / 4) * 160,
-      },
-    };
-    updateFlow({ nodes: [...flow.nodes, node] });
-    setSelectedNodeId(node.id);
+    if (
+      project.schemaVersion < 4 &&
+      (['serial', 'map', 'append'].includes(kind) ||
+        ['serial', 'controlledInterval'].includes(String(preset?.trigger)))
+    )
+      onRequestV4?.(apply);
+    else apply();
   };
   const onConnect = (connection: FlowConnection) => {
     if (!flow || !connection.source || !connection.target || !canConnect(connection)) return;
@@ -246,17 +278,38 @@ export function FlowEditor({
           id: id(),
           source: connection.source,
           target: connection.target,
-          sourceHandle: connection.sourceHandle ?? 'output',
+          sourceHandle:
+            connection.sourceHandle ??
+            flowNodePorts(flow.nodes.find((node) => node.id === connection.source)!).defaultOutput,
           targetHandle: connection.targetHandle ?? 'input',
         },
       ],
     });
   };
-  const canConnect = ({ source, target }: { source: string; target: string }) => {
+  const canConnect = ({
+    source,
+    target,
+    sourceHandle,
+    targetHandle,
+  }: {
+    source: string;
+    target: string;
+    sourceHandle?: string | null;
+    targetHandle?: string | null;
+  }) => {
     if (
       !flow ||
       source === target ||
       flow.nodes.find((node) => node.id === target)?.kind === 'event'
+    )
+      return false;
+    const sourceNode = flow.nodes.find((node) => node.id === source),
+      targetNode = flow.nodes.find((node) => node.id === target);
+    if (
+      !sourceNode ||
+      !targetNode ||
+      (sourceHandle && !flowNodePorts(sourceNode).outputs.includes(sourceHandle)) ||
+      (targetHandle && !flowNodePorts(targetNode).inputs.includes(targetHandle))
     )
       return false;
     const pending = [target],
@@ -365,20 +418,73 @@ export function FlowEditor({
         </span>
       </div>
       <div className="qg-node-palette">
-        {(Object.keys(nodeInfo) as NodeKind[]).map((kind) => {
-          const info = nodeInfo[kind];
-          return (
-            <button
-              key={kind}
-              disabled={!flow}
-              onClick={() => addNode(kind)}
-              title={zh ? `添加${info.zh}` : `Add ${info.en}`}
-            >
-              <info.icon size={14} style={{ color: info.color }} />
-              <span>{info[zh ? 'zh' : 'en']}</span>
-            </button>
-          );
-        })}
+        {(Object.keys(nodeInfo) as NodeKind[])
+          .filter((kind) => kind !== 'serial')
+          .map((kind) => {
+            const info = nodeInfo[kind];
+            return (
+              <button
+                key={kind}
+                disabled={!flow}
+                onClick={() => addNode(kind)}
+                title={zh ? `添加${info.zh}` : `Add ${info.en}`}
+              >
+                <info.icon size={14} style={{ color: info.color }} />
+                <span>{info[zh ? 'zh' : 'en']}</span>
+              </button>
+            );
+          })}
+        {serialActions.map(([action, cn, en]) => (
+          <button
+            key={action}
+            disabled={!flow}
+            onClick={() => addNode('serial', { action })}
+            title={zh ? cn : en}
+          >
+            <Radio size={14} style={{ color: '#2dd4bf' }} />
+            <span>{zh ? cn : en}</span>
+          </button>
+        ))}
+        {(['devices', 'data', 'state', 'error'] as const).map((event, index) => (
+          <button
+            key={event}
+            disabled={!flow}
+            onClick={() =>
+              addNode('event', {
+                trigger: 'serial',
+                event,
+                ...(event === 'devices'
+                  ? {}
+                  : {
+                      connectionId:
+                        project.connections.find((connection) => connection.protocol === 'serial')
+                          ?.id ?? '',
+                    }),
+                ...(event === 'data' ? { direction: 'rx' } : {}),
+              })
+            }
+          >
+            <Radio size={14} />
+            <span>
+              {zh
+                ? ['串口插拔', '串口接收', '串口状态', '串口错误'][index]
+                : ['Serial devices', 'Serial data', 'Serial state', 'Serial error'][index]}
+            </span>
+          </button>
+        ))}
+        <button
+          disabled={!flow}
+          onClick={() =>
+            addNode('event', {
+              trigger: 'controlledInterval',
+              interval: { source: 'literal', value: 1000 },
+              enabled: { source: 'literal', value: false },
+            })
+          }
+        >
+          <Clock3 size={14} />
+          <span>{zh ? '受控定时器' : 'Controlled interval'}</span>
+        </button>
       </div>
       <div className="qg-flow-workspace">
         <div className="qg-flow-canvas">
@@ -496,28 +602,40 @@ export function FlowEditor({
                     <Field label={zh ? '触发方式' : 'Trigger'}>
                       <select
                         value={String(selectedNode.config.trigger ?? 'manual')}
-                        onChange={(event) =>
-                          updateNode({
-                            config: {
-                              ...selectedNode.config,
-                              trigger: event.target.value,
-                              ...(event.target.value === 'interval'
+                        onChange={(event) => {
+                          const trigger = event.target.value;
+                          const config: Record<string, Json> =
+                            trigger === 'serial'
+                              ? { trigger, event: 'devices' }
+                              : trigger === 'controlledInterval'
                                 ? {
-                                    intervalMs: Math.max(
-                                      100,
-                                      Number(selectedNode.config.intervalMs ?? 1000),
-                                    ),
+                                    trigger,
+                                    interval: { source: 'literal', value: 1000 },
+                                    enabled: { source: 'literal', value: false },
                                   }
-                                : {}),
-                            },
-                          })
-                        }
+                                : trigger === 'interval'
+                                  ? { trigger, intervalMs: 1000 }
+                                  : { trigger };
+                          const apply = () => updateNode({ config });
+                          if (
+                            project.schemaVersion < 4 &&
+                            ['serial', 'controlledInterval'].includes(trigger)
+                          )
+                            onRequestV4?.(apply);
+                          else apply();
+                        }}
                       >
                         <option value="manual">
                           {zh ? '手动 / UI 事件' : 'Manual / UI event'}
                         </option>
                         <option value="startup">{zh ? '运行时启动' : 'Runtime startup'}</option>
                         <option value="interval">{zh ? '定时触发' : 'Interval'}</option>
+                        <option value="serial">
+                          {zh ? '串口事件（v4）' : 'Serial event (v4)'}
+                        </option>
+                        <option value="controlledInterval">
+                          {zh ? '受控定时（v4）' : 'Controlled interval (v4)'}
+                        </option>
                       </select>
                     </Field>
                     {selectedNode.config.trigger === 'interval' && (
@@ -529,10 +647,320 @@ export function FlowEditor({
                         />
                       </Field>
                     )}
+                    {selectedNode.config.trigger === 'controlledInterval' && (
+                      <>
+                        <FlowValueRefEditor
+                          label={zh ? '间隔（100–86400000 ms）' : 'Interval (100–86400000 ms)'}
+                          project={project}
+                          value={selectedNode.config.interval}
+                          onChange={(value) => updateConfig('interval', value)}
+                        />
+                        <FlowValueRefEditor
+                          label={zh ? '启用（布尔值）' : 'Enabled (boolean)'}
+                          project={project}
+                          value={selectedNode.config.enabled}
+                          onChange={(value) => updateConfig('enabled', value)}
+                        />
+                        <p className="qg-field-hint">
+                          {zh
+                            ? '实时读取变量；错过的时刻不补发，忙碌时跳过，不累积发送。'
+                            : 'Reads current variables. Missed or busy ticks are skipped; sends do not accumulate.'}
+                        </p>
+                      </>
+                    )}
+                    {selectedNode.config.trigger === 'serial' && (
+                      <>
+                        <Field label={zh ? '串口事件' : 'Serial event'}>
+                          <select
+                            value={String(selectedNode.config.event ?? 'devices')}
+                            onChange={(event) => {
+                              const kind = event.target.value;
+                              updateNode({
+                                config: {
+                                  trigger: 'serial',
+                                  event: kind,
+                                  ...(kind === 'devices'
+                                    ? {}
+                                    : {
+                                        connectionId:
+                                          selectedNode.config.connectionId ??
+                                          project.connections.find(
+                                            (connection) => connection.protocol === 'serial',
+                                          )?.id ??
+                                          '',
+                                      }),
+                                  ...(kind === 'data' ? { direction: 'rx' } : {}),
+                                },
+                              });
+                            }}
+                          >
+                            {['devices', 'data', 'state', 'error'].map((event, index) => (
+                              <option key={event} value={event}>
+                                {zh
+                                  ? ['设备插拔与快照', '收发数据', '会话状态', '设备错误'][index]
+                                  : event}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
+                        {selectedNode.config.event !== 'devices' && (
+                          <Field label={zh ? '串口连接' : 'Serial connection'}>
+                            <select
+                              value={String(selectedNode.config.connectionId ?? '')}
+                              onChange={(event) => updateConfig('connectionId', event.target.value)}
+                            >
+                              <option value="">
+                                {zh ? '选择串口连接' : 'Choose serial connection'}
+                              </option>
+                              {project.connections
+                                .filter((connection) => connection.protocol === 'serial')
+                                .map((connection) => (
+                                  <option key={connection.id} value={connection.id}>
+                                    {connection.name}
+                                  </option>
+                                ))}
+                            </select>
+                          </Field>
+                        )}
+                        {selectedNode.config.event === 'data' && (
+                          <Field label={zh ? '数据方向' : 'Data direction'}>
+                            <select
+                              value={String(selectedNode.config.direction ?? 'rx')}
+                              onChange={(event) => updateConfig('direction', event.target.value)}
+                            >
+                              <option value="rx">RX</option>
+                              <option value="tx">TX</option>
+                              <option value="both">RX + TX</option>
+                            </select>
+                          </Field>
+                        )}
+                        <p className="qg-field-hint">
+                          {zh
+                            ? '仅原生串口事件触发。初始快照不是插入事件；手动运行不会伪造串口事件。'
+                            : 'Triggered by native serial events. Initial snapshots are not insertions; manual runs do not fabricate events.'}
+                        </p>
+                      </>
+                    )}
                     <p className="qg-field-hint">
                       {zh
                         ? '在 UI 组件的“事件与流程”中关联手动事件；启动与定时触发在运行时启动后执行。'
                         : 'Bind manual events in the component inspector. Startup and interval triggers execute after the runtime starts.'}
+                    </p>
+                  </>
+                )}
+                {selectedNode.kind === 'serial' && (
+                  <>
+                    <Field label={zh ? '串口操作' : 'Serial action'}>
+                      <select
+                        value={String(selectedNode.config.action ?? 'scan')}
+                        onChange={(event) =>
+                          updateNode({
+                            config: createFlowNodeConfig(
+                              'serial',
+                              project,
+                              event.target.value as SerialAction,
+                            ),
+                          })
+                        }
+                      >
+                        {serialActions.map(([action, cn, en]) => (
+                          <option key={action} value={action}>
+                            {zh ? cn : en}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    {!['scan', 'filter'].includes(String(selectedNode.config.action)) && (
+                      <Field label={zh ? '串口连接' : 'Serial connection'}>
+                        <select
+                          value={String(selectedNode.config.connectionId ?? '')}
+                          onChange={(event) => updateConfig('connectionId', event.target.value)}
+                        >
+                          <option value="">
+                            {zh ? '选择串口连接' : 'Choose serial connection'}
+                          </option>
+                          {project.connections
+                            .filter((connection) => connection.protocol === 'serial')
+                            .map((connection) => (
+                              <option key={connection.id} value={connection.id}>
+                                {connection.name}
+                              </option>
+                            ))}
+                        </select>
+                      </Field>
+                    )}
+                    {(selectedNode.config.action === 'filter'
+                      ? [
+                          ['ports', zh ? '端口数组' : 'Ports array'],
+                          ['vid', 'VID'],
+                          ['pid', 'PID'],
+                        ]
+                      : selectedNode.config.action === 'open'
+                        ? [['settings', zh ? '打开参数' : 'Open settings']]
+                        : selectedNode.config.action === 'setReconnect'
+                          ? [['enabled', zh ? '自动重连' : 'Auto reconnect']]
+                          : selectedNode.config.action === 'send'
+                            ? [
+                                ['data', zh ? '发送内容' : 'Send content'],
+                                ['encoding', zh ? '编码 utf8 / hex' : 'Encoding utf8 / hex'],
+                                [
+                                  'lineEnding',
+                                  zh ? '行尾 none / lf / crlf' : 'Line ending none / lf / crlf',
+                                ],
+                                ['timeoutMs', zh ? '超时（1–15000 ms）' : 'Timeout (1–15000 ms)'],
+                              ]
+                            : []
+                    ).map(([key, label]) => (
+                      <FlowValueRefEditor
+                        key={`${selectedNode.id}:${key}`}
+                        label={label}
+                        value={selectedNode.config[key]}
+                        project={project}
+                        onChange={(value) => updateConfig(key, value)}
+                      />
+                    ))}
+                    <p className="qg-field-hint">
+                      {selectedNode.config.action === 'filter'
+                        ? zh
+                          ? '空值表示不限；VID/PID 支持整数或 1–4 位十六进制。两项同时匹配，未知标识不会匹配指定值。'
+                          : 'Empty means unrestricted. IDs accept integers or 1–4 hex digits. Both must match; unknown IDs never match a specified filter.'
+                        : zh
+                          ? '需要桌面原生运行时。success 为成功结果，error 为结构化错误；打开及发送必须由显式流程触发。'
+                          : 'Requires the native desktop runtime. success returns a result; error returns a structured diagnostic. Open and send require explicit flows.'}
+                    </p>
+                  </>
+                )}
+                {selectedNode.kind === 'map' && (
+                  <>
+                    <Field label={zh ? '映射方式' : 'Mapping operation'}>
+                      <select
+                        value={String(selectedNode.config.operation ?? 'value')}
+                        onChange={(event) => {
+                          const operation = event.target.value;
+                          updateNode({
+                            config:
+                              operation === 'value'
+                                ? { operation, value: { source: 'input', path: [] } }
+                                : operation === 'object'
+                                  ? { operation, fields: {} }
+                                  : { operation, items: { source: 'input', path: [] }, fields: {} },
+                          });
+                        }}
+                      >
+                        <option value="value">{zh ? '提取值' : 'Extract value'}</option>
+                        <option value="object">{zh ? '构造对象' : 'Build object'}</option>
+                        <option value="array">{zh ? '逐项映射数组' : 'Map array items'}</option>
+                      </select>
+                    </Field>
+                    {selectedNode.config.operation === 'value' ? (
+                      <FlowValueRefEditor
+                        label={zh ? '输出值' : 'Output value'}
+                        value={selectedNode.config.value}
+                        project={project}
+                        onChange={(value) => updateConfig('value', value)}
+                      />
+                    ) : (
+                      <>
+                        {selectedNode.config.operation === 'array' && (
+                          <FlowValueRefEditor
+                            label={zh ? '输入数组' : 'Input array'}
+                            value={selectedNode.config.items}
+                            project={project}
+                            onChange={(value) => updateConfig('items', value)}
+                          />
+                        )}
+                        <FlowMapFieldsEditor
+                          fields={selectedNode.config.fields}
+                          project={project}
+                          onChange={(value) => updateConfig('fields', value)}
+                        />
+                      </>
+                    )}
+                  </>
+                )}
+                {selectedNode.kind === 'append' && (
+                  <>
+                    <Field label={zh ? 'JSON 变量' : 'JSON variable'}>
+                      <select
+                        value={String(selectedNode.config.variable ?? '')}
+                        onChange={(event) => updateConfig('variable', event.target.value)}
+                      >
+                        <option value="">{zh ? '选择变量' : 'Choose variable'}</option>
+                        {project.variables
+                          .filter((variable) => variable.type === 'json')
+                          .map((variable) => (
+                            <option key={variable.id} value={variable.id}>
+                              {variable.name}
+                            </option>
+                          ))}
+                      </select>
+                    </Field>
+                    <Field label={zh ? '数组路径' : 'Array path'}>
+                      <JsonValueField
+                        label={zh ? '数组路径' : 'Array path'}
+                        value={selectedNode.config.path ?? []}
+                        onCommit={(value) => {
+                          assertJsonPath(value as JsonPath);
+                          updateConfig('path', value);
+                        }}
+                      />
+                    </Field>
+                    <FlowValueRefEditor
+                      label={zh ? '追加记录' : 'Item to append'}
+                      value={selectedNode.config.item}
+                      project={project}
+                      onChange={(value) => updateConfig('item', value)}
+                    />
+                    <Field label={zh ? '最多条数' : 'Maximum records'}>
+                      <NumberInput
+                        value={Number(selectedNode.config.maxItems ?? 500)}
+                        min={1}
+                        onChange={(value) => updateConfig('maxItems', Math.round(value))}
+                      />
+                    </Field>
+                    <Field label={zh ? '最多字节' : 'Maximum bytes'}>
+                      <NumberInput
+                        value={Number(selectedNode.config.maxBytes ?? 524288)}
+                        min={1}
+                        max={1048576}
+                        onChange={(value) => updateConfig('maxBytes', Math.round(value))}
+                      />
+                    </Field>
+                    <Field label={zh ? '显示顺序' : 'Display order'}>
+                      <select
+                        value={String(selectedNode.config.order ?? 'oldestFirst')}
+                        onChange={(event) => updateConfig('order', event.target.value)}
+                      >
+                        <option value="oldestFirst">{zh ? '旧记录在前' : 'Oldest first'}</option>
+                        <option value="latestFirst">{zh ? '新记录在前' : 'Latest first'}</option>
+                      </select>
+                    </Field>
+                    <Toggle
+                      label={zh ? '累计淘汰条数' : 'Count evicted records'}
+                      value={selectedNode.config.droppedPath !== undefined}
+                      onChange={(enabled) => {
+                        const config = { ...selectedNode.config };
+                        if (enabled) config.droppedPath = ['dropped'];
+                        else delete config.droppedPath;
+                        updateNode({ config });
+                      }}
+                    />
+                    {selectedNode.config.droppedPath !== undefined && (
+                      <Field label={zh ? '同变量内计数路径' : 'Counter path in the same variable'}>
+                        <JsonValueField
+                          label={zh ? '淘汰计数路径' : 'Eviction counter path'}
+                          value={selectedNode.config.droppedPath}
+                          onCommit={(value) => {
+                            assertJsonPath(value as JsonPath);
+                            updateConfig('droppedPath', value);
+                          }}
+                        />
+                      </Field>
+                    )}
+                    <p className="qg-field-hint">
+                      {zh
+                        ? '追加及淘汰计数原子更新；单条超过容量时拒绝追加。显示历史淘汰不同于未处理接收队列过载。'
+                        : 'Append and eviction counts update atomically. Oversized items are rejected. Display history eviction is distinct from RX queue overload.'}
                     </p>
                   </>
                 )}

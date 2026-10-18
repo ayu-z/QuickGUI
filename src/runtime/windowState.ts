@@ -4,7 +4,8 @@ import { listProjectWindows } from '../core/windows';
 export function validateWindowActions(project: Project): void {
   for (const flow of project.flows) {
     for (const node of flow.nodes.filter((node) => node.kind === 'window')) {
-      if (project.schemaVersion < 2) throw new Error('Window actions require schemaVersion 2 or 3');
+      if (project.schemaVersion < 2)
+        throw new Error('Window actions require schemaVersion 2 or later');
       if (typeof node.config.action !== 'string' || typeof node.config.windowId !== 'string') {
         throw new Error('Window action and target must be strings');
       }

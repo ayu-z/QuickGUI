@@ -1,5 +1,82 @@
 # 变动日志
 
+## 2026-10-19 — 串口助手 Demo 与可复用 v4 流程组件
+
+### 目的与行为
+
+- 新增普通可编辑串口助手工程：64 个通用控件、16 条可视化流程，经数据和事件绑定完成枚举、插拔检测、VID/PID 过滤、手动打开/关闭、监听、UTF-8/HEX 收发、换行、时间戳、计数、有界记录及定时发送；无特定工程/控件 ID 的运行时分支，无自定义 React/C、模拟器或 Web Serial。
+- 新增 schema v4 的 serial/map/append 节点、ValueRef、串口事件和受控定时器，支持 success/error 分支；UI/CODE、严格验证、迁移、删除保护、依赖闭包、复制重映射与导出共用类型/引用语义。v1–v3 原格式往返，新增空工程仍为 v3；使用 v4 能力明确确认升级，支持撤销，拒绝未知 v5。
+- 原生串口使用独立读写任务、进程级端口占用及有界队列。RX 待处理上限 256 批/1 MiB，溢出立即关闭、取消发送并锁定故障，手动重开才能恢复；显示历史独立限制 500 条/512 KiB，并报告淘汰数。RX framing 支持 raw/line/length16；TX 仅发送编码后的原文和选定换行，不加长度前缀。旧连接诊断语义保留。
+- 默认 115200/8N1/无流控、原始接收、定时发送 1000 ms（最小 100 ms）、自动重连关闭。重连必须同时匹配已知 VID、PID、规范端口名、USB busId/portChain；不替代为序列号或唯一 VID/PID。连接/重连时锁定端口及参数，错误/断开停止定时发送；故障恢复不自动重新启用定时发送。
+- v4 IO/C/延迟等待释放引擎锁，UI 流程可并行；同一 C 脚本状态串行提交。单调执行代际阻止编辑后撤销时旧结果回写。外观热更新保留原生端口与兼容状态，子窗口共享所属运行时，关闭工程清理句柄及任务。
+- 当前计数由合并的状态事件发布；data 及通用 map/write/append 保留不可变快照，旧排队数据不会恢复 Demo 已重置的计数。计数状态和数据公平调度，故障独立优先投递，避免状态通知挤占数据；发送错误保留本次错误。
+- 桌面连接页可扫描真实端口并查看 USB 元数据、配置通信参数。浏览器明确返回 NATIVE_SERIAL_REQUIRED，不生成虚假设备/数据。独立源码包含示例模块依赖并保留 v4 原生运行语义；更新使用、兼容性、架构与验证文档。
+- Rust 引擎显式启用已锁定 serialport 4.10.1 的 usbportinfo-location 功能；无新增 npm 依赖，无 C SDK/ABI 修改。生成物、图标和用户原有 QuickGUI_Icons/ 不纳入本次改动。无源文件删除或重命名。
+
+### 源文件操作
+
+- 修改 `Cargo.lock`
+- 修改 `README.md`
+- 修改 `crates/quickgui-c-runner/tests/aliases.rs`
+- 修改 `crates/quickgui-engine/Cargo.toml`
+- 修改 `crates/quickgui-engine/src/connections.rs`
+- 新增 `crates/quickgui-engine/src/flow_v4.rs`
+- 新增 `crates/quickgui-engine/src/flow_v4_tests.rs`
+- 修改 `crates/quickgui-engine/src/lib.rs`
+- 新增 `crates/quickgui-engine/src/serial.rs`
+- 新增 `crates/quickgui-engine/src/serial_demo_test.rs`
+- 新增 `crates/quickgui-engine/src/serial_tests.rs`
+- 修改 `crates/quickgui-engine/src/types.rs`
+- 修改 `crates/quickgui-engine/src/windows.rs`
+- 修改 `docs/architecture.md`
+- 修改 `docs/project-compatibility.md`
+- 新增 `docs/serial-v4-contract.md`
+- 修改 `docs/verification.md`
+- 新增 `examples/serial-assistant/README.md`
+- 新增 `examples/serial-assistant/quickgui.json`
+- 修改 `scripts/export-project.mjs`
+- 修改 `src-tauri/build.rs`
+- 修改 `src-tauri/src/close_project_tests.rs`
+- 修改 `src-tauri/src/lib.rs`
+- 修改 `src-tauri/src/scheduler.rs`
+- 修改 `src-tauri/src/source_export.rs`
+- 修改 `src/App.tsx`
+- 修改 `src/core/clipboard.ts`
+- 新增 `src/core/examples.ts`
+- 新增 `src/core/flowV4.ts`
+- 修改 `src/core/migration.ts`
+- 修改 `src/core/references.ts`
+- 修改 `src/core/store.ts`
+- 修改 `src/core/types.ts`
+- 修改 `src/core/validation.ts`
+- 修改 `src/designer/CanvasEditor.tsx`
+- 修改 `src/designer/FlowEditor.tsx`
+- 新增 `src/designer/FlowValueRefEditor.tsx`
+- 新增 `src/examples/serialAssistant.ts`
+- 修改 `src/native/bridge.ts`
+- 修改 `src/panels/ConnectionsPanel.tsx`
+- 修改 `src/panels/WelcomeScreen.tsx`
+- 修改 `src/runtime/controller.ts`
+- 修改 `src/runtime/engine.ts`
+- 新增 `src/runtime/flowV4Runtime.ts`
+- 修改 `src/runtime/windowState.ts`
+- 新增 `tests/e2e/serial-assistant.spec.ts`
+- 新增 `tests/flow-v4.test.ts`
+- 新增 `tests/native-serial-bridge.test.ts`
+- 修改 `tests/project-compatibility.test.ts`
+- 修改 `tests/project-windows.test.ts`
+- 新增 `tests/runtime-v4.test.ts`
+- 新增 `tests/serial-demo.test.ts`
+
+### 验证与边界
+
+- TypeScript 检查及 233 项单测、生产构建、45 项 Chromium E2E 全过；最后 Demo 计数分支修复后重跑 233 项及 4 项串口 E2E 通过。
+- `cargo test --workspace` 最终 95 项常规测试通过（引擎 67、宿主 24、runner 4），13 项条件测试默认忽略后分别执行：真实 C 14/14、同源 aliases JIT/AOT 1/1、实际 C 关闭取消 1/1、最终 Demo + 真实 PTY 1/1 均通过。串口定向 17/17 包含重连锁定、队列公平/故障优先、发送错误保留、计数重置与快照语义。PTY 测试使用 cfg(test) 注册的真实预打开 slave 绕过 macOS PTY 不支持的 modem ioctl，仍走生产打开/租约/会话/IO；无生产模拟器，未打开物理串口。
+- 最终 Demo 独立源码实际导出到忽略的 `artifacts/serial-standalone-verified`，`npm ci --ignore-scripts`、生产构建、`cargo check --workspace` 通过；独立生产页面实际验证 64 控件、默认参数、发送禁用、真实能力诊断、无虚假端口/记录/计数，无页面错误或设计器开发请求。
+- `npx tauri build --debug --bundles app` 通过，更新 `target/debug/bundle/macos/QuickGUI.app`（71.48 MiB）；包内 ICNS/worker 与源图标/暂存 worker 一致，从 `/tmp` 执行包内 C self-test 成功（output=21/state.runs=1、加载包内 libtcc）。Prettier、Cargo fmt 和 Git 差异检查通过。保留已有 Monaco 大包及桥接混合导入提示。
+- 验证中发现的遗漏导出依赖、旧数据覆盖重置、隐式刷新改变快照、状态挤占数据及旧错误覆盖发送错误已修正并回归；最终产物保留通用流程语义。详细验证及边界见 `docs/verification.md`。本记录与对应源文件一并提交，生成物不提交。
+- 不以 PTY/本机回环代替物理串口、USB 驱动热插拔、真实波特率/流控或硬件重连验收；Windows/Intel Mac 实机、签名公证、耐久与吞吐/延迟基准本轮未执行。
+
 ## 2026-10-18 — 统一下拉框高度并修复菜单失焦关闭
 
 - 设计器单行下拉框统一为 32px，使用一致的内边距、行高及主题色箭头，消除浏览器原生外观造成的高度差异；排除工程控件、预览场景、多选和列表框，保留工程自设尺寸。

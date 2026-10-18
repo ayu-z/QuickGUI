@@ -188,6 +188,8 @@ pub struct RuntimeLog {
 pub struct RuntimeSnapshot {
     #[serde(default)]
     pub window_state: RuntimeWindowState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub serial: Option<BTreeMap<String, Value>>,
     #[serde(default)]
     pub project_id: String,
     #[serde(default)]

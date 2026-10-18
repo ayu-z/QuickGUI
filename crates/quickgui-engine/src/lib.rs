@@ -1,7 +1,9 @@
 //! Portable QuickGUI graph execution. UI documents remain in the project model.
 mod connections;
+pub mod flow_v4;
 mod history;
 mod json_value;
+pub mod serial;
 pub use json_value::{read_path, replace_path, validate_json, validate_path};
 mod types;
 mod windows;
@@ -45,6 +47,9 @@ pub fn validate_flow(flow: &Flow) -> Result<Vec<usize>, String> {
         "http",
         "emit",
         "connection",
+        "serial",
+        "map",
+        "append",
         "window",
     ];
     for (i, node) in flow.nodes.iter().enumerate() {
@@ -103,6 +108,11 @@ pub struct Engine {
     project: Project,
     snapshot: RuntimeSnapshot,
     script_state: BTreeMap<String, BTreeMap<String, f64>>,
+    script_locks:
+        std::sync::Arc<std::sync::Mutex<BTreeMap<String, std::sync::Arc<tokio::sync::Mutex<()>>>>>,
+    v4_runs: BTreeMap<u64, String>,
+    v4_next_run: u64,
+    execution_epoch: u64,
     sequence: u64,
     snapshot_sequence: std::sync::atomic::AtomicU64,
     observer: Option<std::sync::Arc<dyn Fn(RuntimeSnapshot) + Send + Sync>>,
@@ -112,8 +122,10 @@ pub struct Engine {
 impl Engine {
     pub fn new(project: Project) -> Result<Self, String> {
         windows::validate(&project)?;
+        flow_v4::validate_project(&project)?;
         let mut snapshot = RuntimeSnapshot {
             revision: project.revision,
+            running: project.schema_version >= 4,
             window_state: windows::initial(&project),
             ..Default::default()
         };
@@ -177,11 +189,33 @@ impl Engine {
             project,
             snapshot,
             script_state: BTreeMap::new(),
+            script_locks: Default::default(),
+            v4_runs: Default::default(),
+            v4_next_run: 0,
+            execution_epoch: 0,
             sequence: 0,
             snapshot_sequence: std::sync::atomic::AtomicU64::new(0),
             observer: None,
             event_observer: None,
         })
+    }
+    pub fn update_serial_state(&mut self, states: BTreeMap<String, Value>) {
+        self.snapshot.serial = Some(states);
+        self.notify();
+    }
+    pub fn external_event(&mut self, event: &str, payload: Value) {
+        if let Some(observer) = &self.event_observer {
+            observer(RuntimeEvent {
+                event: event.into(),
+                payload,
+                time: now_ms(),
+                flow_id: String::new(),
+                node_id: String::new(),
+            });
+        }
+    }
+    pub fn external_error(&mut self, message: String) {
+        self.log("error", message, None, None);
     }
     pub fn snapshot(&self) -> RuntimeSnapshot {
         let mut snapshot = self.snapshot.clone();
@@ -214,9 +248,23 @@ impl Engine {
     }
     pub fn apply_project(&mut self, project: Project) -> Result<(), String> {
         let mut next = Self::new(project)?;
+        next.v4_next_run = self.v4_next_run;
+        next.execution_epoch = self.execution_epoch
+            + u64::from(
+                flow_v4::execution_key(&self.project) != flow_v4::execution_key(&next.project),
+            );
         next.observer = self.observer.clone();
         next.event_observer = self.event_observer.clone();
         if next.project.id == self.project.id {
+            next.script_locks = self.script_locks.clone();
+            if self.project.schema_version >= 4
+                && flow_v4::execution_key(&self.project) == flow_v4::execution_key(&next.project)
+            {
+                next.v4_runs = self.v4_runs.clone();
+                next.v4_next_run = self.v4_next_run;
+                next.snapshot.running = self.snapshot.running;
+                next.snapshot.active_nodes = self.snapshot.active_nodes.clone();
+            }
             next.snapshot.window_state =
                 windows::reconcile(&self.project, &next.project, &self.snapshot.window_state);
             for variable in &next.project.variables {
@@ -240,6 +288,7 @@ impl Engine {
                 .map(|(id, state)| (id.clone(), state.clone()))
                 .collect();
             next.snapshot.logs = self.snapshot.logs.clone();
+            next.snapshot.serial = self.snapshot.serial.clone();
             next.sequence = self.sequence;
             next.snapshot_sequence.store(
                 self.snapshot_sequence
@@ -252,9 +301,17 @@ impl Engine {
         Ok(())
     }
     pub fn stop(&mut self) {
+        self.execution_epoch += 1;
+        self.v4_runs.clear();
         self.snapshot.running = false;
         self.snapshot.active_nodes.clear();
         self.notify();
+    }
+    pub fn start_domain(&mut self) {
+        if self.project.schema_version >= 4 {
+            self.snapshot.running = true;
+            self.notify();
+        }
     }
     pub fn window_action(&mut self, action: &str, window_id: &str) -> Result<(), String> {
         windows::validate_action(&self.project, action, window_id)?;
@@ -771,55 +828,63 @@ impl Engine {
                     .await?;
                 Ok(response.output)
             }
-            "connection" => {
-                let definition = self
-                    .project
-                    .connections
-                    .iter()
-                    .find(|c| c.get("id").and_then(Value::as_str) == Some(text("connectionId")))
-                    .cloned()
-                    .ok_or("Connection reference is missing")?;
-                let connection: Connection = serde_json::from_value(definition)
-                    .map_err(|e| format!("Invalid connection: {e}"))?;
-                serde_json::to_value(test_connection(connection).await?).map_err(|e| e.to_string())
-            }
-            "http" => {
-                let url = text("url");
-                if !url.starts_with("https://") && !url.starts_with("http://") {
-                    return Err("HTTP node requires an http(s) URL".into());
-                }
-                let method = if text("method").is_empty() {
-                    reqwest::Method::GET
-                } else {
-                    reqwest::Method::from_bytes(text("method").as_bytes())
-                        .map_err(|e| e.to_string())?
-                };
-                let client = reqwest::Client::builder()
-                    .timeout(Duration::from_secs(15))
-                    .build()
-                    .map_err(|e| e.to_string())?;
-                let mut request = client.request(method, url);
-                if let Some(body) = node.config.get("body") {
-                    request = request.json(body);
-                }
-                let mut response = request
-                    .send()
-                    .await
-                    .map_err(|e| e.to_string())?
-                    .error_for_status()
-                    .map_err(|e| e.to_string())?;
-                let mut bytes = Vec::new();
-                while let Some(chunk) = response.chunk().await.map_err(|e| e.to_string())? {
-                    if bytes.len() + chunk.len() > 2 * 1024 * 1024 {
-                        return Err("HTTP response exceeds 2 MiB".into());
-                    }
-                    bytes.extend_from_slice(&chunk);
-                }
-                Ok(serde_json::from_slice(&bytes)
-                    .unwrap_or_else(|_| json!(String::from_utf8_lossy(&bytes))))
-            }
+            "connection" | "http" => external_request(&self.project.connections, node).await,
             _ => Err(format!("Unsupported node: {}", node.kind)),
         }
+    }
+}
+
+pub(crate) async fn external_request(
+    connections: &[Value],
+    node: &FlowNode,
+) -> Result<Value, String> {
+    let text = |key: &str| node.config.get(key).and_then(Value::as_str).unwrap_or("");
+    match node.kind.as_str() {
+        "connection" => {
+            let definition = connections
+                .iter()
+                .find(|c| c.get("id").and_then(Value::as_str) == Some(text("connectionId")))
+                .cloned()
+                .ok_or("Connection reference is missing")?;
+            let connection: Connection = serde_json::from_value(definition)
+                .map_err(|e| format!("Invalid connection: {e}"))?;
+            serde_json::to_value(test_connection(connection).await?).map_err(|e| e.to_string())
+        }
+        "http" => {
+            let url = text("url");
+            if !url.starts_with("https://") && !url.starts_with("http://") {
+                return Err("HTTP node requires an http(s) URL".into());
+            }
+            let method = if text("method").is_empty() {
+                reqwest::Method::GET
+            } else {
+                reqwest::Method::from_bytes(text("method").as_bytes()).map_err(|e| e.to_string())?
+            };
+            let client = reqwest::Client::builder()
+                .timeout(Duration::from_secs(15))
+                .build()
+                .map_err(|e| e.to_string())?;
+            let mut request = client.request(method, url);
+            if let Some(body) = node.config.get("body") {
+                request = request.json(body);
+            }
+            let mut response = request
+                .send()
+                .await
+                .map_err(|e| e.to_string())?
+                .error_for_status()
+                .map_err(|e| e.to_string())?;
+            let mut bytes = Vec::new();
+            while let Some(chunk) = response.chunk().await.map_err(|e| e.to_string())? {
+                if bytes.len() + chunk.len() > 2 * 1024 * 1024 {
+                    return Err("HTTP response exceeds 2 MiB".into());
+                }
+                bytes.extend_from_slice(&chunk);
+            }
+            Ok(serde_json::from_slice(&bytes)
+                .unwrap_or_else(|_| json!(String::from_utf8_lossy(&bytes))))
+        }
+        _ => Err("Unsupported external operation".into()),
     }
 }
 
@@ -918,7 +983,7 @@ mod tests {
     #[test]
     fn unknown_schema_and_readonly_writes_fail() {
         let mut p = fixture();
-        p.schema_version = 4;
+        p.schema_version = 5;
         assert!(Engine::new(p).is_err());
         let mut p = fixture();
         p.variables[0].read_only = true;

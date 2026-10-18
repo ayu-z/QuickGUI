@@ -47,6 +47,7 @@ fn main() {
     let mut entries = Vec::new();
     for name in [
         "src/core",
+        "src/examples",
         "src/runtime",
         "src/renderer",
         "src/native",

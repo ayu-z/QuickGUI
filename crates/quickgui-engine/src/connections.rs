@@ -108,6 +108,8 @@ pub async fn test_connection(connection: Connection) -> Result<ConnectionTestRes
                 if baud == 0 || baud > 4_000_000 {
                     return Err("baudRate must be between 1 and 4000000".into());
                 }
+                let _lease = crate::serial::PortLease::acquire(address)
+                    .map_err(|error| error.to_string())?;
                 let mut port = tokio_serial::new(address, baud as u32)
                     .timeout(Duration::from_millis(timeout_ms))
                     .open_native_async()

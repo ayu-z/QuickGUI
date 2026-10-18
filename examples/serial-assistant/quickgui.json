@@ -1,0 +1,5219 @@
+{
+  "schemaVersion": 4,
+  "id": "serial-assistant-example",
+  "name": "串口助手",
+  "revision": 0,
+  "locale": "zh-CN",
+  "theme": {
+    "mode": "dark",
+    "tokens": {
+      "color.primary": "#7c5cff",
+      "color.primaryHover": "#a78bfa",
+      "color.text": "#eef0f8",
+      "color.muted": "#9aa3ba",
+      "color.surface": "#20232e",
+      "color.background": "#141720",
+      "color.border": "#33394b",
+      "color.success": "#48d5a0",
+      "color.warning": "#e9b66c"
+    }
+  },
+  "window": {
+    "title": "串口助手",
+    "width": 1200,
+    "height": 940,
+    "minWidth": 900,
+    "minHeight": 700,
+    "resizable": true,
+    "alwaysOnTop": false,
+    "fullscreen": false,
+    "maximized": false,
+    "center": true,
+    "rememberPosition": true,
+    "background": "#141720",
+    "contentRadius": 0,
+    "cornerPreference": "system"
+  },
+  "publish": {
+    "appName": "QuickGUI Serial Assistant",
+    "identifier": "dev.quickgui.serialassistant",
+    "version": "1.0.0",
+    "publisher": "",
+    "desktopShortcut": true
+  },
+  "widgets": [
+    {
+      "id": "device_panel",
+      "type": "panel",
+      "name": "device_panel",
+      "layout": {
+        "x": 24,
+        "y": 86,
+        "width": 350,
+        "height": 826
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "overflow": "hidden"
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 12,
+        "background": "$color.surface",
+        "borderWidth": 1,
+        "borderColor": "$color.border",
+        "borderStyle": "solid"
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "traffic_panel",
+      "type": "panel",
+      "name": "traffic_panel",
+      "layout": {
+        "x": 394,
+        "y": 86,
+        "width": 782,
+        "height": 516
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "overflow": "hidden"
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 12,
+        "background": "$color.surface",
+        "borderWidth": 1,
+        "borderColor": "$color.border",
+        "borderStyle": "solid"
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "transmit_panel",
+      "type": "panel",
+      "name": "transmit_panel",
+      "layout": {
+        "x": 394,
+        "y": 620,
+        "width": 782,
+        "height": 292
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "overflow": "hidden"
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 12,
+        "background": "$color.surface",
+        "borderWidth": 1,
+        "borderColor": "$color.border",
+        "borderStyle": "solid"
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "page_title",
+      "type": "text",
+      "name": "page_title",
+      "layout": {
+        "x": 28,
+        "y": 20,
+        "width": 560,
+        "height": 26
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@page_title",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 26,
+        "borderRadius": 8,
+        "fontWeight": 650
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "page_note",
+      "type": "text",
+      "name": "page_note",
+      "layout": {
+        "x": 30,
+        "y": 52,
+        "width": 650,
+        "height": 26
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@page_note",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "connection_heading",
+      "type": "text",
+      "name": "connection_heading",
+      "layout": {
+        "x": 42,
+        "y": 104,
+        "width": 310,
+        "height": 26
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@connection_heading",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 14,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "port_label",
+      "type": "text",
+      "name": "port_label",
+      "layout": {
+        "x": 42,
+        "y": 140,
+        "width": 160,
+        "height": 26
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@port_label",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "serial_port_select",
+      "type": "select",
+      "name": "serial_port_select",
+      "layout": {
+        "x": 42,
+        "y": 168,
+        "width": 222,
+        "height": 36
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "value": "",
+        "options": [],
+        "placeholder": "@port_hint",
+        "legacyOptions": false,
+        "legacyValueFormat": false
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.surface",
+        "borderWidth": 1,
+        "borderStyle": "solid",
+        "borderColor": "$color.border",
+        "padding": 8
+      },
+      "states": {},
+      "bindings": {
+        "options": {
+          "variable": "serial_options",
+          "path": [],
+          "mode": "oneWay"
+        },
+        "value": {
+          "variable": "serial_settings",
+          "path": ["portName"],
+          "mode": "twoWay"
+        },
+        "enabled": {
+          "variable": "serial_state",
+          "path": ["canOpen"],
+          "mode": "oneWay"
+        }
+      },
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "scan_ports",
+      "type": "button",
+      "name": "scan_ports",
+      "layout": {
+        "x": 274,
+        "y": 168,
+        "width": 82,
+        "height": 38
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@scan_ports",
+        "iconAssetId": "",
+        "iconPosition": "left",
+        "iconSize": 16
+      },
+      "style": {
+        "color": "#ffffff",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.primary",
+        "fontWeight": 600
+      },
+      "states": {},
+      "bindings": {},
+      "events": {
+        "click": "serial_scan"
+      },
+      "definitionVersion": 2
+    },
+    {
+      "id": "vid_label",
+      "type": "text",
+      "name": "vid_label",
+      "layout": {
+        "x": 42,
+        "y": 215,
+        "width": 155,
+        "height": 26
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@vid_label",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "pid_label",
+      "type": "text",
+      "name": "pid_label",
+      "layout": {
+        "x": 207,
+        "y": 215,
+        "width": 155,
+        "height": 26
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@pid_label",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "filter_vid",
+      "type": "input",
+      "name": "filter_vid",
+      "layout": {
+        "x": 42,
+        "y": 244,
+        "width": 149,
+        "height": 34
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "value": "",
+        "placeholder": "1A86",
+        "inputType": "text",
+        "multiline": false,
+        "readOnly": false,
+        "maxLength": 6,
+        "submitOn": "enter"
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.surface",
+        "borderWidth": 1,
+        "borderStyle": "solid",
+        "borderColor": "$color.border",
+        "padding": 8
+      },
+      "states": {},
+      "bindings": {
+        "value": {
+          "variable": "serial_filters",
+          "path": ["vid"],
+          "mode": "twoWay"
+        },
+        "enabled": {
+          "variable": "serial_state",
+          "path": ["canOpen"],
+          "mode": "oneWay"
+        }
+      },
+      "events": {
+        "change": "serial_filter"
+      },
+      "definitionVersion": 2
+    },
+    {
+      "id": "filter_pid",
+      "type": "input",
+      "name": "filter_pid",
+      "layout": {
+        "x": 207,
+        "y": 244,
+        "width": 149,
+        "height": 34
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "value": "",
+        "placeholder": "7523",
+        "inputType": "text",
+        "multiline": false,
+        "readOnly": false,
+        "maxLength": 6,
+        "submitOn": "enter"
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.surface",
+        "borderWidth": 1,
+        "borderStyle": "solid",
+        "borderColor": "$color.border",
+        "padding": 8
+      },
+      "states": {},
+      "bindings": {
+        "value": {
+          "variable": "serial_filters",
+          "path": ["pid"],
+          "mode": "twoWay"
+        },
+        "enabled": {
+          "variable": "serial_state",
+          "path": ["canOpen"],
+          "mode": "oneWay"
+        }
+      },
+      "events": {
+        "change": "serial_filter"
+      },
+      "definitionVersion": 2
+    },
+    {
+      "id": "baud_label",
+      "type": "text",
+      "name": "baud_label",
+      "layout": {
+        "x": 42,
+        "y": 292,
+        "width": 150,
+        "height": 26
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@baud_label",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "bits_label",
+      "type": "text",
+      "name": "bits_label",
+      "layout": {
+        "x": 207,
+        "y": 292,
+        "width": 140,
+        "height": 26
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@bits_label",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "baud_rate",
+      "type": "number",
+      "name": "baud_rate",
+      "layout": {
+        "x": 42,
+        "y": 320,
+        "width": 149,
+        "height": 36
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "value": 115200,
+        "min": 1,
+        "max": 4000000,
+        "step": 1,
+        "precision": 0,
+        "unit": "",
+        "readOnly": false
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.surface",
+        "borderWidth": 1,
+        "borderStyle": "solid",
+        "borderColor": "$color.border",
+        "padding": 8
+      },
+      "states": {},
+      "bindings": {
+        "value": {
+          "variable": "serial_settings",
+          "path": ["baudRate"],
+          "mode": "twoWay"
+        },
+        "enabled": {
+          "variable": "serial_state",
+          "path": ["canOpen"],
+          "mode": "oneWay"
+        }
+      },
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "data_bits",
+      "type": "select",
+      "name": "data_bits",
+      "layout": {
+        "x": 207,
+        "y": 320,
+        "width": 149,
+        "height": 36
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "value": "自动",
+        "options": [
+          {
+            "id": "data_bits_0",
+            "label": "5",
+            "value": 5
+          },
+          {
+            "id": "data_bits_1",
+            "label": "6",
+            "value": 6
+          },
+          {
+            "id": "data_bits_2",
+            "label": "7",
+            "value": 7
+          },
+          {
+            "id": "data_bits_3",
+            "label": "8",
+            "value": 8
+          }
+        ],
+        "placeholder": "",
+        "legacyOptions": false,
+        "legacyValueFormat": false
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.surface",
+        "borderWidth": 1,
+        "borderStyle": "solid",
+        "borderColor": "$color.border",
+        "padding": 8
+      },
+      "states": {},
+      "bindings": {
+        "value": {
+          "variable": "serial_settings",
+          "path": ["dataBits"],
+          "mode": "twoWay"
+        },
+        "enabled": {
+          "variable": "serial_state",
+          "path": ["canOpen"],
+          "mode": "oneWay"
+        }
+      },
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "parity_label",
+      "type": "text",
+      "name": "parity_label",
+      "layout": {
+        "x": 42,
+        "y": 367,
+        "width": 150,
+        "height": 26
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@parity_label",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "stop_label",
+      "type": "text",
+      "name": "stop_label",
+      "layout": {
+        "x": 207,
+        "y": 367,
+        "width": 140,
+        "height": 26
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@stop_label",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "parity",
+      "type": "select",
+      "name": "parity",
+      "layout": {
+        "x": 42,
+        "y": 395,
+        "width": 149,
+        "height": 36
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "value": "自动",
+        "options": [
+          {
+            "id": "parity_0",
+            "label": "无",
+            "value": "none"
+          },
+          {
+            "id": "parity_1",
+            "label": "奇校验",
+            "value": "odd"
+          },
+          {
+            "id": "parity_2",
+            "label": "偶校验",
+            "value": "even"
+          }
+        ],
+        "placeholder": "",
+        "legacyOptions": false,
+        "legacyValueFormat": false
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.surface",
+        "borderWidth": 1,
+        "borderStyle": "solid",
+        "borderColor": "$color.border",
+        "padding": 8
+      },
+      "states": {},
+      "bindings": {
+        "value": {
+          "variable": "serial_settings",
+          "path": ["parity"],
+          "mode": "twoWay"
+        },
+        "enabled": {
+          "variable": "serial_state",
+          "path": ["canOpen"],
+          "mode": "oneWay"
+        }
+      },
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "stop_bits",
+      "type": "select",
+      "name": "stop_bits",
+      "layout": {
+        "x": 207,
+        "y": 395,
+        "width": 149,
+        "height": 36
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "value": "自动",
+        "options": [
+          {
+            "id": "stop_bits_0",
+            "label": "1",
+            "value": 1
+          },
+          {
+            "id": "stop_bits_1",
+            "label": "2",
+            "value": 2
+          }
+        ],
+        "placeholder": "",
+        "legacyOptions": false,
+        "legacyValueFormat": false
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.surface",
+        "borderWidth": 1,
+        "borderStyle": "solid",
+        "borderColor": "$color.border",
+        "padding": 8
+      },
+      "states": {},
+      "bindings": {
+        "value": {
+          "variable": "serial_settings",
+          "path": ["stopBits"],
+          "mode": "twoWay"
+        },
+        "enabled": {
+          "variable": "serial_state",
+          "path": ["canOpen"],
+          "mode": "oneWay"
+        }
+      },
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "flow_label",
+      "type": "text",
+      "name": "flow_label",
+      "layout": {
+        "x": 42,
+        "y": 442,
+        "width": 150,
+        "height": 26
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@flow_label",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "framing_label",
+      "type": "text",
+      "name": "framing_label",
+      "layout": {
+        "x": 207,
+        "y": 442,
+        "width": 140,
+        "height": 26
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@framing_label",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "flow_control",
+      "type": "select",
+      "name": "flow_control",
+      "layout": {
+        "x": 42,
+        "y": 470,
+        "width": 149,
+        "height": 36
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "value": "自动",
+        "options": [
+          {
+            "id": "flow_control_0",
+            "label": "无",
+            "value": "none"
+          },
+          {
+            "id": "flow_control_1",
+            "label": "硬件",
+            "value": "hardware"
+          },
+          {
+            "id": "flow_control_2",
+            "label": "软件",
+            "value": "software"
+          }
+        ],
+        "placeholder": "",
+        "legacyOptions": false,
+        "legacyValueFormat": false
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.surface",
+        "borderWidth": 1,
+        "borderStyle": "solid",
+        "borderColor": "$color.border",
+        "padding": 8
+      },
+      "states": {},
+      "bindings": {
+        "value": {
+          "variable": "serial_settings",
+          "path": ["flowControl"],
+          "mode": "twoWay"
+        },
+        "enabled": {
+          "variable": "serial_state",
+          "path": ["canOpen"],
+          "mode": "oneWay"
+        }
+      },
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "framing",
+      "type": "select",
+      "name": "framing",
+      "layout": {
+        "x": 207,
+        "y": 470,
+        "width": 149,
+        "height": 36
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "value": "自动",
+        "options": [
+          {
+            "id": "framing_0",
+            "label": "原始批次",
+            "value": "raw"
+          },
+          {
+            "id": "framing_1",
+            "label": "换行",
+            "value": "line"
+          },
+          {
+            "id": "framing_2",
+            "label": "16位长度",
+            "value": "length16"
+          }
+        ],
+        "placeholder": "",
+        "legacyOptions": false,
+        "legacyValueFormat": false
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.surface",
+        "borderWidth": 1,
+        "borderStyle": "solid",
+        "borderColor": "$color.border",
+        "padding": 8
+      },
+      "states": {},
+      "bindings": {
+        "value": {
+          "variable": "serial_settings",
+          "path": ["framing"],
+          "mode": "twoWay"
+        },
+        "enabled": {
+          "variable": "serial_state",
+          "path": ["canOpen"],
+          "mode": "oneWay"
+        }
+      },
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "open_port",
+      "type": "button",
+      "name": "open_port",
+      "layout": {
+        "x": 42,
+        "y": 526,
+        "width": 149,
+        "height": 38
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@open_port",
+        "iconAssetId": "",
+        "iconPosition": "left",
+        "iconSize": 16
+      },
+      "style": {
+        "color": "#ffffff",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.primary",
+        "fontWeight": 600
+      },
+      "states": {},
+      "bindings": {
+        "enabled": {
+          "variable": "serial_state",
+          "path": ["canOpen"],
+          "mode": "oneWay"
+        }
+      },
+      "events": {
+        "click": "serial_open"
+      },
+      "definitionVersion": 2
+    },
+    {
+      "id": "close_port",
+      "type": "button",
+      "name": "close_port",
+      "layout": {
+        "x": 207,
+        "y": 526,
+        "width": 149,
+        "height": 38
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@close_port",
+        "iconAssetId": "",
+        "iconPosition": "left",
+        "iconSize": 16
+      },
+      "style": {
+        "color": "#ffffff",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.primary",
+        "fontWeight": 600
+      },
+      "states": {},
+      "bindings": {
+        "enabled": {
+          "variable": "serial_state",
+          "path": ["canClose"],
+          "mode": "oneWay"
+        }
+      },
+      "events": {
+        "click": "serial_close"
+      },
+      "definitionVersion": 2
+    },
+    {
+      "id": "listen_start",
+      "type": "button",
+      "name": "listen_start",
+      "layout": {
+        "x": 42,
+        "y": 578,
+        "width": 149,
+        "height": 38
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@listen_start",
+        "iconAssetId": "",
+        "iconPosition": "left",
+        "iconSize": 16
+      },
+      "style": {
+        "color": "#ffffff",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.primary",
+        "fontWeight": 600
+      },
+      "states": {},
+      "bindings": {
+        "enabled": {
+          "variable": "serial_state",
+          "path": ["isOpen"],
+          "mode": "oneWay"
+        }
+      },
+      "events": {
+        "click": "serial_listen_start"
+      },
+      "definitionVersion": 2
+    },
+    {
+      "id": "listen_stop",
+      "type": "button",
+      "name": "listen_stop",
+      "layout": {
+        "x": 207,
+        "y": 578,
+        "width": 149,
+        "height": 38
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@listen_stop",
+        "iconAssetId": "",
+        "iconPosition": "left",
+        "iconSize": 16
+      },
+      "style": {
+        "color": "#ffffff",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.primary",
+        "fontWeight": 600
+      },
+      "states": {},
+      "bindings": {
+        "enabled": {
+          "variable": "serial_state",
+          "path": ["isOpen"],
+          "mode": "oneWay"
+        }
+      },
+      "events": {
+        "click": "serial_listen_stop"
+      },
+      "definitionVersion": 2
+    },
+    {
+      "id": "auto_reconnect",
+      "type": "switch",
+      "name": "auto_reconnect",
+      "layout": {
+        "x": 42,
+        "y": 634,
+        "width": 305,
+        "height": 34
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@reconnect_text",
+        "value": false,
+        "onText": "",
+        "offText": "",
+        "onColor": "$color.primary",
+        "offColor": "$color.border"
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {
+        "value": {
+          "variable": "serial_settings",
+          "path": ["autoReconnect"],
+          "mode": "twoWay"
+        }
+      },
+      "events": {
+        "change": "serial_reconnect"
+      },
+      "definitionVersion": 2
+    },
+    {
+      "id": "reconnect_note",
+      "type": "text",
+      "name": "reconnect_note",
+      "layout": {
+        "x": 42,
+        "y": 675,
+        "width": 312,
+        "height": 72
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@reconnect_note",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "state_label",
+      "type": "text",
+      "name": "state_label",
+      "layout": {
+        "x": 42,
+        "y": 758,
+        "width": 70,
+        "height": 26
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@state_label",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "connection_state",
+      "type": "text",
+      "name": "connection_state",
+      "layout": {
+        "x": 115,
+        "y": 758,
+        "width": 235,
+        "height": 26
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@connection_state",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {
+        "text": {
+          "variable": "serial_state",
+          "path": ["status"],
+          "mode": "oneWay"
+        }
+      },
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "listening_label",
+      "type": "text",
+      "name": "listening_label",
+      "layout": {
+        "x": 42,
+        "y": 791,
+        "width": 70,
+        "height": 26
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@listening_label",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "listening_state",
+      "type": "switch",
+      "name": "listening_state",
+      "layout": {
+        "x": 115,
+        "y": 790,
+        "width": 210,
+        "height": 30
+      },
+      "props": {
+        "enabled": false,
+        "visible": true,
+        "title": "",
+        "text": "",
+        "value": false,
+        "onText": "",
+        "offText": "",
+        "onColor": "$color.primary",
+        "offColor": "$color.border"
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {
+        "value": {
+          "variable": "serial_state",
+          "path": ["listening"],
+          "mode": "oneWay"
+        }
+      },
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "overflow_note",
+      "type": "text",
+      "name": "overflow_note",
+      "layout": {
+        "x": 42,
+        "y": 834,
+        "width": 312,
+        "height": 56
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@overflow_note",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "traffic_heading",
+      "type": "text",
+      "name": "traffic_heading",
+      "layout": {
+        "x": 414,
+        "y": 103,
+        "width": 220,
+        "height": 26
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@traffic_heading",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 14,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "clear_history",
+      "type": "button",
+      "name": "clear_history",
+      "layout": {
+        "x": 933,
+        "y": 100,
+        "width": 108,
+        "height": 38
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@clear_history",
+        "iconAssetId": "",
+        "iconPosition": "left",
+        "iconSize": 16
+      },
+      "style": {
+        "color": "#ffffff",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.primary",
+        "fontWeight": 600
+      },
+      "states": {},
+      "bindings": {},
+      "events": {
+        "click": "serial_clear"
+      },
+      "definitionVersion": 2
+    },
+    {
+      "id": "reset_counters",
+      "type": "button",
+      "name": "reset_counters",
+      "layout": {
+        "x": 1052,
+        "y": 100,
+        "width": 108,
+        "height": 38
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@reset_counters",
+        "iconAssetId": "",
+        "iconPosition": "left",
+        "iconSize": 16
+      },
+      "style": {
+        "color": "#ffffff",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.primary",
+        "fontWeight": 600
+      },
+      "states": {},
+      "bindings": {
+        "enabled": {
+          "variable": "serial_state",
+          "path": ["isOpen"],
+          "mode": "oneWay"
+        }
+      },
+      "events": {
+        "click": "serial_reset_counters"
+      },
+      "definitionVersion": 2
+    },
+    {
+      "id": "tx_bytes_label",
+      "type": "text",
+      "name": "tx_bytes_label",
+      "layout": {
+        "x": 414,
+        "y": 148,
+        "width": 160,
+        "height": 26
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@tx_bytes_label",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "tx_bytes",
+      "type": "number",
+      "name": "tx_bytes",
+      "layout": {
+        "x": 414,
+        "y": 175,
+        "width": 166,
+        "height": 34
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "value": 42,
+        "min": 0,
+        "max": 9007199254740991,
+        "step": 1,
+        "precision": 0,
+        "unit": "",
+        "readOnly": true
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.surface",
+        "borderWidth": 1,
+        "borderStyle": "solid",
+        "borderColor": "$color.border",
+        "padding": 8
+      },
+      "states": {},
+      "bindings": {
+        "value": {
+          "variable": "serial_state",
+          "path": ["counters", "txBytes"],
+          "mode": "oneWay"
+        }
+      },
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "rx_bytes_label",
+      "type": "text",
+      "name": "rx_bytes_label",
+      "layout": {
+        "x": 600,
+        "y": 148,
+        "width": 160,
+        "height": 26
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@rx_bytes_label",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "rx_bytes",
+      "type": "number",
+      "name": "rx_bytes",
+      "layout": {
+        "x": 600,
+        "y": 175,
+        "width": 166,
+        "height": 34
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "value": 42,
+        "min": 0,
+        "max": 9007199254740991,
+        "step": 1,
+        "precision": 0,
+        "unit": "",
+        "readOnly": true
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.surface",
+        "borderWidth": 1,
+        "borderStyle": "solid",
+        "borderColor": "$color.border",
+        "padding": 8
+      },
+      "states": {},
+      "bindings": {
+        "value": {
+          "variable": "serial_state",
+          "path": ["counters", "rxBytes"],
+          "mode": "oneWay"
+        }
+      },
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "tx_packets_label",
+      "type": "text",
+      "name": "tx_packets_label",
+      "layout": {
+        "x": 786,
+        "y": 148,
+        "width": 160,
+        "height": 26
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@tx_packets_label",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "tx_packets",
+      "type": "number",
+      "name": "tx_packets",
+      "layout": {
+        "x": 786,
+        "y": 175,
+        "width": 166,
+        "height": 34
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "value": 42,
+        "min": 0,
+        "max": 9007199254740991,
+        "step": 1,
+        "precision": 0,
+        "unit": "",
+        "readOnly": true
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.surface",
+        "borderWidth": 1,
+        "borderStyle": "solid",
+        "borderColor": "$color.border",
+        "padding": 8
+      },
+      "states": {},
+      "bindings": {
+        "value": {
+          "variable": "serial_state",
+          "path": ["counters", "txPackets"],
+          "mode": "oneWay"
+        }
+      },
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "rx_packets_label",
+      "type": "text",
+      "name": "rx_packets_label",
+      "layout": {
+        "x": 972,
+        "y": 148,
+        "width": 160,
+        "height": 26
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@rx_packets_label",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "rx_packets",
+      "type": "number",
+      "name": "rx_packets",
+      "layout": {
+        "x": 972,
+        "y": 175,
+        "width": 166,
+        "height": 34
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "value": 42,
+        "min": 0,
+        "max": 9007199254740991,
+        "step": 1,
+        "precision": 0,
+        "unit": "",
+        "readOnly": true
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.surface",
+        "borderWidth": 1,
+        "borderStyle": "solid",
+        "borderColor": "$color.border",
+        "padding": 8
+      },
+      "states": {},
+      "bindings": {
+        "value": {
+          "variable": "serial_state",
+          "path": ["counters", "rxPackets"],
+          "mode": "oneWay"
+        }
+      },
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "traffic_history",
+      "type": "table",
+      "name": "traffic_history",
+      "layout": {
+        "x": 414,
+        "y": 228,
+        "width": 742,
+        "height": 290
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "rows": [],
+        "columns": [
+          {
+            "id": "time",
+            "title": "时间",
+            "path": ["time"],
+            "width": 188
+          },
+          {
+            "id": "direction",
+            "title": "方向",
+            "path": ["direction"],
+            "width": 52
+          },
+          {
+            "id": "bytes",
+            "title": "字节",
+            "path": ["bytes"],
+            "width": 56,
+            "align": "right"
+          },
+          {
+            "id": "text",
+            "title": "UTF-8",
+            "path": ["text"],
+            "width": 215
+          },
+          {
+            "id": "hex",
+            "title": "HEX",
+            "path": ["hex"],
+            "width": 215
+          }
+        ],
+        "headerVisible": true,
+        "headerFromFirstRow": false,
+        "sortable": false,
+        "striped": true,
+        "pageSize": 10,
+        "rowHeight": 29,
+        "emptyText": "@history_empty"
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {
+        "rows": {
+          "variable": "serial_history",
+          "path": ["rows"],
+          "mode": "oneWay"
+        }
+      },
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "history_limit",
+      "type": "text",
+      "name": "history_limit",
+      "layout": {
+        "x": 414,
+        "y": 527,
+        "width": 330,
+        "height": 26
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@history_limit",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "dropped_records",
+      "type": "number",
+      "name": "dropped_records",
+      "layout": {
+        "x": 752,
+        "y": 525,
+        "width": 90,
+        "height": 30
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "value": 42,
+        "min": 0,
+        "max": 9007199254740991,
+        "step": 1,
+        "precision": 0,
+        "unit": "",
+        "readOnly": true
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.surface",
+        "borderWidth": 1,
+        "borderStyle": "solid",
+        "borderColor": "$color.border",
+        "padding": 8
+      },
+      "states": {},
+      "bindings": {
+        "value": {
+          "variable": "serial_history",
+          "path": ["dropped"],
+          "mode": "oneWay"
+        }
+      },
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "rx_time_label",
+      "type": "text",
+      "name": "rx_time_label",
+      "layout": {
+        "x": 414,
+        "y": 565,
+        "width": 85,
+        "height": 26
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@rx_time_label",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "rx_time",
+      "type": "text",
+      "name": "rx_time",
+      "layout": {
+        "x": 505,
+        "y": 565,
+        "width": 270,
+        "height": 26
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@rx_time",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {
+        "text": {
+          "variable": "serial_last_rx",
+          "path": [],
+          "mode": "oneWay"
+        }
+      },
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "tx_time_label",
+      "type": "text",
+      "name": "tx_time_label",
+      "layout": {
+        "x": 786,
+        "y": 565,
+        "width": 85,
+        "height": 26
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@tx_time_label",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "tx_time",
+      "type": "text",
+      "name": "tx_time",
+      "layout": {
+        "x": 875,
+        "y": 565,
+        "width": 280,
+        "height": 26
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@tx_time",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {
+        "text": {
+          "variable": "serial_last_tx",
+          "path": [],
+          "mode": "oneWay"
+        }
+      },
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "send_heading",
+      "type": "text",
+      "name": "send_heading",
+      "layout": {
+        "x": 414,
+        "y": 635,
+        "width": 170,
+        "height": 26
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@send_heading",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 14,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "send_payload",
+      "type": "input",
+      "name": "send_payload",
+      "layout": {
+        "x": 414,
+        "y": 675,
+        "width": 508,
+        "height": 110
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "value": "",
+        "placeholder": "@payload_hint",
+        "inputType": "text",
+        "multiline": true,
+        "readOnly": false,
+        "maxLength": 196605,
+        "submitOn": "enter"
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.surface",
+        "borderWidth": 1,
+        "borderStyle": "solid",
+        "borderColor": "$color.border",
+        "padding": 8
+      },
+      "states": {},
+      "bindings": {
+        "value": {
+          "variable": "serial_tx",
+          "path": ["data"],
+          "mode": "twoWay"
+        }
+      },
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "send_encoding",
+      "type": "select",
+      "name": "send_encoding",
+      "layout": {
+        "x": 936,
+        "y": 675,
+        "width": 220,
+        "height": 36
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "value": "自动",
+        "options": [
+          {
+            "id": "send_encoding_0",
+            "label": "UTF-8",
+            "value": "utf8"
+          },
+          {
+            "id": "send_encoding_1",
+            "label": "HEX",
+            "value": "hex"
+          }
+        ],
+        "placeholder": "",
+        "legacyOptions": false,
+        "legacyValueFormat": false
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.surface",
+        "borderWidth": 1,
+        "borderStyle": "solid",
+        "borderColor": "$color.border",
+        "padding": 8
+      },
+      "states": {},
+      "bindings": {
+        "value": {
+          "variable": "serial_tx",
+          "path": ["encoding"],
+          "mode": "twoWay"
+        }
+      },
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "line_ending",
+      "type": "select",
+      "name": "line_ending",
+      "layout": {
+        "x": 936,
+        "y": 721,
+        "width": 220,
+        "height": 36
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "value": "自动",
+        "options": [
+          {
+            "id": "line_ending_0",
+            "label": "不追加行尾",
+            "value": "none"
+          },
+          {
+            "id": "line_ending_1",
+            "label": "追加 LF",
+            "value": "lf"
+          },
+          {
+            "id": "line_ending_2",
+            "label": "追加 CRLF",
+            "value": "crlf"
+          }
+        ],
+        "placeholder": "",
+        "legacyOptions": false,
+        "legacyValueFormat": false
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.surface",
+        "borderWidth": 1,
+        "borderStyle": "solid",
+        "borderColor": "$color.border",
+        "padding": 8
+      },
+      "states": {},
+      "bindings": {
+        "value": {
+          "variable": "serial_tx",
+          "path": ["lineEnding"],
+          "mode": "twoWay"
+        }
+      },
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "send_once",
+      "type": "button",
+      "name": "send_once",
+      "layout": {
+        "x": 936,
+        "y": 767,
+        "width": 220,
+        "height": 38
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@send_once",
+        "iconAssetId": "",
+        "iconPosition": "left",
+        "iconSize": 16
+      },
+      "style": {
+        "color": "#ffffff",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.primary",
+        "fontWeight": 600
+      },
+      "states": {},
+      "bindings": {
+        "enabled": {
+          "variable": "serial_state",
+          "path": ["isOpen"],
+          "mode": "oneWay"
+        }
+      },
+      "events": {
+        "click": "serial_send"
+      },
+      "definitionVersion": 2
+    },
+    {
+      "id": "periodic_send",
+      "type": "switch",
+      "name": "periodic_send",
+      "layout": {
+        "x": 414,
+        "y": 803,
+        "width": 210,
+        "height": 32
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@periodic_text",
+        "value": false,
+        "onText": "",
+        "offText": "",
+        "onColor": "$color.primary",
+        "offColor": "$color.border"
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {
+        "value": {
+          "variable": "serial_tx",
+          "path": ["periodic"],
+          "mode": "twoWay"
+        },
+        "enabled": {
+          "variable": "serial_state",
+          "path": ["isOpen"],
+          "mode": "oneWay"
+        }
+      },
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "send_interval",
+      "type": "number",
+      "name": "send_interval",
+      "layout": {
+        "x": 645,
+        "y": 803,
+        "width": 130,
+        "height": 34
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "value": 1000,
+        "min": 100,
+        "max": 86400000,
+        "step": 1,
+        "precision": 0,
+        "unit": "ms",
+        "readOnly": false
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.surface",
+        "borderWidth": 1,
+        "borderStyle": "solid",
+        "borderColor": "$color.border",
+        "padding": 8
+      },
+      "states": {},
+      "bindings": {
+        "value": {
+          "variable": "serial_tx",
+          "path": ["intervalMs"],
+          "mode": "twoWay"
+        }
+      },
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "send_note",
+      "type": "text",
+      "name": "send_note",
+      "layout": {
+        "x": 414,
+        "y": 850,
+        "width": 740,
+        "height": 44
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@send_note",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "error_code",
+      "type": "text",
+      "name": "error_code",
+      "layout": {
+        "x": 720,
+        "y": 24,
+        "width": 170,
+        "height": 26
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@error_code",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {
+        "text": {
+          "variable": "serial_error",
+          "path": ["code"],
+          "mode": "oneWay"
+        }
+      },
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "error_message",
+      "type": "text",
+      "name": "error_message",
+      "layout": {
+        "x": 720,
+        "y": 50,
+        "width": 450,
+        "height": 26
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "@error_message",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.warning",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {
+        "text": {
+          "variable": "serial_error",
+          "path": ["message"],
+          "mode": "oneWay"
+        }
+      },
+      "events": {},
+      "definitionVersion": 2
+    }
+  ],
+  "variables": [
+    {
+      "id": "serial_settings",
+      "name": "Serial settings",
+      "type": "json",
+      "initial": {
+        "portName": "",
+        "baudRate": 115200,
+        "dataBits": 8,
+        "stopBits": 1,
+        "parity": "none",
+        "flowControl": "none",
+        "framing": "raw",
+        "autoReconnect": false
+      }
+    },
+    {
+      "id": "serial_filters",
+      "name": "USB filters",
+      "type": "json",
+      "initial": {
+        "vid": "",
+        "pid": ""
+      }
+    },
+    {
+      "id": "serial_ports",
+      "name": "Port snapshot",
+      "type": "json",
+      "initial": {
+        "kind": "snapshot",
+        "ports": [],
+        "added": [],
+        "removed": [],
+        "changed": [],
+        "sequence": 0,
+        "timestamp": 0,
+        "timestampIso": ""
+      }
+    },
+    {
+      "id": "serial_options",
+      "name": "Port options",
+      "type": "json",
+      "initial": []
+    },
+    {
+      "id": "serial_state",
+      "name": "Serial session state",
+      "type": "json",
+      "initial": {
+        "connectionId": "serial_port",
+        "sessionId": null,
+        "status": "closed",
+        "port": null,
+        "autoReconnect": false,
+        "listening": false,
+        "isOpen": false,
+        "canOpen": true,
+        "canClose": false,
+        "counters": {
+          "txBytes": 0,
+          "rxBytes": 0,
+          "txPackets": 0,
+          "rxPackets": 0
+        },
+        "error": null,
+        "timestamp": 0,
+        "timestampIso": ""
+      }
+    },
+    {
+      "id": "serial_tx",
+      "name": "Transmit settings",
+      "type": "json",
+      "initial": {
+        "data": "",
+        "encoding": "utf8",
+        "lineEnding": "none",
+        "intervalMs": 1000,
+        "periodic": false
+      }
+    },
+    {
+      "id": "serial_history",
+      "name": "Bounded I/O history",
+      "type": "json",
+      "initial": {
+        "rows": [],
+        "dropped": 0
+      }
+    },
+    {
+      "id": "serial_error",
+      "name": "Serial error",
+      "type": "json",
+      "initial": {
+        "code": "",
+        "message": ""
+      }
+    },
+    {
+      "id": "serial_last_rx",
+      "name": "Last receive time",
+      "type": "string",
+      "initial": "—"
+    },
+    {
+      "id": "serial_last_tx",
+      "name": "Last send time",
+      "type": "string",
+      "initial": "—"
+    }
+  ],
+  "flows": [
+    {
+      "id": "serial_scan",
+      "name": "01 · 扫描端口 / Scan ports",
+      "enabled": true,
+      "nodes": [
+        {
+          "id": "serial_scan_0",
+          "kind": "event",
+          "label": "UI 事件 / UI event",
+          "config": {
+            "trigger": "manual"
+          },
+          "position": {
+            "x": 40,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_scan_1",
+          "kind": "serial",
+          "label": "扫描串口 / Scan serial ports",
+          "config": {
+            "action": "scan"
+          },
+          "position": {
+            "x": 285,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_scan_2",
+          "kind": "write",
+          "label": "保存扫描结果 / Save snapshot",
+          "config": {
+            "variable": "serial_ports"
+          },
+          "position": {
+            "x": 530,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_scan_3",
+          "kind": "serial",
+          "label": "VID / PID 过滤",
+          "config": {
+            "action": "filter",
+            "ports": {
+              "source": "variable",
+              "variable": "serial_ports",
+              "path": ["ports"]
+            },
+            "vid": {
+              "source": "variable",
+              "variable": "serial_filters",
+              "path": ["vid"]
+            },
+            "pid": {
+              "source": "variable",
+              "variable": "serial_filters",
+              "path": ["pid"]
+            }
+          },
+          "position": {
+            "x": 775,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_scan_4",
+          "kind": "map",
+          "label": "端口选项 / Port options",
+          "config": {
+            "operation": "array",
+            "items": {
+              "source": "input",
+              "path": []
+            },
+            "fields": {
+              "id": {
+                "source": "input",
+                "path": ["portName"]
+              },
+              "label": {
+                "source": "input",
+                "path": ["displayName"]
+              },
+              "value": {
+                "source": "input",
+                "path": ["portName"]
+              }
+            }
+          },
+          "position": {
+            "x": 1020,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_scan_5",
+          "kind": "write",
+          "label": "更新下拉列表 / Update options",
+          "config": {
+            "variable": "serial_options"
+          },
+          "position": {
+            "x": 40,
+            "y": 270
+          }
+        },
+        {
+          "id": "serial_scan_error_map",
+          "kind": "map",
+          "label": "错误字段 / Error fields",
+          "position": {
+            "x": 285,
+            "y": 500
+          },
+          "config": {
+            "operation": "object",
+            "fields": {
+              "code": {
+                "source": "input",
+                "path": ["code"]
+              },
+              "message": {
+                "source": "input",
+                "path": ["message"]
+              }
+            }
+          }
+        },
+        {
+          "id": "serial_scan_error_write",
+          "kind": "write",
+          "label": "显示错误 / Show error",
+          "position": {
+            "x": 530,
+            "y": 500
+          },
+          "config": {
+            "variable": "serial_error"
+          }
+        },
+        {
+          "id": "serial_scan_stop_timer",
+          "kind": "write",
+          "label": "停止定时发送 / Stop periodic sends",
+          "position": {
+            "x": 775,
+            "y": 500
+          },
+          "config": {
+            "variable": "serial_tx",
+            "path": ["periodic"],
+            "value": false
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "serial_scan_edge_0",
+          "source": "serial_scan_0",
+          "target": "serial_scan_1",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_scan_edge_1",
+          "source": "serial_scan_1",
+          "target": "serial_scan_2",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_scan_edge_2",
+          "source": "serial_scan_2",
+          "target": "serial_scan_3",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_scan_edge_3",
+          "source": "serial_scan_3",
+          "target": "serial_scan_4",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_scan_edge_4",
+          "source": "serial_scan_4",
+          "target": "serial_scan_5",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_scan_error_serial_scan_1",
+          "source": "serial_scan_1",
+          "target": "serial_scan_error_map",
+          "sourceHandle": "error",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_scan_error_serial_scan_3",
+          "source": "serial_scan_3",
+          "target": "serial_scan_error_map",
+          "sourceHandle": "error",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_scan_error_serial_scan_4",
+          "source": "serial_scan_4",
+          "target": "serial_scan_error_map",
+          "sourceHandle": "error",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_scan_error_show",
+          "source": "serial_scan_error_map",
+          "target": "serial_scan_error_write",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_scan_error_stop",
+          "source": "serial_scan_error_write",
+          "target": "serial_scan_stop_timer",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        }
+      ]
+    },
+    {
+      "id": "serial_devices",
+      "name": "02 · 插入与拔出 / Device changes",
+      "enabled": true,
+      "nodes": [
+        {
+          "id": "serial_devices_0",
+          "kind": "event",
+          "label": "设备列表事件 / Device event",
+          "config": {
+            "trigger": "serial",
+            "event": "devices"
+          },
+          "position": {
+            "x": 40,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_devices_1",
+          "kind": "write",
+          "label": "保存设备快照 / Save snapshot",
+          "config": {
+            "variable": "serial_ports"
+          },
+          "position": {
+            "x": 285,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_devices_2",
+          "kind": "serial",
+          "label": "VID / PID 过滤",
+          "config": {
+            "action": "filter",
+            "ports": {
+              "source": "variable",
+              "variable": "serial_ports",
+              "path": ["ports"]
+            },
+            "vid": {
+              "source": "variable",
+              "variable": "serial_filters",
+              "path": ["vid"]
+            },
+            "pid": {
+              "source": "variable",
+              "variable": "serial_filters",
+              "path": ["pid"]
+            }
+          },
+          "position": {
+            "x": 530,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_devices_3",
+          "kind": "map",
+          "label": "端口选项 / Port options",
+          "config": {
+            "operation": "array",
+            "items": {
+              "source": "input",
+              "path": []
+            },
+            "fields": {
+              "id": {
+                "source": "input",
+                "path": ["portName"]
+              },
+              "label": {
+                "source": "input",
+                "path": ["displayName"]
+              },
+              "value": {
+                "source": "input",
+                "path": ["portName"]
+              }
+            }
+          },
+          "position": {
+            "x": 775,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_devices_4",
+          "kind": "write",
+          "label": "更新下拉列表 / Update options",
+          "config": {
+            "variable": "serial_options"
+          },
+          "position": {
+            "x": 1020,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_devices_error_map",
+          "kind": "map",
+          "label": "错误字段 / Error fields",
+          "position": {
+            "x": 285,
+            "y": 500
+          },
+          "config": {
+            "operation": "object",
+            "fields": {
+              "code": {
+                "source": "input",
+                "path": ["code"]
+              },
+              "message": {
+                "source": "input",
+                "path": ["message"]
+              }
+            }
+          }
+        },
+        {
+          "id": "serial_devices_error_write",
+          "kind": "write",
+          "label": "显示错误 / Show error",
+          "position": {
+            "x": 530,
+            "y": 500
+          },
+          "config": {
+            "variable": "serial_error"
+          }
+        },
+        {
+          "id": "serial_devices_stop_timer",
+          "kind": "write",
+          "label": "停止定时发送 / Stop periodic sends",
+          "position": {
+            "x": 775,
+            "y": 500
+          },
+          "config": {
+            "variable": "serial_tx",
+            "path": ["periodic"],
+            "value": false
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "serial_devices_edge_0",
+          "source": "serial_devices_0",
+          "target": "serial_devices_1",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_devices_edge_1",
+          "source": "serial_devices_1",
+          "target": "serial_devices_2",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_devices_edge_2",
+          "source": "serial_devices_2",
+          "target": "serial_devices_3",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_devices_edge_3",
+          "source": "serial_devices_3",
+          "target": "serial_devices_4",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_devices_error_serial_devices_2",
+          "source": "serial_devices_2",
+          "target": "serial_devices_error_map",
+          "sourceHandle": "error",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_devices_error_serial_devices_3",
+          "source": "serial_devices_3",
+          "target": "serial_devices_error_map",
+          "sourceHandle": "error",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_devices_error_show",
+          "source": "serial_devices_error_map",
+          "target": "serial_devices_error_write",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_devices_error_stop",
+          "source": "serial_devices_error_write",
+          "target": "serial_devices_stop_timer",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        }
+      ]
+    },
+    {
+      "id": "serial_filter",
+      "name": "03 · 更新 VID/PID 过滤 / Filter devices",
+      "enabled": true,
+      "nodes": [
+        {
+          "id": "serial_filter_0",
+          "kind": "event",
+          "label": "UI 事件 / UI event",
+          "config": {
+            "trigger": "manual"
+          },
+          "position": {
+            "x": 40,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_filter_1",
+          "kind": "serial",
+          "label": "VID / PID 过滤",
+          "config": {
+            "action": "filter",
+            "ports": {
+              "source": "variable",
+              "variable": "serial_ports",
+              "path": ["ports"]
+            },
+            "vid": {
+              "source": "variable",
+              "variable": "serial_filters",
+              "path": ["vid"]
+            },
+            "pid": {
+              "source": "variable",
+              "variable": "serial_filters",
+              "path": ["pid"]
+            }
+          },
+          "position": {
+            "x": 285,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_filter_2",
+          "kind": "map",
+          "label": "端口选项 / Port options",
+          "config": {
+            "operation": "array",
+            "items": {
+              "source": "input",
+              "path": []
+            },
+            "fields": {
+              "id": {
+                "source": "input",
+                "path": ["portName"]
+              },
+              "label": {
+                "source": "input",
+                "path": ["displayName"]
+              },
+              "value": {
+                "source": "input",
+                "path": ["portName"]
+              }
+            }
+          },
+          "position": {
+            "x": 530,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_filter_3",
+          "kind": "write",
+          "label": "更新下拉列表 / Update options",
+          "config": {
+            "variable": "serial_options"
+          },
+          "position": {
+            "x": 775,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_filter_error_map",
+          "kind": "map",
+          "label": "错误字段 / Error fields",
+          "position": {
+            "x": 285,
+            "y": 500
+          },
+          "config": {
+            "operation": "object",
+            "fields": {
+              "code": {
+                "source": "input",
+                "path": ["code"]
+              },
+              "message": {
+                "source": "input",
+                "path": ["message"]
+              }
+            }
+          }
+        },
+        {
+          "id": "serial_filter_error_write",
+          "kind": "write",
+          "label": "显示错误 / Show error",
+          "position": {
+            "x": 530,
+            "y": 500
+          },
+          "config": {
+            "variable": "serial_error"
+          }
+        },
+        {
+          "id": "serial_filter_stop_timer",
+          "kind": "write",
+          "label": "停止定时发送 / Stop periodic sends",
+          "position": {
+            "x": 775,
+            "y": 500
+          },
+          "config": {
+            "variable": "serial_tx",
+            "path": ["periodic"],
+            "value": false
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "serial_filter_edge_0",
+          "source": "serial_filter_0",
+          "target": "serial_filter_1",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_filter_edge_1",
+          "source": "serial_filter_1",
+          "target": "serial_filter_2",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_filter_edge_2",
+          "source": "serial_filter_2",
+          "target": "serial_filter_3",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_filter_error_serial_filter_1",
+          "source": "serial_filter_1",
+          "target": "serial_filter_error_map",
+          "sourceHandle": "error",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_filter_error_serial_filter_2",
+          "source": "serial_filter_2",
+          "target": "serial_filter_error_map",
+          "sourceHandle": "error",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_filter_error_show",
+          "source": "serial_filter_error_map",
+          "target": "serial_filter_error_write",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_filter_error_stop",
+          "source": "serial_filter_error_write",
+          "target": "serial_filter_stop_timer",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        }
+      ]
+    },
+    {
+      "id": "serial_open",
+      "name": "04 · 手动打开并监听 / Open and listen",
+      "enabled": true,
+      "nodes": [
+        {
+          "id": "serial_open_0",
+          "kind": "event",
+          "label": "UI 事件 / UI event",
+          "config": {
+            "trigger": "manual"
+          },
+          "position": {
+            "x": 40,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_open_1",
+          "kind": "serial",
+          "label": "打开串口 / Open serial",
+          "config": {
+            "action": "open",
+            "connectionId": "serial_port",
+            "settings": {
+              "source": "variable",
+              "variable": "serial_settings",
+              "path": []
+            }
+          },
+          "position": {
+            "x": 285,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_open_2",
+          "kind": "serial",
+          "label": "开始监听 / Start listening",
+          "config": {
+            "action": "listenStart",
+            "connectionId": "serial_port"
+          },
+          "position": {
+            "x": 530,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_open_3",
+          "kind": "write",
+          "label": "清除旧错误 / Clear error",
+          "config": {
+            "variable": "serial_error",
+            "value": {
+              "code": "",
+              "message": ""
+            }
+          },
+          "position": {
+            "x": 775,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_open_error_map",
+          "kind": "map",
+          "label": "错误字段 / Error fields",
+          "position": {
+            "x": 285,
+            "y": 500
+          },
+          "config": {
+            "operation": "object",
+            "fields": {
+              "code": {
+                "source": "input",
+                "path": ["code"]
+              },
+              "message": {
+                "source": "input",
+                "path": ["message"]
+              }
+            }
+          }
+        },
+        {
+          "id": "serial_open_error_write",
+          "kind": "write",
+          "label": "显示错误 / Show error",
+          "position": {
+            "x": 530,
+            "y": 500
+          },
+          "config": {
+            "variable": "serial_error"
+          }
+        },
+        {
+          "id": "serial_open_stop_timer",
+          "kind": "write",
+          "label": "停止定时发送 / Stop periodic sends",
+          "position": {
+            "x": 775,
+            "y": 500
+          },
+          "config": {
+            "variable": "serial_tx",
+            "path": ["periodic"],
+            "value": false
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "serial_open_edge_0",
+          "source": "serial_open_0",
+          "target": "serial_open_1",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_open_edge_1",
+          "source": "serial_open_1",
+          "target": "serial_open_2",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_open_edge_2",
+          "source": "serial_open_2",
+          "target": "serial_open_3",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_open_error_serial_open_1",
+          "source": "serial_open_1",
+          "target": "serial_open_error_map",
+          "sourceHandle": "error",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_open_error_serial_open_2",
+          "source": "serial_open_2",
+          "target": "serial_open_error_map",
+          "sourceHandle": "error",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_open_error_show",
+          "source": "serial_open_error_map",
+          "target": "serial_open_error_write",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_open_error_stop",
+          "source": "serial_open_error_write",
+          "target": "serial_open_stop_timer",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        }
+      ]
+    },
+    {
+      "id": "serial_close",
+      "name": "05 · 断开 / Disconnect",
+      "enabled": true,
+      "nodes": [
+        {
+          "id": "serial_close_0",
+          "kind": "event",
+          "label": "UI 事件 / UI event",
+          "config": {
+            "trigger": "manual"
+          },
+          "position": {
+            "x": 40,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_close_1",
+          "kind": "write",
+          "label": "停止定时发送 / Stop periodic sends",
+          "config": {
+            "variable": "serial_tx",
+            "path": ["periodic"],
+            "value": false
+          },
+          "position": {
+            "x": 285,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_close_2",
+          "kind": "serial",
+          "label": "关闭串口 / Close serial",
+          "config": {
+            "action": "close",
+            "connectionId": "serial_port"
+          },
+          "position": {
+            "x": 530,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_close_error_map",
+          "kind": "map",
+          "label": "错误字段 / Error fields",
+          "position": {
+            "x": 285,
+            "y": 500
+          },
+          "config": {
+            "operation": "object",
+            "fields": {
+              "code": {
+                "source": "input",
+                "path": ["code"]
+              },
+              "message": {
+                "source": "input",
+                "path": ["message"]
+              }
+            }
+          }
+        },
+        {
+          "id": "serial_close_error_write",
+          "kind": "write",
+          "label": "显示错误 / Show error",
+          "position": {
+            "x": 530,
+            "y": 500
+          },
+          "config": {
+            "variable": "serial_error"
+          }
+        },
+        {
+          "id": "serial_close_stop_timer",
+          "kind": "write",
+          "label": "停止定时发送 / Stop periodic sends",
+          "position": {
+            "x": 775,
+            "y": 500
+          },
+          "config": {
+            "variable": "serial_tx",
+            "path": ["periodic"],
+            "value": false
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "serial_close_edge_0",
+          "source": "serial_close_0",
+          "target": "serial_close_1",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_close_edge_1",
+          "source": "serial_close_1",
+          "target": "serial_close_2",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_close_error_serial_close_2",
+          "source": "serial_close_2",
+          "target": "serial_close_error_map",
+          "sourceHandle": "error",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_close_error_show",
+          "source": "serial_close_error_map",
+          "target": "serial_close_error_write",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_close_error_stop",
+          "source": "serial_close_error_write",
+          "target": "serial_close_stop_timer",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        }
+      ]
+    },
+    {
+      "id": "serial_listen_start",
+      "name": "06 · 开始监听 / Start listening",
+      "enabled": true,
+      "nodes": [
+        {
+          "id": "serial_listen_start_0",
+          "kind": "event",
+          "label": "UI 事件 / UI event",
+          "config": {
+            "trigger": "manual"
+          },
+          "position": {
+            "x": 40,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_listen_start_1",
+          "kind": "serial",
+          "label": "开始监听 / Start listening",
+          "config": {
+            "action": "listenStart",
+            "connectionId": "serial_port"
+          },
+          "position": {
+            "x": 285,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_listen_start_error_map",
+          "kind": "map",
+          "label": "错误字段 / Error fields",
+          "position": {
+            "x": 285,
+            "y": 500
+          },
+          "config": {
+            "operation": "object",
+            "fields": {
+              "code": {
+                "source": "input",
+                "path": ["code"]
+              },
+              "message": {
+                "source": "input",
+                "path": ["message"]
+              }
+            }
+          }
+        },
+        {
+          "id": "serial_listen_start_error_write",
+          "kind": "write",
+          "label": "显示错误 / Show error",
+          "position": {
+            "x": 530,
+            "y": 500
+          },
+          "config": {
+            "variable": "serial_error"
+          }
+        },
+        {
+          "id": "serial_listen_start_stop_timer",
+          "kind": "write",
+          "label": "停止定时发送 / Stop periodic sends",
+          "position": {
+            "x": 775,
+            "y": 500
+          },
+          "config": {
+            "variable": "serial_tx",
+            "path": ["periodic"],
+            "value": false
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "serial_listen_start_edge_0",
+          "source": "serial_listen_start_0",
+          "target": "serial_listen_start_1",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_listen_start_error_serial_listen_start_1",
+          "source": "serial_listen_start_1",
+          "target": "serial_listen_start_error_map",
+          "sourceHandle": "error",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_listen_start_error_show",
+          "source": "serial_listen_start_error_map",
+          "target": "serial_listen_start_error_write",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_listen_start_error_stop",
+          "source": "serial_listen_start_error_write",
+          "target": "serial_listen_start_stop_timer",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        }
+      ]
+    },
+    {
+      "id": "serial_listen_stop",
+      "name": "07 · 停止监听 / Stop listening",
+      "enabled": true,
+      "nodes": [
+        {
+          "id": "serial_listen_stop_0",
+          "kind": "event",
+          "label": "UI 事件 / UI event",
+          "config": {
+            "trigger": "manual"
+          },
+          "position": {
+            "x": 40,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_listen_stop_1",
+          "kind": "serial",
+          "label": "停止监听 / Stop listening",
+          "config": {
+            "action": "listenStop",
+            "connectionId": "serial_port"
+          },
+          "position": {
+            "x": 285,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_listen_stop_error_map",
+          "kind": "map",
+          "label": "错误字段 / Error fields",
+          "position": {
+            "x": 285,
+            "y": 500
+          },
+          "config": {
+            "operation": "object",
+            "fields": {
+              "code": {
+                "source": "input",
+                "path": ["code"]
+              },
+              "message": {
+                "source": "input",
+                "path": ["message"]
+              }
+            }
+          }
+        },
+        {
+          "id": "serial_listen_stop_error_write",
+          "kind": "write",
+          "label": "显示错误 / Show error",
+          "position": {
+            "x": 530,
+            "y": 500
+          },
+          "config": {
+            "variable": "serial_error"
+          }
+        },
+        {
+          "id": "serial_listen_stop_stop_timer",
+          "kind": "write",
+          "label": "停止定时发送 / Stop periodic sends",
+          "position": {
+            "x": 775,
+            "y": 500
+          },
+          "config": {
+            "variable": "serial_tx",
+            "path": ["periodic"],
+            "value": false
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "serial_listen_stop_edge_0",
+          "source": "serial_listen_stop_0",
+          "target": "serial_listen_stop_1",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_listen_stop_error_serial_listen_stop_1",
+          "source": "serial_listen_stop_1",
+          "target": "serial_listen_stop_error_map",
+          "sourceHandle": "error",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_listen_stop_error_show",
+          "source": "serial_listen_stop_error_map",
+          "target": "serial_listen_stop_error_write",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_listen_stop_error_stop",
+          "source": "serial_listen_stop_error_write",
+          "target": "serial_listen_stop_stop_timer",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        }
+      ]
+    },
+    {
+      "id": "serial_send",
+      "name": "08 · 手动发送 / Send once",
+      "enabled": true,
+      "nodes": [
+        {
+          "id": "serial_send_0",
+          "kind": "event",
+          "label": "UI 事件 / UI event",
+          "config": {
+            "trigger": "manual"
+          },
+          "position": {
+            "x": 40,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_send_1",
+          "kind": "serial",
+          "label": "串口发送 / Serial send",
+          "config": {
+            "action": "send",
+            "connectionId": "serial_port",
+            "data": {
+              "source": "variable",
+              "variable": "serial_tx",
+              "path": ["data"]
+            },
+            "encoding": {
+              "source": "variable",
+              "variable": "serial_tx",
+              "path": ["encoding"]
+            },
+            "lineEnding": {
+              "source": "variable",
+              "variable": "serial_tx",
+              "path": ["lineEnding"]
+            },
+            "timeoutMs": {
+              "source": "literal",
+              "value": 5000
+            }
+          },
+          "position": {
+            "x": 285,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_send_error_map",
+          "kind": "map",
+          "label": "错误字段 / Error fields",
+          "position": {
+            "x": 285,
+            "y": 500
+          },
+          "config": {
+            "operation": "object",
+            "fields": {
+              "code": {
+                "source": "input",
+                "path": ["code"]
+              },
+              "message": {
+                "source": "input",
+                "path": ["message"]
+              }
+            }
+          }
+        },
+        {
+          "id": "serial_send_error_write",
+          "kind": "write",
+          "label": "显示错误 / Show error",
+          "position": {
+            "x": 530,
+            "y": 500
+          },
+          "config": {
+            "variable": "serial_error"
+          }
+        },
+        {
+          "id": "serial_send_stop_timer",
+          "kind": "write",
+          "label": "停止定时发送 / Stop periodic sends",
+          "position": {
+            "x": 775,
+            "y": 500
+          },
+          "config": {
+            "variable": "serial_tx",
+            "path": ["periodic"],
+            "value": false
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "serial_send_edge_0",
+          "source": "serial_send_0",
+          "target": "serial_send_1",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_send_error_serial_send_1",
+          "source": "serial_send_1",
+          "target": "serial_send_error_map",
+          "sourceHandle": "error",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_send_error_show",
+          "source": "serial_send_error_map",
+          "target": "serial_send_error_write",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_send_error_stop",
+          "source": "serial_send_error_write",
+          "target": "serial_send_stop_timer",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        }
+      ]
+    },
+    {
+      "id": "serial_periodic",
+      "name": "09 · 定时发送 / Periodic send",
+      "enabled": true,
+      "nodes": [
+        {
+          "id": "serial_periodic_0",
+          "kind": "event",
+          "label": "受控定时器 / Controlled interval",
+          "config": {
+            "trigger": "controlledInterval",
+            "interval": {
+              "source": "variable",
+              "variable": "serial_tx",
+              "path": ["intervalMs"]
+            },
+            "enabled": {
+              "source": "variable",
+              "variable": "serial_tx",
+              "path": ["periodic"]
+            }
+          },
+          "position": {
+            "x": 40,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_periodic_1",
+          "kind": "serial",
+          "label": "串口发送 / Serial send",
+          "config": {
+            "action": "send",
+            "connectionId": "serial_port",
+            "data": {
+              "source": "variable",
+              "variable": "serial_tx",
+              "path": ["data"]
+            },
+            "encoding": {
+              "source": "variable",
+              "variable": "serial_tx",
+              "path": ["encoding"]
+            },
+            "lineEnding": {
+              "source": "variable",
+              "variable": "serial_tx",
+              "path": ["lineEnding"]
+            },
+            "timeoutMs": {
+              "source": "literal",
+              "value": 5000
+            }
+          },
+          "position": {
+            "x": 285,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_periodic_error_map",
+          "kind": "map",
+          "label": "错误字段 / Error fields",
+          "position": {
+            "x": 285,
+            "y": 500
+          },
+          "config": {
+            "operation": "object",
+            "fields": {
+              "code": {
+                "source": "input",
+                "path": ["code"]
+              },
+              "message": {
+                "source": "input",
+                "path": ["message"]
+              }
+            }
+          }
+        },
+        {
+          "id": "serial_periodic_error_write",
+          "kind": "write",
+          "label": "显示错误 / Show error",
+          "position": {
+            "x": 530,
+            "y": 500
+          },
+          "config": {
+            "variable": "serial_error"
+          }
+        },
+        {
+          "id": "serial_periodic_stop_timer",
+          "kind": "write",
+          "label": "停止定时发送 / Stop periodic sends",
+          "position": {
+            "x": 775,
+            "y": 500
+          },
+          "config": {
+            "variable": "serial_tx",
+            "path": ["periodic"],
+            "value": false
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "serial_periodic_edge_0",
+          "source": "serial_periodic_0",
+          "target": "serial_periodic_1",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_periodic_error_serial_periodic_1",
+          "source": "serial_periodic_1",
+          "target": "serial_periodic_error_map",
+          "sourceHandle": "error",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_periodic_error_show",
+          "source": "serial_periodic_error_map",
+          "target": "serial_periodic_error_write",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_periodic_error_stop",
+          "source": "serial_periodic_error_write",
+          "target": "serial_periodic_stop_timer",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        }
+      ]
+    },
+    {
+      "id": "serial_reconnect",
+      "name": "10 · 重连策略 / Reconnect policy",
+      "enabled": true,
+      "nodes": [
+        {
+          "id": "serial_reconnect_0",
+          "kind": "event",
+          "label": "UI 事件 / UI event",
+          "config": {
+            "trigger": "manual"
+          },
+          "position": {
+            "x": 40,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_reconnect_1",
+          "kind": "serial",
+          "label": "设置重连 / Set reconnect",
+          "config": {
+            "action": "setReconnect",
+            "connectionId": "serial_port",
+            "enabled": {
+              "source": "variable",
+              "variable": "serial_settings",
+              "path": ["autoReconnect"]
+            }
+          },
+          "position": {
+            "x": 285,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_reconnect_error_map",
+          "kind": "map",
+          "label": "错误字段 / Error fields",
+          "position": {
+            "x": 285,
+            "y": 500
+          },
+          "config": {
+            "operation": "object",
+            "fields": {
+              "code": {
+                "source": "input",
+                "path": ["code"]
+              },
+              "message": {
+                "source": "input",
+                "path": ["message"]
+              }
+            }
+          }
+        },
+        {
+          "id": "serial_reconnect_error_write",
+          "kind": "write",
+          "label": "显示错误 / Show error",
+          "position": {
+            "x": 530,
+            "y": 500
+          },
+          "config": {
+            "variable": "serial_error"
+          }
+        },
+        {
+          "id": "serial_reconnect_stop_timer",
+          "kind": "write",
+          "label": "停止定时发送 / Stop periodic sends",
+          "position": {
+            "x": 775,
+            "y": 500
+          },
+          "config": {
+            "variable": "serial_tx",
+            "path": ["periodic"],
+            "value": false
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "serial_reconnect_edge_0",
+          "source": "serial_reconnect_0",
+          "target": "serial_reconnect_1",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_reconnect_error_serial_reconnect_1",
+          "source": "serial_reconnect_1",
+          "target": "serial_reconnect_error_map",
+          "sourceHandle": "error",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_reconnect_error_show",
+          "source": "serial_reconnect_error_map",
+          "target": "serial_reconnect_error_write",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_reconnect_error_stop",
+          "source": "serial_reconnect_error_write",
+          "target": "serial_reconnect_stop_timer",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        }
+      ]
+    },
+    {
+      "id": "serial_state",
+      "name": "11 · 会话状态 / Session state",
+      "enabled": true,
+      "nodes": [
+        {
+          "id": "serial_state_0",
+          "kind": "event",
+          "label": "串口状态 / Serial state",
+          "config": {
+            "trigger": "serial",
+            "event": "state",
+            "connectionId": "serial_port"
+          },
+          "position": {
+            "x": 40,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_state_1",
+          "kind": "write",
+          "label": "更新状态 / Update state",
+          "config": {
+            "variable": "serial_state"
+          },
+          "position": {
+            "x": 285,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_state_2",
+          "kind": "map",
+          "label": "提取状态 / Read status",
+          "config": {
+            "operation": "value",
+            "value": {
+              "source": "input",
+              "path": ["status"]
+            }
+          },
+          "position": {
+            "x": 530,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_state_3",
+          "kind": "condition",
+          "label": "非打开状态 / Not open",
+          "config": {
+            "operator": "neq",
+            "value": "open"
+          },
+          "position": {
+            "x": 775,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_state_4",
+          "kind": "write",
+          "label": "停止定时发送 / Stop periodic sends",
+          "config": {
+            "variable": "serial_tx",
+            "path": ["periodic"],
+            "value": false
+          },
+          "position": {
+            "x": 1020,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_state_error_map",
+          "kind": "map",
+          "label": "错误字段 / Error fields",
+          "position": {
+            "x": 285,
+            "y": 500
+          },
+          "config": {
+            "operation": "object",
+            "fields": {
+              "code": {
+                "source": "input",
+                "path": ["code"]
+              },
+              "message": {
+                "source": "input",
+                "path": ["message"]
+              }
+            }
+          }
+        },
+        {
+          "id": "serial_state_error_write",
+          "kind": "write",
+          "label": "显示错误 / Show error",
+          "position": {
+            "x": 530,
+            "y": 500
+          },
+          "config": {
+            "variable": "serial_error"
+          }
+        },
+        {
+          "id": "serial_state_stop_timer",
+          "kind": "write",
+          "label": "停止定时发送 / Stop periodic sends",
+          "position": {
+            "x": 775,
+            "y": 500
+          },
+          "config": {
+            "variable": "serial_tx",
+            "path": ["periodic"],
+            "value": false
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "serial_state_edge_0",
+          "source": "serial_state_0",
+          "target": "serial_state_1",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_state_edge_1",
+          "source": "serial_state_0",
+          "target": "serial_state_2",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_state_edge_2",
+          "source": "serial_state_2",
+          "target": "serial_state_3",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_state_edge_3",
+          "source": "serial_state_3",
+          "target": "serial_state_4",
+          "sourceHandle": "true",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_state_error_serial_state_2",
+          "source": "serial_state_2",
+          "target": "serial_state_error_map",
+          "sourceHandle": "error",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_state_error_show",
+          "source": "serial_state_error_map",
+          "target": "serial_state_error_write",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_state_error_stop",
+          "source": "serial_state_error_write",
+          "target": "serial_state_stop_timer",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        }
+      ]
+    },
+    {
+      "id": "serial_errors",
+      "name": "12 · 设备错误 / Device errors",
+      "enabled": true,
+      "nodes": [
+        {
+          "id": "serial_errors_0",
+          "kind": "event",
+          "label": "串口错误 / Serial error",
+          "config": {
+            "trigger": "serial",
+            "event": "error",
+            "connectionId": "serial_port"
+          },
+          "position": {
+            "x": 40,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_errors_1",
+          "kind": "map",
+          "label": "错误字段 / Error fields",
+          "config": {
+            "operation": "object",
+            "fields": {
+              "code": {
+                "source": "input",
+                "path": ["code"]
+              },
+              "message": {
+                "source": "input",
+                "path": ["message"]
+              }
+            }
+          },
+          "position": {
+            "x": 285,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_errors_2",
+          "kind": "write",
+          "label": "显示错误 / Show error",
+          "config": {
+            "variable": "serial_error"
+          },
+          "position": {
+            "x": 530,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_errors_3",
+          "kind": "write",
+          "label": "停止定时发送 / Stop periodic sends",
+          "config": {
+            "variable": "serial_tx",
+            "path": ["periodic"],
+            "value": false
+          },
+          "position": {
+            "x": 775,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_errors_error_map",
+          "kind": "map",
+          "label": "错误字段 / Error fields",
+          "position": {
+            "x": 285,
+            "y": 500
+          },
+          "config": {
+            "operation": "object",
+            "fields": {
+              "code": {
+                "source": "input",
+                "path": ["code"]
+              },
+              "message": {
+                "source": "input",
+                "path": ["message"]
+              }
+            }
+          }
+        },
+        {
+          "id": "serial_errors_error_write",
+          "kind": "write",
+          "label": "显示错误 / Show error",
+          "position": {
+            "x": 530,
+            "y": 500
+          },
+          "config": {
+            "variable": "serial_error"
+          }
+        },
+        {
+          "id": "serial_errors_stop_timer",
+          "kind": "write",
+          "label": "停止定时发送 / Stop periodic sends",
+          "position": {
+            "x": 775,
+            "y": 500
+          },
+          "config": {
+            "variable": "serial_tx",
+            "path": ["periodic"],
+            "value": false
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "serial_errors_edge_0",
+          "source": "serial_errors_0",
+          "target": "serial_errors_1",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_errors_edge_1",
+          "source": "serial_errors_1",
+          "target": "serial_errors_2",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_errors_edge_2",
+          "source": "serial_errors_2",
+          "target": "serial_errors_3",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_errors_error_serial_errors_1",
+          "source": "serial_errors_1",
+          "target": "serial_errors_error_map",
+          "sourceHandle": "error",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_errors_error_show",
+          "source": "serial_errors_error_map",
+          "target": "serial_errors_error_write",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_errors_error_stop",
+          "source": "serial_errors_error_write",
+          "target": "serial_errors_stop_timer",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        }
+      ]
+    },
+    {
+      "id": "serial_clear",
+      "name": "15 · 清空显示历史 / Clear history",
+      "enabled": true,
+      "nodes": [
+        {
+          "id": "serial_clear_0",
+          "kind": "event",
+          "label": "UI 事件 / UI event",
+          "config": {
+            "trigger": "manual"
+          },
+          "position": {
+            "x": 40,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_clear_1",
+          "kind": "write",
+          "label": "清空记录 / Clear history",
+          "config": {
+            "variable": "serial_history",
+            "value": {
+              "rows": [],
+              "dropped": 0
+            }
+          },
+          "position": {
+            "x": 285,
+            "y": 90
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "serial_clear_edge_0",
+          "source": "serial_clear_0",
+          "target": "serial_clear_1",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        }
+      ]
+    },
+    {
+      "id": "serial_reset_counters",
+      "name": "16 · 重置计数 / Reset counters",
+      "enabled": true,
+      "nodes": [
+        {
+          "id": "serial_reset_counters_0",
+          "kind": "event",
+          "label": "UI 事件 / UI event",
+          "config": {
+            "trigger": "manual"
+          },
+          "position": {
+            "x": 40,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_reset_counters_1",
+          "kind": "serial",
+          "label": "重置计数 / Reset counters",
+          "config": {
+            "action": "resetCounters",
+            "connectionId": "serial_port"
+          },
+          "position": {
+            "x": 285,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_reset_counters_error_map",
+          "kind": "map",
+          "label": "错误字段 / Error fields",
+          "position": {
+            "x": 285,
+            "y": 500
+          },
+          "config": {
+            "operation": "object",
+            "fields": {
+              "code": {
+                "source": "input",
+                "path": ["code"]
+              },
+              "message": {
+                "source": "input",
+                "path": ["message"]
+              }
+            }
+          }
+        },
+        {
+          "id": "serial_reset_counters_error_write",
+          "kind": "write",
+          "label": "显示错误 / Show error",
+          "position": {
+            "x": 530,
+            "y": 500
+          },
+          "config": {
+            "variable": "serial_error"
+          }
+        },
+        {
+          "id": "serial_reset_counters_stop_timer",
+          "kind": "write",
+          "label": "停止定时发送 / Stop periodic sends",
+          "position": {
+            "x": 775,
+            "y": 500
+          },
+          "config": {
+            "variable": "serial_tx",
+            "path": ["periodic"],
+            "value": false
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "serial_reset_counters_edge_0",
+          "source": "serial_reset_counters_0",
+          "target": "serial_reset_counters_1",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_reset_counters_error_serial_reset_counters_1",
+          "source": "serial_reset_counters_1",
+          "target": "serial_reset_counters_error_map",
+          "sourceHandle": "error",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_reset_counters_error_show",
+          "source": "serial_reset_counters_error_map",
+          "target": "serial_reset_counters_error_write",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_reset_counters_error_stop",
+          "source": "serial_reset_counters_error_write",
+          "target": "serial_reset_counters_stop_timer",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        }
+      ]
+    },
+    {
+      "id": "serial_rx",
+      "name": "13 · 接收记录 / RX history",
+      "enabled": true,
+      "nodes": [
+        {
+          "id": "serial_rx_0",
+          "kind": "event",
+          "label": "RX 数据 / Data",
+          "config": {
+            "trigger": "serial",
+            "event": "data",
+            "direction": "rx",
+            "connectionId": "serial_port"
+          },
+          "position": {
+            "x": 40,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_rx_1",
+          "kind": "map",
+          "label": "日志行 / History row",
+          "config": {
+            "operation": "object",
+            "fields": {
+              "time": {
+                "source": "input",
+                "path": ["timestampIso"]
+              },
+              "direction": {
+                "source": "input",
+                "path": ["direction"]
+              },
+              "bytes": {
+                "source": "input",
+                "path": ["byteLength"]
+              },
+              "text": {
+                "source": "input",
+                "path": ["text"]
+              },
+              "hex": {
+                "source": "input",
+                "path": ["hex"]
+              }
+            }
+          },
+          "position": {
+            "x": 285,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_rx_2",
+          "kind": "append",
+          "label": "有界显示历史 / Bounded history",
+          "config": {
+            "variable": "serial_history",
+            "path": ["rows"],
+            "item": {
+              "source": "input",
+              "path": []
+            },
+            "maxItems": 500,
+            "maxBytes": 524288,
+            "order": "oldestFirst",
+            "droppedPath": ["dropped"]
+          },
+          "position": {
+            "x": 530,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_rx_3",
+          "kind": "map",
+          "label": "事件时间 / Event time",
+          "config": {
+            "operation": "value",
+            "value": {
+              "source": "input",
+              "path": ["timestampIso"]
+            }
+          },
+          "position": {
+            "x": 775,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_rx_4",
+          "kind": "write",
+          "label": "最近收发 / Latest I/O",
+          "config": {
+            "variable": "serial_last_rx"
+          },
+          "position": {
+            "x": 1020,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_rx_error_map",
+          "kind": "map",
+          "label": "错误字段 / Error fields",
+          "position": {
+            "x": 285,
+            "y": 500
+          },
+          "config": {
+            "operation": "object",
+            "fields": {
+              "code": {
+                "source": "input",
+                "path": ["code"]
+              },
+              "message": {
+                "source": "input",
+                "path": ["message"]
+              }
+            }
+          }
+        },
+        {
+          "id": "serial_rx_error_write",
+          "kind": "write",
+          "label": "显示错误 / Show error",
+          "position": {
+            "x": 530,
+            "y": 500
+          },
+          "config": {
+            "variable": "serial_error"
+          }
+        },
+        {
+          "id": "serial_rx_stop_timer",
+          "kind": "write",
+          "label": "停止定时发送 / Stop periodic sends",
+          "position": {
+            "x": 775,
+            "y": 500
+          },
+          "config": {
+            "variable": "serial_tx",
+            "path": ["periodic"],
+            "value": false
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "serial_rx_edge_0",
+          "source": "serial_rx_0",
+          "target": "serial_rx_1",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_rx_edge_1",
+          "source": "serial_rx_1",
+          "target": "serial_rx_2",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_rx_edge_2",
+          "source": "serial_rx_0",
+          "target": "serial_rx_3",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_rx_edge_3",
+          "source": "serial_rx_3",
+          "target": "serial_rx_4",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_rx_error_serial_rx_1",
+          "source": "serial_rx_1",
+          "target": "serial_rx_error_map",
+          "sourceHandle": "error",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_rx_error_serial_rx_2",
+          "source": "serial_rx_2",
+          "target": "serial_rx_error_map",
+          "sourceHandle": "error",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_rx_error_serial_rx_3",
+          "source": "serial_rx_3",
+          "target": "serial_rx_error_map",
+          "sourceHandle": "error",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_rx_error_show",
+          "source": "serial_rx_error_map",
+          "target": "serial_rx_error_write",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_rx_error_stop",
+          "source": "serial_rx_error_write",
+          "target": "serial_rx_stop_timer",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        }
+      ]
+    },
+    {
+      "id": "serial_tx",
+      "name": "14 · 发送记录 / TX history",
+      "enabled": true,
+      "nodes": [
+        {
+          "id": "serial_tx_0",
+          "kind": "event",
+          "label": "TX 数据 / Data",
+          "config": {
+            "trigger": "serial",
+            "event": "data",
+            "direction": "tx",
+            "connectionId": "serial_port"
+          },
+          "position": {
+            "x": 40,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_tx_1",
+          "kind": "map",
+          "label": "日志行 / History row",
+          "config": {
+            "operation": "object",
+            "fields": {
+              "time": {
+                "source": "input",
+                "path": ["timestampIso"]
+              },
+              "direction": {
+                "source": "input",
+                "path": ["direction"]
+              },
+              "bytes": {
+                "source": "input",
+                "path": ["byteLength"]
+              },
+              "text": {
+                "source": "input",
+                "path": ["text"]
+              },
+              "hex": {
+                "source": "input",
+                "path": ["hex"]
+              }
+            }
+          },
+          "position": {
+            "x": 285,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_tx_2",
+          "kind": "append",
+          "label": "有界显示历史 / Bounded history",
+          "config": {
+            "variable": "serial_history",
+            "path": ["rows"],
+            "item": {
+              "source": "input",
+              "path": []
+            },
+            "maxItems": 500,
+            "maxBytes": 524288,
+            "order": "oldestFirst",
+            "droppedPath": ["dropped"]
+          },
+          "position": {
+            "x": 530,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_tx_3",
+          "kind": "map",
+          "label": "事件时间 / Event time",
+          "config": {
+            "operation": "value",
+            "value": {
+              "source": "input",
+              "path": ["timestampIso"]
+            }
+          },
+          "position": {
+            "x": 775,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_tx_4",
+          "kind": "write",
+          "label": "最近收发 / Latest I/O",
+          "config": {
+            "variable": "serial_last_tx"
+          },
+          "position": {
+            "x": 1020,
+            "y": 90
+          }
+        },
+        {
+          "id": "serial_tx_error_map",
+          "kind": "map",
+          "label": "错误字段 / Error fields",
+          "position": {
+            "x": 285,
+            "y": 500
+          },
+          "config": {
+            "operation": "object",
+            "fields": {
+              "code": {
+                "source": "input",
+                "path": ["code"]
+              },
+              "message": {
+                "source": "input",
+                "path": ["message"]
+              }
+            }
+          }
+        },
+        {
+          "id": "serial_tx_error_write",
+          "kind": "write",
+          "label": "显示错误 / Show error",
+          "position": {
+            "x": 530,
+            "y": 500
+          },
+          "config": {
+            "variable": "serial_error"
+          }
+        },
+        {
+          "id": "serial_tx_stop_timer",
+          "kind": "write",
+          "label": "停止定时发送 / Stop periodic sends",
+          "position": {
+            "x": 775,
+            "y": 500
+          },
+          "config": {
+            "variable": "serial_tx",
+            "path": ["periodic"],
+            "value": false
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "serial_tx_edge_0",
+          "source": "serial_tx_0",
+          "target": "serial_tx_1",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_tx_edge_1",
+          "source": "serial_tx_1",
+          "target": "serial_tx_2",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_tx_edge_2",
+          "source": "serial_tx_0",
+          "target": "serial_tx_3",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_tx_edge_3",
+          "source": "serial_tx_3",
+          "target": "serial_tx_4",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_tx_error_serial_tx_1",
+          "source": "serial_tx_1",
+          "target": "serial_tx_error_map",
+          "sourceHandle": "error",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_tx_error_serial_tx_2",
+          "source": "serial_tx_2",
+          "target": "serial_tx_error_map",
+          "sourceHandle": "error",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_tx_error_serial_tx_3",
+          "source": "serial_tx_3",
+          "target": "serial_tx_error_map",
+          "sourceHandle": "error",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_tx_error_show",
+          "source": "serial_tx_error_map",
+          "target": "serial_tx_error_write",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_tx_error_stop",
+          "source": "serial_tx_error_write",
+          "target": "serial_tx_stop_timer",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        }
+      ]
+    }
+  ],
+  "translations": {
+    "zh-CN": {
+      "page_title": "串口助手",
+      "page_note": "原生串口 · 可视化流程 · 工程可独立运行",
+      "connection_heading": "01  设备与连接",
+      "port_label": "端口",
+      "port_hint": "扫描后选择串口",
+      "scan_ports": "扫描",
+      "vid_label": "VID（十六进制，可留空）",
+      "pid_label": "PID（十六进制，可留空）",
+      "baud_label": "波特率",
+      "bits_label": "数据位",
+      "parity_label": "校验",
+      "stop_label": "停止位",
+      "flow_label": "流控",
+      "framing_label": "接收组帧",
+      "open_port": "手动打开",
+      "close_port": "断开",
+      "listen_start": "开始监听",
+      "listen_stop": "停止监听",
+      "reconnect_text": "严格同设备自动重连",
+      "reconnect_note": "默认关闭。VID、PID、端口与物理拓扑必须完全一致；缺少标识须手动打开。",
+      "state_label": "状态",
+      "connection_state": "",
+      "listening_label": "监听",
+      "overflow_note": "接收队列过载将断开并锁存；排除故障后点击“手动打开”恢复。",
+      "traffic_heading": "02  收发记录",
+      "clear_history": "清空记录",
+      "reset_counters": "重置计数",
+      "tx_bytes_label": "发送字节",
+      "rx_bytes_label": "接收字节",
+      "tx_packets_label": "发送批次",
+      "rx_packets_label": "接收批次",
+      "history_empty": "打开串口后，真实收发数据将在这里显示",
+      "history_limit": "保留最近 500 条 / 512 KiB，淘汰旧记录数：",
+      "rx_time_label": "最近接收",
+      "rx_time": "",
+      "tx_time_label": "最近发送",
+      "tx_time": "",
+      "send_heading": "03  发送",
+      "payload_hint": "输入 UTF-8 文本，或完整 HEX 字节（例如 01 A0 FF）",
+      "send_once": "发送",
+      "periodic_text": "定时发送",
+      "send_note": "写入完成不代表设备应答。断开、错误、重连后均停止定时发送。",
+      "error_code": "",
+      "error_message": ""
+    },
+    "en": {
+      "page_title": "Serial Assistant",
+      "page_note": "Native serial · Visual flows · Standalone project",
+      "connection_heading": "01  DEVICE & CONNECTION",
+      "port_label": "Port",
+      "port_hint": "Scan and choose a port",
+      "scan_ports": "Scan",
+      "vid_label": "VID (hex, optional)",
+      "pid_label": "PID (hex, optional)",
+      "baud_label": "Baud rate",
+      "bits_label": "Data bits",
+      "parity_label": "Parity",
+      "stop_label": "Stop bits",
+      "flow_label": "Flow control",
+      "framing_label": "Receive framing",
+      "open_port": "Open manually",
+      "close_port": "Disconnect",
+      "listen_start": "Start listening",
+      "listen_stop": "Stop listening",
+      "reconnect_text": "Reconnect only to the same device",
+      "reconnect_note": "Off by default. VID, PID, port and physical topology must match. Missing identity requires manual open.",
+      "state_label": "Status",
+      "connection_state": "",
+      "listening_label": "Listening",
+      "overflow_note": "RX overload disconnects and latches the fault. Resolve it, then open manually.",
+      "traffic_heading": "02  TRAFFIC",
+      "clear_history": "Clear history",
+      "reset_counters": "Reset counters",
+      "tx_bytes_label": "TX bytes",
+      "rx_bytes_label": "RX bytes",
+      "tx_packets_label": "TX batches",
+      "rx_packets_label": "RX batches",
+      "history_empty": "Open a serial port to receive real traffic",
+      "history_limit": "Latest 500 records / 512 KiB; evicted:",
+      "rx_time_label": "Last RX",
+      "rx_time": "",
+      "tx_time_label": "Last TX",
+      "tx_time": "",
+      "send_heading": "03  TRANSMIT",
+      "payload_hint": "UTF-8 text, or complete HEX bytes such as 01 A0 FF",
+      "send_once": "Send",
+      "periodic_text": "Periodic send",
+      "send_note": "Write completion is not device acknowledgement. Disconnects, errors and reconnects stop periodic sends.",
+      "error_code": "",
+      "error_message": ""
+    }
+  },
+  "scripts": [],
+  "modules": [],
+  "assets": [],
+  "connections": [
+    {
+      "id": "serial_port",
+      "name": "助手串口",
+      "protocol": "serial",
+      "config": {
+        "portName": "",
+        "baudRate": 115200,
+        "dataBits": 8,
+        "stopBits": 1,
+        "parity": "none",
+        "flowControl": "none",
+        "framing": "raw",
+        "autoReconnect": false
+      }
+    }
+  ],
+  "windows": []
+}

@@ -253,7 +253,7 @@ fn validate_content(project: &Project) -> Result<(), String> {
 }
 
 pub(crate) fn validate(project: &Project) -> Result<(), String> {
-    if !matches!(project.schema_version, 1 | 2 | 3) {
+    if !matches!(project.schema_version, 1 | 2 | 3 | 4) {
         return Err(format!(
             "Unsupported project schema {}",
             project.schema_version

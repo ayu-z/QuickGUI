@@ -20,7 +20,9 @@ import {
   variableValue,
 } from '../core/jsonValue';
 import { uid } from '../core/project';
-import { validateFlow } from '../core/validation';
+import { validateFlow, validateProject } from '../core/validation';
+import { resolveValueRef } from '../core/flowV4';
+import { executeV4DataNode, isV4Action } from './flowV4Runtime';
 import {
   applyWindowAction,
   initialWindowState,
@@ -42,6 +44,10 @@ export class RuntimeController {
   private timers: ReturnType<typeof setInterval>[] = [];
   private booted = new Set<string>();
   private activated = false;
+  private unsupportedSources = new Set<string>();
+  private activeExecutions = new Map<number, string>();
+  private executionSequence = 0;
+  private scriptQueues = new Map<string, Promise<ScriptResponse>>();
   constructor(
     project: Project,
     private executeScript?: ScriptExecutor,
@@ -126,22 +132,40 @@ export class RuntimeController {
   applyProject = (project: Project) => {
     this.validateRuntimeValues(project);
     validateWindowActions(project);
-    for (const flow of project.flows) validateFlow(flow);
+    for (const flow of project.flows) validateFlow(flow, project.schemaVersion);
     if (
       this.activated &&
       project.id === this.project.id &&
       project.revision === this.snapshot.revision
     )
       return;
+    if (
+      this.activated &&
+      project.schemaVersion >= 4 &&
+      this.project.schemaVersion >= 4 &&
+      project.id === this.project.id &&
+      this.runtimeDefinition(project) === this.runtimeDefinition(this.project)
+    ) {
+      const windowState = reconcileWindowState(
+        this.project,
+        project,
+        this.snapshot.windowState ?? initialWindowState(this.project),
+      );
+      this.project = project;
+      this.publish({ revision: project.revision, windowState });
+      return;
+    }
     this.activated = true;
     this.abort.abort();
     this.abort = new AbortController();
     this.generation++;
+    this.activeExecutions.clear();
     const sameProject = project.id === this.project.id;
     if (!sameProject) {
       this.scriptState = {};
       this.history = {};
       this.booted.clear();
+      this.unsupportedSources.clear();
     }
     const values: Record<string, RuntimeValue> = {};
     for (const v of project.variables) {
@@ -173,6 +197,7 @@ export class RuntimeController {
   stop = () => {
     this.abort.abort();
     this.generation++;
+    this.activeExecutions.clear();
     for (const timer of this.timers) clearInterval(timer);
     this.timers = [];
     this.publish({ running: false, activeNodes: [] });
@@ -203,6 +228,66 @@ export class RuntimeController {
                 );
             }, ms),
           );
+        } else if (trigger === 'controlledInterval' && this.project.schemaVersion >= 4) {
+          let next = 0,
+            previousInterval = 0,
+            previousEnabled = false,
+            lastError = '';
+          this.timers.push(
+            setInterval(() => {
+              if (!this.snapshot.running) return;
+              try {
+                const interval = resolveValueRef(
+                  node.config.interval ?? { source: 'literal', value: 1000 },
+                  null,
+                  this.snapshot.values,
+                );
+                const enabled = resolveValueRef(
+                  node.config.enabled ?? { source: 'literal', value: false },
+                  null,
+                  this.snapshot.values,
+                );
+                if (
+                  typeof interval !== 'number' ||
+                  !Number.isInteger(interval) ||
+                  interval < 100 ||
+                  interval > 86400000 ||
+                  typeof enabled !== 'boolean'
+                )
+                  throw new Error(
+                    'Controlled interval needs a boolean enable value and an integer period between 100 and 86400000 ms',
+                  );
+                const now = Date.now();
+                if (interval !== previousInterval || enabled !== previousEnabled || next === 0)
+                  next = now + interval;
+                previousInterval = interval;
+                previousEnabled = enabled;
+                lastError = '';
+                if (now >= next) {
+                  next = now + interval;
+                  if (enabled && this.queued === 0)
+                    void this.runFlow(flow.id, null, node.id).catch((error) =>
+                      this.log(String(error), 'error', node.id),
+                    );
+                }
+              } catch (error) {
+                if (String(error) !== lastError)
+                  this.log((lastError = String(error)), 'error', node.id);
+                next = 0;
+              }
+            }, 100),
+          );
+        } else if (trigger === 'serial' && this.project.schemaVersion >= 4) {
+          const key = `${this.project.id}:${flow.id}:${node.id}`;
+          if (!this.unsupportedSources.has(key)) {
+            this.unsupportedSources.add(key);
+            this.log(
+              'Native serial event sources require the desktop runtime. No simulated data was produced.',
+              'warning',
+              node.id,
+              flow.id,
+            );
+          }
         } else if (trigger === 'startup') {
           const key = `${this.project.id}:${flow.id}:${node.id}`;
           if (!this.booted.has(key)) {
@@ -218,7 +303,7 @@ export class RuntimeController {
       return Promise.reject(new Error('Flow queue is full; command was not accepted'));
     const generation = this.generation;
     this.queued++;
-    const task = this.queue
+    const task = (this.project.schemaVersion >= 4 ? Promise.resolve() : this.queue)
       .then(async () => {
         if (generation !== this.generation) {
           this.log('Queued execution cancelled by project update', 'warning', undefined, id);
@@ -229,7 +314,7 @@ export class RuntimeController {
       .finally(() => {
         this.queued--;
       });
-    this.queue = task.catch(() => {});
+    if (this.project.schemaVersion < 4) this.queue = task.catch(() => {});
     return task;
   };
   private async executeFlow(
@@ -241,12 +326,24 @@ export class RuntimeController {
   ) {
     const flow = this.project.flows.find((f) => f.id === id);
     if (!flow || !flow.enabled) throw new Error(`Flow unavailable: ${id}`);
-    const order = validateFlow(flow);
+    const order = validateFlow(flow, this.project.schemaVersion);
     const messages = new Map<string, Json[]>();
+    const execution = ++this.executionSequence;
     let activations = 0;
     for (const node of flow.nodes)
-      if (node.kind === 'event' && (!entryNode || node.id === entryNode))
+      if (
+        node.kind === 'event' &&
+        (entryNode
+          ? node.id === entryNode
+          : this.project.schemaVersion < 4 ||
+            !node.config.trigger ||
+            node.config.trigger === 'manual')
+      )
         messages.set(node.id, [input]);
+    if (!messages.size)
+      throw new Error(
+        'This flow has no manual event entry; external events require their real runtime source',
+      );
     this.log(`Started: ${flow.name}`, 'info', undefined, id);
     try {
       for (const nodeId of order) {
@@ -254,15 +351,28 @@ export class RuntimeController {
         const node = flow.nodes.find((n) => n.id === nodeId)!;
         for (const message of messages.get(nodeId) ?? []) {
           if (++activations > 10000) throw new Error('Flow activation limit exceeded');
-          this.publish({ activeNodes: [nodeId] });
+          if (this.project.schemaVersion >= 4) {
+            this.activeExecutions.set(execution, nodeId);
+            this.publish({ activeNodes: [...new Set(this.activeExecutions.values())] });
+          } else this.publish({ activeNodes: [nodeId] });
           const result = await this.executeNode(node, message, signal);
           signal.throwIfAborted();
           if (generation !== this.generation) throw new Error('Stale execution');
+          if (
+            result.port === 'error' &&
+            !flow.edges.some((edge) => edge.source === nodeId && edge.sourceHandle === 'error')
+          ) {
+            const error: Record<string, Json> =
+              result.value && typeof result.value === 'object' && !Array.isArray(result.value)
+                ? result.value
+                : {};
+            throw new Error(String(error.message ?? 'Flow node failed'));
+          }
           for (const edge of flow.edges.filter((e) => e.source === nodeId)) {
             if (
               result.port &&
               (this.project.schemaVersion >= 3
-                ? (edge.sourceHandle ?? 'true') !== result.port
+                ? (edge.sourceHandle ?? (isV4Action(node) ? 'success' : 'true')) !== result.port
                 : edge.sourceHandle && edge.sourceHandle !== result.port)
             )
               continue;
@@ -283,7 +393,9 @@ export class RuntimeController {
       );
       if (!signal.aborted) throw error;
     } finally {
-      if (generation === this.generation) this.publish({ activeNodes: [] });
+      this.activeExecutions.delete(execution);
+      if (generation === this.generation)
+        this.publish({ activeNodes: [...new Set(this.activeExecutions.values())] });
     }
   }
   private async executeNode(
@@ -292,6 +404,8 @@ export class RuntimeController {
     signal: AbortSignal,
   ): Promise<{ value: Json; port?: string }> {
     const c = node.config;
+    if (isV4Action(node))
+      return executeV4DataNode(node, input, this.project, this.snapshot.values, this.setVariable);
     let value = input;
     switch (node.kind) {
       case 'event':
@@ -460,6 +574,16 @@ export class RuntimeController {
     return { value };
   }
   private validateRuntimeValues(project: Project) {
+    if (project.schemaVersion >= 4) validateProject(project);
+    else
+      for (const flow of project.flows)
+        for (const node of flow.nodes)
+          if (
+            isV4Action(node) ||
+            node.config.trigger === 'serial' ||
+            node.config.trigger === 'controlledInterval'
+          )
+            throw new Error('Serial and v4 data nodes require schemaVersion 4');
     for (const variable of project.variables) {
       if (variable.type === 'json' && project.schemaVersion < 3)
         throw new Error('JSON variables require schemaVersion 3');
@@ -478,6 +602,16 @@ export class RuntimeController {
           if (project.schemaVersion < 3) throw new Error('JSON paths require schemaVersion 3');
           validateJsonPath(node.config.path);
         }
+  }
+  private runtimeDefinition(project: Project): string {
+    return JSON.stringify({
+      id: project.id,
+      schemaVersion: project.schemaVersion,
+      variables: project.variables,
+      flows: project.flows,
+      scripts: project.scripts,
+      connections: project.connections,
+    });
   }
   private resolveVariable(key: string) {
     return (
@@ -515,6 +649,29 @@ export class RuntimeController {
     return task;
   };
   private async executeScriptTransaction(
+    scriptId: string,
+    input: Json,
+    nodeId?: string,
+  ): Promise<ScriptResponse> {
+    if (this.project.schemaVersion < 4)
+      return this.executeScriptTransactionNow(scriptId, input, nodeId);
+    const generation = this.generation;
+    const previous = this.scriptQueues.get(scriptId) ?? Promise.resolve();
+    const task = previous
+      .catch(() => {})
+      .then(() => {
+        if (generation !== this.generation || this.abort.signal.aborted)
+          throw new Error('Stale C execution');
+        return this.executeScriptTransactionNow(scriptId, input, nodeId);
+      });
+    this.scriptQueues.set(scriptId, task);
+    try {
+      return await task;
+    } finally {
+      if (this.scriptQueues.get(scriptId) === task) this.scriptQueues.delete(scriptId);
+    }
+  }
+  private async executeScriptTransactionNow(
     scriptId: string,
     input: Json,
     nodeId?: string,

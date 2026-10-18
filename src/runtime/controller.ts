@@ -1,6 +1,7 @@
 import type { Json, JsonPath, Project, RuntimeLog, RuntimeSnapshot } from '../core/types';
 import * as native from '../native/bridge';
 import { RuntimeController } from './engine';
+import { validateProject } from '../core/validation';
 
 export class NativeRuntimeController extends RuntimeController {
   private ready: Promise<void>;
@@ -88,6 +89,7 @@ export class NativeRuntimeController extends RuntimeController {
       .then(async () => {
         if (this.disposed || this.closing) return;
         const previous = this.project;
+        if (project.schemaVersion >= 4) validateProject(project);
         for (const script of project.scripts) {
           const old =
             previous.id === project.id

@@ -21,6 +21,13 @@ import {
   type PropertyDefinition,
 } from './widgetDefinitions';
 import * as native from '../native/bridge';
+import {
+  getFlowNodeReferences,
+  isAutomaticEventSource,
+  isV4Node,
+  remapFlowNodeReferences,
+  validateV4NodeConfig,
+} from './flowV4';
 
 export type EditScope = { kind: 'window' | 'module'; id: string };
 export type Point = { x: number; y: number };
@@ -39,7 +46,7 @@ export interface ClipboardBundle {
   source: {
     projectId: string;
     projectName: string;
-    schemaVersion: 1 | 2 | 3;
+    schemaVersion: Project['schemaVersion'];
     scope: EditScope;
     windowId: string;
     sessionKey?: string;
@@ -96,7 +103,7 @@ const dependencyKinds: DependencyKind[] = [
   'windows',
   'resourceScopes',
 ];
-const shape = projectSchema.options[2].shape;
+const shape = projectSchema.options[3].shape;
 const scopeSchema = z
   .object({ kind: z.enum(['window', 'module']), id: z.string().min(1) })
   .strict();
@@ -108,7 +115,7 @@ const bundleSchema = z
       .object({
         projectId: z.string(),
         projectName: z.string(),
-        schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+        schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
         scope: scopeSchema,
         windowId: z.string().min(1),
         sessionKey: z.string().optional(),
@@ -453,15 +460,18 @@ export function copySelection(
       const [kind, id] = pending.shift()!;
       const item = find(kind, id);
       if (kind === 'flows')
-        for (const node of (item as Flow).nodes) {
-          const c = node.config;
-          if ((node.kind === 'read' || node.kind === 'write') && typeof c.variable === 'string')
-            add('variables', c.variable);
-          if (node.kind === 'script' && typeof c.scriptId === 'string') add('scripts', c.scriptId);
-          if (node.kind === 'connection' && typeof c.connectionId === 'string')
-            add('connections', c.connectionId);
-          if (node.kind === 'window' && typeof c.windowId === 'string') add('windows', c.windowId);
-        }
+        for (const node of (item as Flow).nodes)
+          for (const reference of getFlowNodeReferences(node))
+            add(
+              reference.kind === 'variable'
+                ? 'variables'
+                : reference.kind === 'connection'
+                  ? 'connections'
+                  : reference.kind === 'script'
+                    ? 'scripts'
+                    : 'windows',
+              reference.id,
+            );
       else if (kind === 'scripts') {
         const script = item as Project['scripts'][number];
         if (script.variableAliases === undefined)
@@ -502,19 +512,21 @@ export function copySelection(
         for (const id of Object.values(resources.assetAliases ?? {})) add('assets', id);
       }
     }
-    // Include automatic producers for every newly reachable variable, reaching a
-    // fixed point when a producer itself pulls additional dependencies into scope.
+    // Follow automatic producers and v4 subscriptions to a fixed point. A timer
+    // can depend on a copied UI control without writing it; serial observers can
+    // become reachable only after that timer pulls its connection into scope.
     for (const flow of source.flows)
-      if (
-        !needed.flows.has(flow.id) &&
-        flow.nodes.some(
-          (node) =>
-            node.kind === 'event' && ['startup', 'interval'].includes(String(node.config.trigger)),
-        )
-      ) {
+      if (!needed.flows.has(flow.id) && flow.nodes.some(isAutomaticEventSource)) {
         const supplies = flow.nodes.some((node) => {
-          if (node.kind === 'write' && typeof node.config.variable === 'string')
-            return needed.variables.has(resolveVariable(source, node.config.variable).id);
+          if (
+            getFlowNodeReferences(node).some(
+              (ref) =>
+                ref.kind === 'variable' &&
+                ref.access === 'write' &&
+                needed.variables.has(resolveVariable(source, ref.id).id),
+            )
+          )
+            return true;
           if (node.kind !== 'script') return false;
           const script = source.scripts.find((script) => script.id === node.config.scriptId);
           if (!script)
@@ -525,7 +537,22 @@ export function copySelection(
               )
             : Object.values(script.variableAliases).some((id) => needed.variables.has(id));
         });
-        if (supplies) add('flows', flow.id);
+        const subscribes =
+          source.schemaVersion >= 4 &&
+          flow.nodes.some(
+            (event) =>
+              isAutomaticEventSource(event) &&
+              getFlowNodeReferences(event).some(
+                (reference) =>
+                  (reference.kind === 'variable' &&
+                    reference.access === 'read' &&
+                    needed.variables.has(resolveVariable(source, reference.id).id)) ||
+                  (event.config.trigger === 'serial' &&
+                    reference.kind === 'connection' &&
+                    needed.connections.has(reference.id)),
+              ),
+          );
+        if (supplies || subscribes) add('flows', flow.id);
       }
     if (!pending.length) break;
   }
@@ -563,6 +590,13 @@ export function copySelection(
 function validateBundle(raw: unknown): ClipboardBundle {
   assertSize(JSON.stringify(raw));
   const bundle = bundleSchema.parse(raw) as ClipboardBundle;
+  for (const flow of bundle.flows)
+    for (const node of flow.nodes)
+      if (isV4Node(node)) {
+        if (bundle.source.schemaVersion < 4)
+          throw new Error('Clipboard v4 nodes require source schemaVersion 4');
+        validateV4NodeConfig(node);
+      }
   bundle.connections = bundle.connections.map((connection) =>
     sanitizeConnection(connection, bundle.warnings),
   );
@@ -778,7 +812,7 @@ export function preparePaste(
   if (options.sameDocument && !sameDocument)
     throw new Error('Same-document reuse requires a matching document session key');
   if (sameDocument) return sameDocumentPaste(target, bundle, scope, point, options);
-  const candidate = upgradeProject(target);
+  const candidate = upgradeProject(target, bundle.source.schemaVersion === 4 ? 4 : 3);
   const destination = widgetsIn(candidate, scope);
   if (
     scope.kind === 'module' &&
@@ -801,9 +835,9 @@ export function preparePaste(
     throw new Error('Paste position must be finite');
   const warnings = [...bundle.warnings],
     summary: string[] = [];
-  if (target.schemaVersion !== 3)
+  if (target.schemaVersion < candidate.schemaVersion)
     summary.push(
-      'Upgrade the target working copy to schema v3; existing widgets keep definition version 1.',
+      `Upgrade the target working copy to schema v${candidate.schemaVersion}; existing widgets keep their definition version.`,
     );
   const mappings = makeMappings(options.previousMappings);
   const imported = Object.fromEntries(
@@ -1093,16 +1127,20 @@ export function preparePaste(
         nodeMap[node.id] = reserveId(mappings, allUsedIds, 'node', flow.id, node.id);
       for (const node of next.nodes) {
         node.id = nodeMap[node.id];
-        const c = node.config;
-        if ((node.kind === 'read' || node.kind === 'write') && typeof c.variable === 'string')
-          c.variable = mapped('variables', c.variable);
-        if (node.kind === 'script' && typeof c.scriptId === 'string')
-          c.scriptId = mapped('scripts', c.scriptId);
-        if (node.kind === 'connection' && typeof c.connectionId === 'string')
-          c.connectionId = mapped('connections', c.connectionId);
-        if (node.kind === 'window' && typeof c.windowId === 'string') {
-          c.windowId = mapped('windows', c.windowId);
-          if (c.action === 'close' && c.windowId === 'main')
+        node.config = remapFlowNodeReferences(node, (reference) =>
+          mapped(
+            reference.kind === 'variable'
+              ? 'variables'
+              : reference.kind === 'connection'
+                ? 'connections'
+                : reference.kind === 'script'
+                  ? 'scripts'
+                  : 'windows',
+            reference.id,
+          ),
+        ).config;
+        if (node.kind === 'window') {
+          if (node.config.action === 'close' && node.config.windowId === 'main')
             throw new Error('A copied close action would close the target main window');
         }
       }

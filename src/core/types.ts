@@ -3,6 +3,11 @@ export type Locale = 'zh-CN' | 'en';
 export type ThemeMode = 'light' | 'dark' | 'system';
 export type JsonPath = Array<string | number>;
 export type VariableType = 'number' | 'string' | 'boolean' | 'json';
+export type ValueRef =
+  | { source: 'literal'; value: Json }
+  | { source: 'input'; path?: JsonPath }
+  | { source: 'variable'; variable: string; path?: JsonPath };
+export type ValueSource = ValueRef;
 export type WidgetType =
   | 'panel'
   | 'text'
@@ -116,7 +121,10 @@ export type NodeKind =
   | 'http'
   | 'emit'
   | 'connection'
-  | 'window';
+  | 'window'
+  | 'map'
+  | 'append'
+  | 'serial';
 export interface FlowNode {
   id: string;
   kind: NodeKind;
@@ -177,7 +185,7 @@ export interface Connection {
   config: Record<string, Json>;
 }
 export interface Project {
-  schemaVersion: 1 | 2 | 3;
+  schemaVersion: 1 | 2 | 3 | 4;
   id: string;
   name: string;
   revision: number;
@@ -228,7 +236,88 @@ export interface RuntimeSnapshot {
   projectId?: string;
   sequence?: number;
   windowState?: RuntimeWindowState;
+  serial?: Record<string, SerialSessionState>;
 }
+export interface FlowError {
+  code: string;
+  message: string;
+  operation: string;
+  connectionId?: string;
+  sessionId?: number;
+  requestId?: string;
+  bytesAccepted?: number;
+}
+export interface SerialPortInfo {
+  portName: string;
+  portType: 'usb' | 'bluetooth' | 'pci' | 'unknown';
+  vid: number | null;
+  pid: number | null;
+  usbLocation: { busId: string; portChain: number[] } | null;
+  serialNumber: string | null;
+  manufacturer: string | null;
+  product: string | null;
+  displayName: string;
+}
+export interface PortSnapshot {
+  kind: 'snapshot' | 'changed';
+  ports: SerialPortInfo[];
+  added: SerialPortInfo[];
+  removed: SerialPortInfo[];
+  changed: SerialPortInfo[];
+  sequence: number;
+  timestamp: number;
+  timestampIso: string;
+}
+export type SerialPortSnapshot = PortSnapshot;
+export interface SerialCounters {
+  txBytes: number;
+  rxBytes: number;
+  txPackets: number;
+  rxPackets: number;
+}
+export interface SerialSettings {
+  portName: string;
+  baudRate: number;
+  dataBits: 5 | 6 | 7 | 8;
+  stopBits: 1 | 2;
+  parity: 'none' | 'odd' | 'even';
+  flowControl: 'none' | 'software' | 'hardware';
+  framing: 'raw' | 'line' | 'length16';
+  autoReconnect: boolean;
+}
+export interface SerialSessionState {
+  connectionId: string;
+  sessionId: number | null;
+  status: 'closed' | 'opening' | 'open' | 'reconnecting' | 'needsManualOpen' | 'error';
+  port: SerialPortInfo | null;
+  autoReconnect: boolean;
+  listening: boolean;
+  isOpen: boolean;
+  canOpen: boolean;
+  canClose: boolean;
+  counters: SerialCounters;
+  error: FlowError | null;
+  timestamp: number;
+  timestampIso: string;
+}
+export interface SerialDataEvent {
+  kind: 'data';
+  connectionId: string;
+  sessionId: number;
+  sequence: number;
+  timestamp: number;
+  timestampIso: string;
+  direction: 'rx' | 'tx';
+  hex: string;
+  text: string;
+  byteLength: number;
+  counters: SerialCounters;
+}
+export type SerialEvent =
+  | PortSnapshot
+  | SerialDataEvent
+  | (SerialSessionState & { kind: 'state' })
+  | (FlowError & { kind: 'error'; sequence: number; timestamp: number; timestampIso: string });
 export interface ScriptRequest {
   source: string;
   input: Json;

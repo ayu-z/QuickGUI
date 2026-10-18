@@ -7,6 +7,7 @@ import type {
   Json,
   JsonPath,
   Project,
+  PortSnapshot,
   RuntimeSnapshot,
   ScriptRequest,
   ScriptResponse,
@@ -85,6 +86,15 @@ export interface ConnectionTestResult {
 }
 export const testConnection = (connection: Connection) =>
   invokeProject<ConnectionTestResult>('test_connection', { connection });
+export const scanSerialPorts = (): Promise<PortSnapshot> => {
+  if (!isDesktop())
+    return Promise.reject(
+      Object.assign(new Error('Serial ports require the QuickGUI desktop runtime.'), {
+        code: 'NATIVE_SERIAL_REQUIRED',
+      }),
+    );
+  return invokeProject<PortSnapshot>('serial_scan');
+};
 export const runtimeStart = (project: Project) =>
   invokeProject<RuntimeSnapshot>('runtime_start', { project });
 export const attachRuntime = () => invokeProject<RuntimeSnapshot>('runtime_attach');

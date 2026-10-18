@@ -32,6 +32,9 @@ struct Session {
     history: Option<history::Recorder>,
     epoch: u64,
     revision: u64,
+    logic_key: String,
+    flow_gate: Arc<tokio::sync::Mutex<()>>,
+    serial: Option<quickgui_engine::serial::SerialService>,
 }
 
 #[derive(Default)]
@@ -193,6 +196,12 @@ async fn flush_session(state: &HostState, label: &str) -> Result<Option<u64>, St
         return Ok(None);
     };
     active.cancellation.cancel();
+    if let Some(serial) = &active.serial {
+        tokio::time::timeout(std::time::Duration::from_secs(30), serial.shutdown())
+            .await
+            .map_err(|_| "Serial cleanup is still pending")?;
+    }
+    let _flow = active.flow_gate.lock().await;
     let mut engine = active.engine.lock().await;
     engine.stop();
     let snapshot = engine.snapshot();
@@ -541,6 +550,22 @@ async fn test_connection(
 }
 
 #[tauri::command]
+async fn serial_scan(
+    window: WebviewWindow,
+    state: State<'_, HostState>,
+    generation: Option<u64>,
+) -> Result<Value, String> {
+    project_work(&state, window.label(), generation, false)?;
+    let work = begin_work(&state, window.label(), generation)?;
+    let ports = tokio::select! {_=work.cancellation.cancelled()=>return Err("Serial scan cancelled".into()),ports=quickgui_engine::serial::scan_ports(Default::default())=>ports.map_err(|e|e.to_string())?};
+    project_work(&state, window.label(), generation, false)?;
+    let time = quickgui_engine::now_ms();
+    Ok(
+        serde_json::json!({"kind":"snapshot","ports":ports,"added":[],"removed":[],"changed":[],"sequence":time,"timestamp":time,"timestampIso":quickgui_engine::serial::timestamp_iso(time)}),
+    )
+}
+
+#[tauri::command]
 async fn runtime_start(
     app: tauri::AppHandle,
     window: WebviewWindow,
@@ -578,6 +603,36 @@ async fn runtime_start(
     {
         return Err("Stale project revision cannot replace the active runtime".into());
     }
+    let logic_key = quickgui_engine::flow_v4::execution_key(&project);
+    let same_logic = project.schema_version >= 4
+        && same_project
+        && previous
+            .as_ref()
+            .is_some_and(|p| p.logic_key == logic_key && !p.cancellation.is_cancelled());
+    let flow_gate = previous
+        .as_ref()
+        .filter(|_| same_project)
+        .map(|p| p.flow_gate.clone())
+        .unwrap_or_else(|| Arc::new(tokio::sync::Mutex::new(())));
+    let flow_cancel = if same_logic {
+        previous.as_ref().unwrap().cancellation.clone()
+    } else {
+        work.cancellation.child_token()
+    };
+    let serial = if project.schema_version >= 4 {
+        Some(
+            previous
+                .as_ref()
+                .filter(|_| same_project)
+                .and_then(|p| p.serial.clone())
+                .filter(|s| !s.is_cancelled())
+                .unwrap_or_else(|| {
+                    quickgui_engine::serial::SerialService::new(work.cancellation.child_token())
+                }),
+        )
+    } else {
+        None
+    };
     let recorder = if same_project {
         previous
             .as_ref()
@@ -668,8 +723,23 @@ async fn runtime_start(
             None
         }
     };
+    if !same_logic {
+        if let Some(previous) = &previous {
+            previous.cancellation.cancel();
+        }
+    }
+    if !same_project || serial.is_none() {
+        if let Some(service) = previous.as_ref().and_then(|p| p.serial.as_ref()) {
+            tokio::time::timeout(std::time::Duration::from_secs(30), service.shutdown())
+                .await
+                .map_err(|_| "Previous serial resources are still closing")?;
+        }
+    }
+    if let Some(service) = &serial {
+        service.reconcile(&project).await;
+        checked_engine.update_serial_state(service.snapshot_map());
+    }
     let (engine, snapshot, booted) = if let Some(previous) = previous {
-        previous.cancellation.cancel();
         let mut engine = previous.engine.lock().await;
         let booted = if engine.project().id == project.id {
             previous.booted.clone()
@@ -678,6 +748,10 @@ async fn runtime_start(
         };
         if same_project {
             engine.apply_project(project)?;
+            engine.start_domain();
+            if let Some(service) = &serial {
+                engine.update_serial_state(service.snapshot_map());
+            }
         } else {
             *engine = checked_engine;
         }
@@ -703,12 +777,15 @@ async fn runtime_start(
     };
     let next = Session {
         engine,
-        cancellation: work.cancellation.child_token(),
+        cancellation: flow_cancel,
         booted,
         project_id,
         history: Some(recorder.clone()),
         epoch,
         revision,
+        logic_key,
+        flow_gate,
+        serial,
     };
     {
         let mut projects = state.projects.lock().map_err(|e| e.to_string())?;
@@ -747,7 +824,9 @@ async fn runtime_start(
             event_generation,
         );
     }
-    scheduler::start(next, event_sources, runner_path(&app).ok());
+    if !same_logic {
+        scheduler::start(next, event_sources, runner_path(&app).ok());
+    }
     Ok(snapshot)
 }
 
@@ -818,6 +897,28 @@ async fn runtime_run_flow(
     project_work(&state, window.label(), generation, false)?;
     let active = session(&state, window.label())?;
     let host = runner_path(&app).ok().map(ScriptHost::new);
+    let work = begin_work(&state, window.label(), generation)?;
+    if active.engine.lock().await.project().schema_version >= 4 {
+        if active.cancellation.is_cancelled() {
+            return Err("Runtime stopped".into());
+        }
+        project_work(&state, window.label(), generation, false)?;
+        let cancellation = active.cancellation.child_token();
+        let run = quickgui_engine::flow_v4::run_shared(
+            active.engine.clone(),
+            active.serial.clone(),
+            &flow_id,
+            None,
+            input,
+            cancellation.clone(),
+            host.as_ref(),
+        );
+        tokio::pin!(run);
+        return tokio::select! {
+            result = &mut run => result,
+            _ = work.cancellation.cancelled() => { cancellation.cancel(); run.await }
+        };
+    }
     let mut engine = active.engine.lock().await;
     project_work(&state, window.label(), generation, false)?;
     require_current(&state, window.label(), &active, &engine)?;
@@ -845,6 +946,24 @@ async fn runtime_run_script(
     let work = begin_work(&state, window.label(), generation)?;
     let active = session(&state, window.label())?;
     let host = ScriptHost::new(runner_path(&app)?);
+    if active.engine.lock().await.project().schema_version >= 4 {
+        if active.cancellation.is_cancelled() {
+            return Err("Runtime stopped".into());
+        }
+        let cancellation = active.cancellation.child_token();
+        let run = quickgui_engine::flow_v4::script_shared(
+            active.engine.clone(),
+            &script_id,
+            input,
+            cancellation.clone(),
+            &host,
+        );
+        tokio::pin!(run);
+        return tokio::select! {
+            result = &mut run => result,
+            _ = work.cancellation.cancelled() => { cancellation.cancel(); run.await }
+        };
+    }
     let mut engine = active.engine.lock().await;
     project_work(&state, window.label(), generation, false)?;
     require_current(&state, window.label(), &active, &engine)?;
@@ -898,6 +1017,12 @@ async fn runtime_stop(
     project_work(&state, window.label(), generation, false)?;
     let active = session(&state, window.label())?;
     active.cancellation.cancel();
+    if let Some(serial) = &active.serial {
+        tokio::time::timeout(std::time::Duration::from_secs(30), serial.shutdown())
+            .await
+            .map_err(|_| "Serial cleanup is still pending")?;
+    }
+    let _flow = active.flow_gate.lock().await;
     let mut engine = active.engine.lock().await;
     engine.stop();
     let snapshot = engine.snapshot();
@@ -1413,6 +1538,7 @@ pub fn run() {
             project_generation,
             close_project,
             test_connection,
+            serial_scan,
             runtime_start,
             runtime_attach,
             runtime_window_action,

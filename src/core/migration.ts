@@ -1,10 +1,14 @@
 import type { Json, Project, Widget } from './types';
 import { createWidgetDefaults, propertyPath } from './widgetDefinitions';
 
-/** Prepare an isolated v3 copy. Reading a v1/v2 file never calls this automatically. */
-export function upgradeProject(project: Project): Project {
+/** Explicitly upgrade an isolated copy; existing v4 documents are never downgraded. */
+export function upgradeProject(project: Project, minimumVersion: 3 | 4 = 3): Project {
+  if (minimumVersion !== 3 && minimumVersion !== 4)
+    throw new Error(`Unsupported upgrade target: ${minimumVersion}`);
+  if (![1, 2, 3, 4].includes(project.schemaVersion))
+    throw new Error(`Unsupported project schemaVersion: ${project.schemaVersion}`);
   const next = structuredClone(project);
-  next.schemaVersion = 3;
+  next.schemaVersion = Math.max(next.schemaVersion, minimumVersion) as 3 | 4;
   next.windows ??= [];
   for (const widget of [
     ...next.widgets,
@@ -143,23 +147,30 @@ export function upgradeWidget(widget: Widget, project?: Project): Widget {
   return next;
 }
 
-export function migrationSummary(project: Project): string[] {
+export function migrationSummary(project: Project, minimumVersion: 3 | 4 = 3): string[] {
   const format =
-    project.schemaVersion === 3
+    project.schemaVersion >= minimumVersion
       ? []
       : project.locale === 'zh-CN'
         ? [
-            '升级工程格式为 v3；旧设计器将拒绝打开新版副本。',
+            `升级工程格式为 v${minimumVersion}；旧设计器将拒绝打开新版副本。`,
             '现有控件保留旧版行为，只有明确升级的控件启用新属性。',
             '原始工程文件不会被自动覆盖；建议另存为新版副本。',
           ]
         : [
-            'Upgrade this working copy to v3; older designers cannot open it.',
+            `Upgrade this working copy to v${minimumVersion}; older designers cannot open it.`,
             'Existing widgets retain legacy behavior until explicitly upgraded.',
             'The original file is not overwritten automatically; save a separate upgraded copy.',
           ];
   return [
     ...format,
+    ...(project.schemaVersion < 3
+      ? [
+          project.locale === 'zh-CN'
+            ? 'v1/v2 明确升级后沿用 v3 严格流程语义：数学和有序比较要求数值，JSON 相等使用结构比较，写入节点输出实际写入值。'
+            : 'Explicit v1/v2 upgrades adopt the existing v3 strict flow rules: numeric math and ordered comparisons, structural JSON equality, and write nodes output the written value.',
+        ]
+      : []),
     ...(project.locale === 'zh-CN'
       ? [
           '明确升级控件时：旧趋势 value 与绑定转为第一条曲线，使用 250 ms 定时采样；旧表格首行转为列标题，剩余行保留为数据。',

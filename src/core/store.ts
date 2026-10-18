@@ -239,7 +239,7 @@ export class EditorStore {
       throw new Error('窗口名称应为 1–200 个有效字符 / Enter a valid window name');
     const id = uid('window');
     this.update((project) => {
-      if (project.schemaVersion !== 3) project.schemaVersion = 2;
+      if (project.schemaVersion < 2) project.schemaVersion = 2;
       const config: WindowConfig = {
         ...structuredClone(project.window),
         title: trimmed,
@@ -349,7 +349,7 @@ export class EditorStore {
     });
   addWidget = (type: Widget['type'], x = 48, y = 48) => {
     if (!this.state.project || this.state.closing) return;
-    const widget = createWidget(type, x, y, this.state.project.schemaVersion === 3 ? 2 : 1);
+    const widget = createWidget(type, x, y, this.state.project.schemaVersion >= 3 ? 2 : 1);
     this.update((p) => {
       getProjectWindow(p, this.state.activeWindowId).widgets.push(widget);
     });

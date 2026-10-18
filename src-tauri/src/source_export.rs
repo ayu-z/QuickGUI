@@ -6,7 +6,7 @@ include!(concat!(env!("OUT_DIR"), "/export_sources.rs"));
 pub fn export(project: &Value, output: &Path) -> Result<(), String> {
     if !matches!(
         project.get("schemaVersion").and_then(Value::as_u64),
-        Some(1 | 2 | 3)
+        Some(1 | 2 | 3 | 4)
     ) {
         return Err("Unsupported project schema".into());
     }
@@ -148,6 +148,30 @@ pub fn export(project: &Value, output: &Path) -> Result<(), String> {
 mod tests {
     use super::*;
     #[test]
+    fn exports_v4_project_with_native_serial_and_flow_sources() {
+        let project = json!({"schemaVersion":4,"windows":[],"window":{"title":"Serial","width":960,"height":640},"publish":{"appName":"Serial","identifier":"dev.example.serial","version":"1.0.0"},"flows":[{"id":"flow","nodes":[{"id":"scan","kind":"serial","config":{"action":"scan"}}]}]});
+        let directory = std::env::temp_dir().join(format!(
+            "quickgui-serial-export-{}-{}",
+            std::process::id(),
+            quickgui_engine::now_ms()
+        ));
+        export(&project, &directory).unwrap();
+        let exported: Value =
+            serde_json::from_slice(&fs::read(directory.join("project.json")).unwrap()).unwrap();
+        assert_eq!(exported, project);
+        for path in [
+            "crates/quickgui-engine/src/serial.rs",
+            "crates/quickgui-engine/src/flow_v4.rs",
+            "src/native/bridge.ts",
+            "src/runtime/engine.ts",
+            "src/core/examples.ts",
+            "src/examples/serialAssistant.ts",
+        ] {
+            assert!(directory.join(path).is_file(), "export is missing {path}");
+        }
+        fs::remove_dir_all(directory).unwrap();
+    }
+    #[test]
     fn exports_v3_json_paths_and_scopes_without_downgrading() {
         let project = json!({
             "schemaVersion":3, "window":{"title":"V3","width":960,"height":640},
@@ -171,7 +195,7 @@ mod tests {
         assert!(directory.join("src/core/propertySchema.ts").is_file());
         fs::remove_dir_all(&directory).unwrap();
         let mut future = project;
-        future["schemaVersion"] = json!(4);
+        future["schemaVersion"] = json!(5);
         assert!(export(&future, &directory)
             .unwrap_err()
             .contains("Unsupported"));

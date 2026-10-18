@@ -8,7 +8,7 @@
 
 ## 单一工程模型
 
-`Project` 是唯一源模型，支持 schemaVersion=1/2/3，所有可引用对象具有稳定 ID。序列化的公开类型在 `src/core/types.ts`；输入校验在 `src/core/validation.ts`。三个版本保留 `window/widgets` 作为固定主窗口，v2/v3 的 `windows` 数组保存附加窗口。v3 新增 JSON、版本化控件属性与资源作用域。所有窗口共享工程级变量、流程和资源；只在渲染层投影当前窗口，运行与保存始终接收完整工程。
+`Project` 是唯一源模型，支持 schemaVersion=1/2/3/4，所有可引用对象具有稳定 ID。序列化的公开类型在 `src/core/types.ts`；输入校验在 `src/core/validation.ts`。四个版本保留 `window/widgets` 作为固定主窗口，v2–v4 的 `windows` 数组保存附加窗口。v3 新增 JSON、版本化控件属性与资源作用域；v4 增加串口会话/事件、受控定时器和通用数据节点。普通空工程仍从 v3 开始，使用 v4 能力须显式升级；读取旧文件不自动迁移，当前拒绝 v5 及其他未知版本。所有窗口共享工程级变量、流程和资源；只在渲染层投影当前窗口，运行与保存始终接收完整工程。
 
 局部 CODE 仅接受 `props/style/states`，不能重写对象 ID、类型或树。无效草稿按控件 ID 保留，不进入预览版本。画布、表单和合法 CODE 更新通过同一个事务历史支持撤销/重做。缓存、构建目录和运行记录不作为工程源文件。
 
@@ -30,23 +30,44 @@
 
 节点配置：
 
-| 节点       | 配置                                                     |
-| ---------- | -------------------------------------------------------- |
-| event      | trigger=manual/startup/interval，intervalMs              |
-| read/write | variable、可选 JSON path；write 可选 value，否则透传输入 |
-| math       | operation=add/subtract/multiply/divide，operand          |
-| condition  | operator=gt/gte/lt/lte/eq/neq，value                     |
-| delay      | ms                                                       |
-| log        | message                                                  |
-| script     | scriptId                                                 |
-| http       | url、method、body                                        |
-| connection | connectionId                                             |
-| emit       | event                                                    |
-| window     | action=open/close/focus，windowId；不能关闭 main         |
+| 节点         | 配置                                                                                                              |
+| ------------ | ----------------------------------------------------------------------------------------------------------------- |
+| event        | trigger=manual/startup/interval，intervalMs                                                                       |
+| read/write   | variable、可选 JSON path；write 可选 value，否则透传输入                                                          |
+| math         | operation=add/subtract/multiply/divide，operand                                                                   |
+| condition    | operator=gt/gte/lt/lte/eq/neq，value                                                                              |
+| delay        | ms                                                                                                                |
+| log          | message                                                                                                           |
+| script       | scriptId                                                                                                          |
+| http         | url、method、body                                                                                                 |
+| connection   | connectionId                                                                                                      |
+| emit         | event                                                                                                             |
+| window       | action=open/close/focus，windowId；不能关闭 main                                                                  |
+| map（v4）    | operation=value/object/array；ValueRef 提取值、构造对象或逐项映射                                                 |
+| append（v4） | variable、path、item、maxItems、maxBytes、order、可选 droppedPath                                                 |
+| serial（v4） | action=scan/filter/open/close/listenStart/listenStop/send/setReconnect/resetCounters；有状态操作引用 connectionId |
 
-定时器由原生会话管理；热更新取消旧调度，忙时跳过采样 tick，防止积压。显式命令不会通过丢弃策略伪装成功。事件节点按 ID 触发，定时源不会顺带触发同图其他事件入口。
+定时器由原生会话管理；v4 在运行定义变更时取消旧调度，纯外观修订保留有效运行会话。忙时跳过采样 tick，防止积压。显式命令不会通过丢弃策略伪装成功。事件节点按 ID 触发，定时源不会顺带触发同图其他事件入口。
 
 v3 math 拒绝非数值隐式转换；eq/neq 使用 JSON 结构比较，条件分支保留原始输入；write 向后传递实际写入值。v1/v2 保留旧转换规则。直接 C 测试通过运行控制器执行，要求当前修订已接受；编译失败不能继续执行旧脚本并误报为新脚本结果。
+
+v4 的 `ValueRef` 在固定值、上游消息和稳定变量 ID 之间显式选择，消息/变量路径沿用类型化 JSON 数组；缺失路径是错误。新节点采用 `success` / `error` 端口，错误至少含 `code`、`message` 和 `operation`；没有连接错误出口时记录错误并使该次执行失败。`flowV4.ts` 集中描述配置、端口与引用，编辑器、校验、连接/变量删除保护和剪贴板重映射使用同一元数据。旧节点配置与运行语义保留。
+
+v4 事件增加 `serial` 的 devices/data/state/error 入口，以及动态读取间隔与启用值的 `controlledInterval`。后者默认 1000 ms/关闭，间隔范围 100–86400000 ms；不积压、补发错过的 tick。手动运行只触发手动入口，不构造串口事件。串口数据事件带方向、字节数、无损 HEX、流式 UTF-8 和时间；初次枚举是 snapshot，不计作新设备插入。
+
+## 原生串口会话
+
+每个运行 owner 持有串口服务，子窗口共享该服务；进程级端口占用注册防止两个 owner 竞争打开同一设备。端口 I/O actor 不等待 Engine 锁或满事件队列；异步命令在等待 I/O 时释放引擎锁，并在返回时检查 owner、会话与执行代际。监听属于有生命周期的外部事件源，不通过永不返回的流程节点占住执行队列。
+
+端口描述包含 portName、portType、可空 VID/PID、USB busId/portChain 物理拓扑等。扫描和设备变化使用完整快照及 added/removed/changed；枚举失败保留最后有效快照。VID/PID 支持空值、0–65535 整数或可带 `0x` 的 1–4 位十六进制，两个条件以 AND 组合；未知标识不匹配指定值。
+
+新会话默认 115200/8N1/无流控、raw 接收、自动重连关闭。打开参数仅接受串口设置字段，先读取连接 profile，再用已解析的设置对象覆盖。`framing` 只影响 RX：raw 批次、LF 行或大端 length16；TX 直接发送 UTF-8/HEX 编码结果并追加 none/LF/CRLF，不添加长度前缀。非法 HEX 无写入；编码及行尾后的发送总量最多 65535 字节，部分写入或超时不自动重试。写入成功不等于设备确认。旧 `connection/test_connection` 保持一次性诊断、8N1/无流控及原收发组帧规则。
+
+严格重连仅复用手动成功打开时确认的 VID、PID、规范端口名和 USB 物理拓扑；所有字段必须存在且相同，不以序列号或唯一 VID/PID 替代。缺少拓扑时返回原因并要求手动打开。打开中、已连接及重连中锁定端口、过滤与通信参数。重连恢复监听，不恢复定时发送；停止监听仍可排空并计数接收数据，但不保存这些数据用于恢复后补播。
+
+未处理 RX 队列以 256 批或 1 MiB 为界。过载关闭端口、取消待发送任务和定时发送，锁存 `RX_OVERFLOW` 并暂停重连，需手动打开恢复。控制/故障通知不依赖已满的数据队列。示例显示历史另由通用 append 节点限制为 500 条/512 KiB，淘汰旧记录并累计淘汰量；显示淘汰不等于接收队列过载。停止/关闭工程释放订阅、I/O 和端口占用；仅外观修订保留有效会话，连接设置变更要求手动重开。
+
+`src/core/examples.ts` 注册串口助手；`src/examples/serialAssistant.ts` 和 `examples/serial-assistant/quickgui.json` 提供相同普通工程。64 个通用控件、16 条流程实现设备选择、参数、监听、收发、历史及控制；没有按示例 ID 运行的特殊组件、C 或 React 业务分支。浏览器可运行通用数据流程，串口操作明确报告原生能力缺失，不提供模拟端口或 Web Serial。浏览器、PTY 自动化和物理设备验收具有不同证据范围。
 
 ## C ABI 与工作进程
 

@@ -6,6 +6,7 @@ import { unzipSync, strFromU8 } from 'fflate';
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const paths = [
   'src/core',
+  'src/examples',
   'src/runtime',
   'src/renderer',
   'src/native',
@@ -50,13 +51,13 @@ export function decodeProject(bytes) {
 
 function checkWindowFormat(project) {
   if (
-    ![1, 2, 3].includes(project?.schemaVersion) ||
+    ![1, 2, 3, 4].includes(project?.schemaVersion) ||
     !project.publish ||
     !project.window ||
     !Array.isArray(project.widgets)
   )
     throw new Error(
-      'Invalid project: expected schemaVersion 1, 2 or 3, window, widgets and publish settings',
+      'Invalid project: expected schemaVersion 1, 2, 3 or 4, window, widgets and publish settings',
     );
   if (project.schemaVersion === 1 && Object.hasOwn(project, 'windows'))
     throw new Error('schemaVersion 1 cannot contain windows; use schemaVersion 2');

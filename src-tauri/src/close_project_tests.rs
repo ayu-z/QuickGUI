@@ -17,6 +17,7 @@ pub(super) fn install_session(
     recorder: Option<history::Recorder>,
 ) -> Session {
     let id = project.id.clone();
+    let logic_key = quickgui_engine::flow_v4::execution_key(&project);
     let mut engine = Engine::new(project).unwrap();
     engine.set_variable("value", json!(42)).unwrap();
     let session = Session {
@@ -27,6 +28,9 @@ pub(super) fn install_session(
         history: recorder,
         epoch: state.next_epoch.fetch_add(1, Ordering::Relaxed),
         revision: 1,
+        logic_key,
+        flow_gate: Arc::new(tokio::sync::Mutex::new(())),
+        serial: None,
     };
     state
         .sessions
@@ -85,6 +89,44 @@ async fn close_cancels_window_work_flushes_values_and_clears_both_sessions() {
     assert!(project_work(&state, "main", Some(0), true).is_err());
     assert!(project_work(&state, "main", Some(1), false).is_err());
     assert!(begin_work(&state, "main", Some(0)).is_err());
+}
+
+#[tokio::test]
+async fn v4_hmi_children_share_serial_lifetime_while_designer_is_independent() {
+    let state = HostState::default();
+    let mut p = project("serial-lifecycle");
+    p.schema_version = 4;
+    p.windows = Some(Vec::new());
+    install_session(&state, "preview", p.clone(), None);
+    install_session(&state, "main", p, None);
+    let preview_serial = quickgui_engine::serial::SerialService::new(CancellationToken::new());
+    let designer_serial = quickgui_engine::serial::SerialService::new(CancellationToken::new());
+    state
+        .sessions
+        .lock()
+        .unwrap()
+        .get_mut("preview")
+        .unwrap()
+        .serial = Some(preview_serial.clone());
+    state
+        .sessions
+        .lock()
+        .unwrap()
+        .get_mut("main")
+        .unwrap()
+        .serial = Some(designer_serial.clone());
+    let child = session(&state, "preview__child").unwrap();
+    invalidate_project(&state, "preview__child").unwrap();
+    assert!(!child.serial.as_ref().unwrap().is_cancelled());
+    assert!(!preview_serial.is_cancelled());
+    close_project_state(&state, "preview".into(), || Ok(()))
+        .await
+        .unwrap();
+    assert!(preview_serial.is_cancelled());
+    assert!(child.serial.as_ref().unwrap().is_cancelled());
+    assert!(!designer_serial.is_cancelled());
+    assert!(state.sessions.lock().unwrap().contains_key("main"));
+    designer_serial.shutdown().await;
 }
 
 #[tokio::test]

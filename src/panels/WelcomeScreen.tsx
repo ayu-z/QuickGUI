@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { FilePlus2, FolderOpen, RotateCcw, X } from 'lucide-react';
 import type { EditorState, EditorStore } from '../core/store';
 import type { Project } from '../core/types';
-import { createEmptyProject, createProject } from '../core/project';
+import { createEmptyProject } from '../core/project';
+import { projectExamples } from '../core/examples';
 import { importProject } from '../core/archive';
 import { errorText, validateProject } from '../core/validation';
 import * as native from '../native/bridge';
@@ -36,7 +37,9 @@ export function WelcomeScreen({ store, state }: { store: EditorStore; state: Edi
           flow.nodes.some(
             (node) =>
               node.kind === 'event' &&
-              ['startup', 'interval'].includes(String(node.config.trigger)),
+              ['startup', 'interval', 'controlledInterval', 'serial'].includes(
+                String(node.config.trigger),
+              ),
           ),
       );
     if (executable) setPending(project);
@@ -98,9 +101,17 @@ export function WelcomeScreen({ store, state }: { store: EditorStore; state: Edi
               </span>
             </button>
           )}
-          <button className="welcome-example" onClick={() => store.replaceProject(createProject())}>
-            {zh ? '打开泵站示例' : 'Open pump station example'}
-          </button>
+          <div>
+            {projectExamples.map((example) => (
+              <button
+                key={example.id}
+                className="welcome-example"
+                onClick={() => store.replaceProject(example.create(locale))}
+              >
+                {example.label[locale]}
+              </button>
+            ))}
+          </div>
           {(error || state.recoveryError) && (
             <div role="alert" className="form-error welcome-error">
               {error || state.recoveryError}

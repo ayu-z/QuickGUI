@@ -81,6 +81,44 @@ async fn contract(host: &ScriptHost) {
         .unwrap()
         .insert("left".into(), "json".into());
     assert!(Engine::new(invalid).is_err());
+
+    // Persistent v4 execution releases Engine while C runs, but serializes
+    // each script's state read/execute/commit so concurrent calls cannot lose
+    // either variable increments or qg_state_set updates. Run for JIT and AOT.
+    let mut p = project();
+    p.schema_version = 4;
+    let shared = std::sync::Arc::new(tokio::sync::Mutex::new(Engine::new(p).unwrap()));
+    let mut tasks = Vec::new();
+    for _ in 0..4 {
+        let engine = shared.clone();
+        let host = host.clone();
+        tasks.push(tokio::spawn(async move {
+            quickgui_engine::flow_v4::script_shared(
+                engine,
+                "s",
+                json!(0),
+                CancellationToken::new(),
+                &host,
+            )
+            .await
+            .unwrap()
+        }));
+    }
+    let mut outputs = Vec::new();
+    let mut states = Vec::new();
+    for task in tasks {
+        let result = task.await.unwrap();
+        outputs.push(result.output.as_f64().unwrap() as u64);
+        states.push(result.state["runs"] as u64);
+    }
+    outputs.sort();
+    states.sort();
+    assert_eq!(outputs, [11, 12, 13, 14]);
+    assert_eq!(states, [1, 2, 3, 4]);
+    assert_eq!(
+        shared.lock().await.snapshot().values["one"].value,
+        json!(14.)
+    );
 }
 #[tokio::test]
 #[ignore = "requires pinned libtcc and QG_TEST_AOT_RUNNER from build-aot sdk/tests/aliases.c"]

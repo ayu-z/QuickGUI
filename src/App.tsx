@@ -105,6 +105,7 @@ import { assertJsonValue } from './core/jsonValue';
 import { variableReferences } from './core/references';
 import { getWidgetDefinition, getBindableProperties, getJsonPath } from './core/widgetDefinitions';
 import { useDismissibleLayer } from './hooks/useDismissibleLayer';
+import { isAutomaticEventSource } from './core/flowV4';
 
 function PreviewWindow() {
   const windowId = new URLSearchParams(location.search).get('windowId') ?? 'main';
@@ -192,7 +193,11 @@ function ProjectWorkspace({
     scope: { kind: 'window' | 'module'; id: string },
     point?: Point,
   ) => void | Promise<void>;
-  onRequestUpgrade?: (reason: string, pendingCommand?: DesignerCommand | (() => void)) => void;
+  onRequestUpgrade?: (
+    reason: string,
+    pendingCommand?: DesignerCommand | (() => void),
+    minimumVersion?: 3 | 4,
+  ) => void;
 }) {
   const { project, section, selectedId, selectedIds, drafts, activeWindowId } = state;
   const [engine] = useState(() => createRuntime(project));
@@ -220,6 +225,7 @@ function ProjectWorkspace({
     reason: string;
     pending?: DesignerCommand | (() => void);
     ids: string[];
+    minimumVersion: 3 | 4;
   } | null>(null);
   const [nameAction, setNameAction] = useState<'create' | 'rename' | null>(null);
   const [preview, setPreview] = useState(false),
@@ -248,6 +254,12 @@ function ProjectWorkspace({
     assetInput = useRef<HTMLInputElement>(null);
   const t = translations[project.locale],
     zh = project.locale === 'zh-CN';
+  const simulationAvailable = project.variables.some(
+    (variable) =>
+      ['temperature', 'pressure'].includes(variable.id) &&
+      variable.type === 'number' &&
+      !variable.readOnly,
+  );
   const activeModule = project.modules.find((m) => m.id === moduleId);
   const activeWindow = getProjectWindow(project, activeWindowId);
   const windowProject = projectForWindow(project, activeWindowId);
@@ -347,6 +359,10 @@ function ProjectWorkspace({
     return () => clearTimeout(timer);
   }, [toast]);
   useEffect(() => {
+    if (!simulationAvailable) {
+      if (simulate) setSimulate(false);
+      return;
+    }
     if (!simulate) return;
     const start = Date.now();
     const timer = setInterval(() => {
@@ -367,7 +383,7 @@ function ProjectWorkspace({
       }
     }, 500);
     return () => clearInterval(timer);
-  }, [simulate, engine, project.variables]);
+  }, [simulate, simulationAvailable, engine, project.variables]);
   const updateWidget = (id: string, patch: Partial<Widget>) => {
     const candidate = designProject.widgets.find((widget) => widget.id === id);
     if (candidate && inheritedFlag(candidate, designProject.widgets, 'locked')) {
@@ -392,7 +408,7 @@ function ProjectWorkspace({
   };
   const addWidget = (type: Widget['type'], x?: number, y?: number) => {
     if (moduleId) {
-      const widget = createWidget(type, x, y, project.schemaVersion === 3 ? 2 : 1);
+      const widget = createWidget(type, x, y, project.schemaVersion >= 3 ? 2 : 1);
       store.update((p) => p.modules.find((m) => m.id === moduleId)!.widgets.push(widget));
       store.select(widget.id);
     } else store.addWidget(type, x, y);
@@ -407,13 +423,18 @@ function ProjectWorkspace({
         Object.assign(widget, patch, { id });
       }
     });
-  const requestUpgrade = (reason: string, pendingCommand?: DesignerCommand | (() => void)) => {
-    if (onRequestUpgrade) onRequestUpgrade(reason, pendingCommand);
+  const requestUpgrade = (
+    reason: string,
+    pendingCommand?: DesignerCommand | (() => void),
+    minimumVersion: 3 | 4 = 3,
+  ) => {
+    if (onRequestUpgrade) onRequestUpgrade(reason, pendingCommand, minimumVersion);
     else
       setUpgradeRequest({
         reason,
         pending: pendingCommand,
         ids: [...store.getSnapshot().selectedIds],
+        minimumVersion,
       });
   };
   const copyCurrent = async (cut = false) => {
@@ -549,7 +570,7 @@ function ProjectWorkspace({
         roots = selectionRoots(widgets, current.selectedIds);
       if (!roots.length) return;
       if (['lock', 'unlock', 'hide', 'show'].includes(command)) {
-        if (source.schemaVersion !== 3) {
+        if (source.schemaVersion < 3) {
           requestUpgrade(command, command);
           return;
         }
@@ -660,7 +681,7 @@ function ProjectWorkspace({
     void executeCommand('delete');
   };
   const createModule = () => {
-    const source = selected ?? createWidget('panel', 32, 32, project.schemaVersion === 3 ? 2 : 1);
+    const source = selected ?? createWidget('panel', 32, 32, project.schemaVersion >= 3 ? 2 : 1);
     const children = cloneSubtree(selected ? designProject.widgets : [source], source.id, true);
     const child = children.find((w) => !w.parentId)!;
     const module: ComponentModule = {
@@ -698,7 +719,7 @@ function ProjectWorkspace({
     );
   };
   const addModuleInstance = (module: ComponentModule) => {
-    const widget = createWidget('module', 32, 32, project.schemaVersion === 3 ? 2 : 1);
+    const widget = createWidget('module', 32, 32, project.schemaVersion >= 3 ? 2 : 1);
     widget.name = module.name;
     widget.moduleId = module.id;
     widget.layout.width = module.width;
@@ -762,13 +783,7 @@ function ProjectWorkspace({
     const next = validateProject(raw);
     const runsCode =
       next.modules.some((m) => Boolean(m.implementation)) ||
-      next.flows.some(
-        (f) =>
-          f.enabled &&
-          f.nodes.some(
-            (n) => n.kind === 'event' && ['startup', 'interval'].includes(String(n.config.trigger)),
-          ),
-      );
+      next.flows.some((f) => f.enabled && f.nodes.some(isAutomaticEventSource));
     if (runsCode) setPendingProject(next);
     else {
       requestClose(next);
@@ -1333,6 +1348,7 @@ function ProjectWorkspace({
             <FlowEditor
               project={project}
               onRequestUpgrade={(apply) => requestUpgrade('json-path', apply)}
+              onRequestV4={(apply) => requestUpgrade('serial-flow', apply, 4)}
               onChange={(flows) =>
                 store.update((p) => {
                   p.flows = flows;
@@ -1372,7 +1388,12 @@ function ProjectWorkspace({
             />
           )}
           {section === 'connections' && (
-            <ConnectionsPanel project={project} onChange={(p) => store.update(p)} notify={notify} />
+            <ConnectionsPanel
+              project={project}
+              onChange={(p) => store.update(p)}
+              notify={notify}
+              onRequestV4={(apply) => requestUpgrade('serial-profile', apply, 4)}
+            />
           )}
           {showConsole && (
             <section className="console-panel">
@@ -1383,15 +1404,17 @@ function ProjectWorkspace({
                   <span className="count-pill">{snapshot.logs.length}</span>
                 </button>
                 <div>
-                  <label className="simulate-toggle">
-                    <input
-                      type="checkbox"
-                      checked={simulate}
-                      onChange={(e) => setSimulate(e.target.checked)}
-                    />
-                    {t.simulate}
-                    <span className="simulated-label">SIM</span>
-                  </label>
+                  {simulationAvailable && (
+                    <label className="simulate-toggle">
+                      <input
+                        type="checkbox"
+                        checked={simulate}
+                        onChange={(e) => setSimulate(e.target.checked)}
+                      />
+                      {t.simulate}
+                      <span className="simulated-label">SIM</span>
+                    </label>
+                  )}
                   <button className="icon-button" title={t.clear} onClick={engine.clearLogs}>
                     <Trash2 size={13} />
                   </button>
@@ -1629,7 +1652,7 @@ function ProjectWorkspace({
               </button>
             </header>
             <section>
-              {migrationSummary(project).map((line, index) => (
+              {migrationSummary(project, upgradeRequest.minimumVersion).map((line, index) => (
                 <p key={index}>{line}</p>
               ))}
               {['widget-properties', 'batch-properties', 'widget-definition'].includes(
@@ -1655,10 +1678,10 @@ function ProjectWorkspace({
                   className="button primary"
                   onClick={async () => {
                     const request = upgradeRequest;
-                    store.beginTransaction('upgrade-v3');
+                    store.beginTransaction(`upgrade-v${request.minimumVersion}`);
                     try {
                       store.update((next) => {
-                        Object.assign(next, upgradeProject(next));
+                        Object.assign(next, upgradeProject(next, request.minimumVersion));
                         if (
                           ['widget-properties', 'batch-properties', 'widget-definition'].includes(
                             request.reason,

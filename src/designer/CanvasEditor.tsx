@@ -668,7 +668,7 @@ export function CanvasEditor({
       onPaste?.(menu?.world);
       return;
     }
-    if (['lock', 'unlock', 'hide', 'show'].includes(command) && project.schemaVersion !== 3) {
+    if (['lock', 'unlock', 'hide', 'show'].includes(command) && project.schemaVersion < 3) {
       onRequestUpgrade?.(command);
       return;
     }

@@ -381,10 +381,10 @@ describe('standalone source export window metadata', () => {
       expect(config.app.windows[0].url).toBe('index.html?runtime=1&windowId=main');
       expect(config.app.windows[0].title).toBe(project.window.title);
       expect(project).toEqual(original);
-      const unsupported = { ...project, schemaVersion: 4 } as unknown as Project;
+      const unsupported = { ...project, schemaVersion: 5 } as unknown as Project;
       await expect(
         exporter.exportProject(unsupported, path.join(directory, 'unsupported'), root),
-      ).rejects.toThrow('schemaVersion 1, 2 or 3');
+      ).rejects.toThrow('schemaVersion 1, 2, 3 or 4');
       const disguised = { ...project, schemaVersion: 1 } as Project;
       await expect(
         exporter.exportProject(disguised, path.join(directory, 'disguised'), root),

@@ -4,6 +4,7 @@ import { reactImplementationSchema } from './componentPackage';
 import { assertJsonPath, assertJsonValue, validateJsonPath } from './jsonValue';
 import { validatePropertyPatch } from './widgetDefinitions';
 import { propertyDefinitionSchema } from './propertySchema';
+import { flowConfigRecordSchema, flowNodePorts, isV4Node, validateV4NodeConfig } from './flowV4';
 import {
   listProjectWindows,
   MAIN_WINDOW_ID,
@@ -417,6 +418,34 @@ const modernProject = projectBaseSchema
     resourceScopes: z.array(resourceScopeSchema).max(1000).optional(),
   })
   .strict();
+const flowV4Schema = projectBaseSchema.shape.flows.element
+  .extend({
+    nodes: z.array(
+      projectBaseSchema.shape.flows.element.shape.nodes.element
+        .extend({
+          kind: z.enum([
+            'event',
+            'read',
+            'write',
+            'condition',
+            'math',
+            'delay',
+            'log',
+            'script',
+            'http',
+            'emit',
+            'connection',
+            'window',
+            'map',
+            'append',
+            'serial',
+          ]),
+          config: flowConfigRecordSchema,
+        })
+        .strict(),
+    ),
+  })
+  .strict();
 export const projectSchema = z.discriminatedUnion('schemaVersion', [
   projectBaseSchema,
   projectBaseSchema
@@ -426,6 +455,7 @@ export const projectSchema = z.discriminatedUnion('schemaVersion', [
     })
     .strict(),
   modernProject,
+  modernProject.extend({ schemaVersion: z.literal(4), flows: z.array(flowV4Schema) }).strict(),
 ]);
 
 export function validateProject(raw: unknown): Project {
@@ -437,11 +467,16 @@ export function validateProject(raw: unknown): Project {
   if (!input || !Object.hasOwn(input, 'schemaVersion') || input.schemaVersion === undefined) {
     throw new Error(
       english
-        ? 'The project is missing schemaVersion. This designer supports schemaVersion 1, 2 and 3. The original file has not been modified.'
-        : '工程缺少 schemaVersion，当前设计器支持 schemaVersion 1、2 和 3。原文件未修改。',
+        ? 'The project is missing schemaVersion. This designer supports schemaVersion 1, 2, 3 and 4. The original file has not been modified.'
+        : '工程缺少 schemaVersion，当前设计器支持 schemaVersion 1、2、3 和 4。原文件未修改。',
     );
   }
-  if (input.schemaVersion !== 1 && input.schemaVersion !== 2 && input.schemaVersion !== 3) {
+  if (
+    input.schemaVersion !== 1 &&
+    input.schemaVersion !== 2 &&
+    input.schemaVersion !== 3 &&
+    input.schemaVersion !== 4
+  ) {
     const version =
       ['string', 'number', 'boolean'].includes(typeof input.schemaVersion) ||
       input.schemaVersion === null
@@ -449,8 +484,8 @@ export function validateProject(raw: unknown): Project {
         : '(invalid value)';
     throw new Error(
       english
-        ? `Unsupported project schemaVersion ${version}. This designer supports schemaVersion 1, 2 and 3. Do not save over the original file. The original file has not been modified.`
-        : `不支持工程 schemaVersion ${version}，当前设计器支持 schemaVersion 1、2 和 3。请勿保存覆盖原件；原文件未修改。`,
+        ? `Unsupported project schemaVersion ${version}. This designer supports schemaVersion 1, 2, 3 and 4. Do not save over the original file. The original file has not been modified.`
+        : `不支持工程 schemaVersion ${version}，当前设计器支持 schemaVersion 1、2、3 和 4。请勿保存覆盖原件；原文件未修改。`,
     );
   }
   let project: Project;
@@ -541,8 +576,12 @@ export function validateProject(raw: unknown): Project {
     if (id && !project.assets.some((a) => a.id === id))
       throw new Error(`Missing icon asset: ${id}`);
   for (const flow of project.flows) {
-    validateFlow(flow);
+    validateFlow(flow, project.schemaVersion);
     for (const node of flow.nodes) {
+      if (isV4Node(node)) {
+        if (project.schemaVersion < 4) throw new Error(`Node ${node.id} requires schemaVersion 4`);
+        validateV4NodeConfig(node, project);
+      }
       if (node.config.path === undefined) continue;
       if (project.schemaVersion < 3) throw new Error('JSON paths require schemaVersion 3');
       const path = node.config.path;
@@ -557,7 +596,7 @@ export function validateProject(raw: unknown): Project {
     }
     for (const node of flow.nodes.filter((node) => node.kind === 'window')) {
       if (project.schemaVersion === 1)
-        throw new Error('Window flow nodes require schemaVersion 2 or 3');
+        throw new Error('Window flow nodes require schemaVersion 2 or later');
       const { action, windowId } = node.config;
       if (typeof action !== 'string' || !['open', 'close', 'focus'].includes(action))
         throw new Error(`Invalid window action: ${node.id}`);
@@ -664,7 +703,10 @@ export function validateProject(raw: unknown): Project {
   return project;
 }
 
-export function validateFlow(flow: Project['flows'][number]): string[] {
+export function validateFlow(
+  flow: Project['flows'][number],
+  schemaVersion?: Project['schemaVersion'],
+): string[] {
   const ids = new Set(flow.nodes.map((n) => n.id));
   if (ids.size !== flow.nodes.length) throw new Error(`Duplicate node IDs: ${flow.name}`);
   if (new Set(flow.edges.map((e) => e.id)).size !== flow.edges.length)
@@ -673,6 +715,15 @@ export function validateFlow(flow: Project['flows'][number]): string[] {
   for (const e of flow.edges) {
     if (!ids.has(e.source) || !ids.has(e.target))
       throw new Error('Flow edge references a missing node');
+    if (schemaVersion === 4 || (schemaVersion === undefined && flow.nodes.some(isV4Node))) {
+      const source = flow.nodes.find((node) => node.id === e.source)!,
+        target = flow.nodes.find((node) => node.id === e.target)!;
+      const ports = flowNodePorts(source);
+      if (!ports.outputs.includes(e.sourceHandle ?? ports.defaultOutput))
+        throw new Error(`Unsupported source port on ${source.id}: ${e.sourceHandle}`);
+      if (!flowNodePorts(target).inputs.includes(e.targetHandle ?? 'input'))
+        throw new Error(`Unsupported target port on ${target.id}: ${e.targetHandle ?? 'input'}`);
+    }
     indegree.set(e.target, indegree.get(e.target)! + 1);
   }
   const queue = [...indegree].filter(([, degree]) => degree === 0).map(([id]) => id);

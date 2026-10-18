@@ -1,6 +1,19 @@
 # 验证记录
 
-执行环境：2026-10-18，macOS ARM64，Node 26、Rust 1.98、Apple Clang 21、CMake 4。
+## 串口助手与 v4 流程验证（2026-10-19）
+
+- macOS ARM64：`npm run check` 的 TypeScript 检查及 233 项测试通过；`npm run build` 与 45 项 Chromium E2E 通过。覆盖 v4 显式升级/撤销、源文件往返、ValueRef、map/append、VID/PID 过滤、依赖复制与引用保护、受控定时器、并行流程/C 状态、原生桥接代际与浏览器能力诊断。
+- 最新计数流程修复后，重跑 233 项单测及 4 项串口 E2E 均通过；原生最终快照冻结后 `cargo test --workspace` 的 95 项常规测试通过（引擎 67、宿主 24、runner 4），默认忽略的 13 项环境条件测试另行执行，不计入常规通过数。
+- 实际从 `examples/serial-assistant/quickgui.json` 导出最终独立源码至 `artifacts/serial-standalone-verified`，`npm ci --ignore-scripts`、生产构建及 `cargo check --workspace` 通过。CLI 和原生嵌入源码清单包含 `src/examples`，避免 `src/core/examples.ts` 的依赖缺失。
+- 最终独立生产站点在 4380 端口通过 Playwright 实测：64 个通用控件、默认 115200、关闭时发送/定时发送禁用、扫描显示原生能力诊断、只有占位端口选项、无虚假记录且计数为零。无页面异常、console.error 或设计器开发资源请求；截图/请求记录在忽略的 `artifacts/serial-standalone-verified-browser.*`。此前 4379 端口的独立导出也通过同类检查，另行直接执行导出运行时确认诊断码为 `NATIVE_SERIAL_REQUIRED`。
+- `npm run test:c`：14 项真实 C 测试通过；同源 aliases 的 JIT/AOT 合同测试通过，包含 v4 四次并发调用的 state.runs=1/2/3/4、变量递增和失败回滚。`close_cancels_a_real_inflight_c_worker` 通过。C ABI 保持 2。
+- `QG_SERIAL_DEMO_FIXTURE="$PWD/examples/serial-assistant/quickgui.json" cargo test -p quickgui-engine actual_demo_opens_a_real_pty_and_routes_rx_tx_state_without_widget_code -- --ignored --nocapture`：1/1 通过；实际加载最终工程及可视化流程，经操作系统 PTY 完成打开、RX/TX、监听、状态、热更新、关闭，覆盖停止监听仍计数、排队 RX/TX 后重置计数及记录保留。macOS PTY 重新打开时不支持串口 modem ioctl，测试适配器将真实预打开 slave 注册给生产打开路径，仅在 cfg(test) 下使用；未添加生产模拟驱动，也未打开物理串口。
+- 17 项串口定向回归包含双重队列预算、溢出锁定、严格重连身份/参数锁定、租约释放、停止监听不重放、RX 分帧/TX 原文、部分写超时、关闭抢占、外观热更新、计数重置与显式数据快照、普通状态/数据公平投递、故障优先及发送错误保留。
+- `npx tauri build --debug --bundles app` 通过，更新 `target/debug/bundle/macos/QuickGUI.app`（71.48 MiB）。包内 ICNS 与既有白底图标、包内 C worker 与暂存 worker 逐字节一致；从 `/tmp` 执行包内 worker self-test 返回 output=21/state.runs=1，ABI 2/compileCheck/variableAliases 可用且加载包内 libtcc。未另打独立应用安装包，未进行原生 UI 自动点击或分发签名验收。
+- Prettier、`cargo fmt --all -- --check` 与 `git diff --check` 通过。测试首次发现的问题已修复并定向复跑：数据计数覆盖重置、隐式计数刷新破坏快照、普通状态通知挤占数据、旧状态错误覆盖新写入错误，以及导出遗漏示例源码。
+- 不以浏览器回归或伪终端代替物理 USB、真实波特率/校验/流控、驱动热插拔及硬件重连验收。Windows/Intel Mac 实机、签名公证及长时间性能验收尚未执行。构建保留已有 Monaco 大包及桥接动态/静态混合导入提示。
+
+执行环境：2026-10-18～19，macOS ARM64，Node 26、Rust 1.98、Apple Clang 21、CMake 4。
 
 ## v3 编辑与属性升级验证（2026-10-18）
 
@@ -26,7 +39,7 @@
 - Rust 流程、稳定变量 ID、逐输入处理、热更新状态迁移与取消测试。
 - 固定 TinyCC 的真实 C 编译、状态、输出、错误定位、死循环终止、崩溃后恢复测试。
 - 同源 C 的 CMake/Clang 提前编译与独立 runner 执行。
-- HTTP、TCP、WebSocket、MQTT 的本机回环协议测试；串口测试结果按最终记录补充。
+- HTTP、TCP、WebSocket、MQTT 的本机回环协议测试；串口原生队列、PTY 与示例工程的执行结果见上方 v4 增量记录。
 - 独立源码导出后重新安装依赖和构建；导出应用包含自己的原生宿主及 AOT C worker。
 
 ## 已发现并修正
