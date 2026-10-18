@@ -1,6 +1,8 @@
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 export type Locale = 'zh-CN' | 'en';
 export type ThemeMode = 'light' | 'dark' | 'system';
+export type JsonPath = Array<string | number>;
+export type VariableType = 'number' | 'string' | 'boolean' | 'json';
 export type WidgetType =
   | 'panel'
   | 'text'
@@ -25,11 +27,17 @@ export interface Layout {
   gap?: number;
   columns?: number;
   direction?: 'row' | 'column';
+  wrap?: boolean;
+  alignItems?: string;
+  justifyContent?: string;
+  rowGap?: number;
+  columnGap?: number;
 }
 export type WidgetStyle = Record<string, string | number>;
 export interface Binding {
   variable: string;
   mode: 'oneWay' | 'twoWay' | 'once';
+  path?: JsonPath;
 }
 export interface Widget {
   id: string;
@@ -43,6 +51,9 @@ export interface Widget {
   states: Record<string, WidgetStyle>;
   bindings: Record<string, Binding>;
   events: Record<string, string>;
+  definitionVersion?: 1 | 2;
+  editor?: { locked?: boolean; hidden?: boolean };
+  resourceScopeId?: string;
 }
 export interface WindowConfig {
   title: string;
@@ -86,8 +97,8 @@ export interface PublishConfig {
 export interface Variable {
   id: string;
   name: string;
-  type: 'number' | 'string' | 'boolean';
-  initial: string | number | boolean;
+  type: VariableType;
+  initial: Json;
   unit?: string;
   readOnly?: boolean;
   persistent?: boolean;
@@ -132,6 +143,7 @@ export interface CScript {
   name: string;
   source: string;
   timeoutMs: number;
+  variableAliases?: Record<string, string>;
 }
 export interface ComponentModule {
   id: string;
@@ -141,6 +153,10 @@ export interface ComponentModule {
   height: number;
   widgets: Widget[];
   exposedProps: Record<string, { widgetId: string; property: string; default: Json }>;
+  packageIdentity?: { id: string; name: string; version: string; width: number; height: number };
+  propertyDefinitions?: Record<string, import('./widgetDefinitions').PropertyDefinition>;
+  resourceScopeId?: string;
+  embeddedResourceScope?: ResourceScope;
   implementation?: {
     kind: 'react';
     files: Record<string, string>;
@@ -161,7 +177,7 @@ export interface Connection {
   config: Record<string, Json>;
 }
 export interface Project {
-  schemaVersion: 1 | 2;
+  schemaVersion: 1 | 2 | 3;
   id: string;
   name: string;
   revision: number;
@@ -179,6 +195,16 @@ export interface Project {
   assets: Asset[];
   connections: Connection[];
   translations?: Record<string, Record<string, string>>;
+  resourceScopes?: ResourceScope[];
+}
+export interface ResourceScope {
+  id: string;
+  theme: { mode: ThemeMode; tokens: Record<string, string> };
+  translations: Record<string, Record<string, string>>;
+  locale: Locale;
+  localeVariableId?: string;
+  assetAliases?: Record<string, string>;
+  assets?: Asset[];
 }
 export interface RuntimeValue {
   value: Json;
@@ -209,10 +235,39 @@ export interface ScriptRequest {
   variables: Record<string, number>;
   state: Record<string, number>;
   timeoutMs: number;
+  variableAliases?: Record<string, string>;
 }
 export interface ScriptResponse {
   output: Json;
   writes: Record<string, number>;
   state: Record<string, number>;
   logs: string[];
+}
+export interface HistoryRangeQuery {
+  variableIds: string[];
+  fromMs: number;
+  toMs: number;
+  aggregation: 'raw' | 'avg' | 'min' | 'max' | 'last';
+  bucketMs?: number;
+  maxPointsPerSeries?: number;
+}
+export interface HistoryRangeResult {
+  projectId?: string;
+  fromMs: number;
+  toMs: number;
+  aggregation: HistoryRangeQuery['aggregation'];
+  bucketMs?: number;
+  series: Array<{
+    variableId: string;
+    truncated: boolean;
+    availableFromMs: number | null;
+    availableToMs: number | null;
+    points: Array<{
+      timestamp: number;
+      value: number | null;
+      count: number;
+      quality?: RuntimeValue['quality'];
+      id?: number;
+    }>;
+  }>;
 }

@@ -1,6 +1,7 @@
 import type {
   FlowNode,
   Json,
+  JsonPath,
   Project,
   RuntimeLog,
   RuntimeSnapshot,
@@ -8,7 +9,16 @@ import type {
   ScriptRequest,
   ScriptResponse,
   WindowAction,
+  Variable,
 } from '../core/types';
+import {
+  cloneJson,
+  equalJson,
+  readJsonPath,
+  replaceJsonPath,
+  validateJsonPath,
+  variableValue,
+} from '../core/jsonValue';
 import { uid } from '../core/project';
 import { validateFlow } from '../core/validation';
 import {
@@ -36,13 +46,14 @@ export class RuntimeController {
     project: Project,
     private executeScript?: ScriptExecutor,
   ) {
+    this.validateRuntimeValues(project);
     validateWindowActions(project);
     this.project = project;
     this.snapshot = {
       values: Object.fromEntries(
         project.variables.map((v) => [
           v.id,
-          { value: v.initial, quality: 'good', timestamp: Date.now() },
+          { value: variableValue(v, v.initial), quality: 'good', timestamp: Date.now() },
         ]),
       ),
       logs: [],
@@ -80,12 +91,17 @@ export class RuntimeController {
   getHistory(id: string) {
     return this.history[id] ?? [];
   }
-  setVariable = (id: string, value: Json) => {
-    const variable = this.project.variables.find((v) => v.id === id || v.name === id);
+  setVariable = (id: string, value: Json, path?: JsonPath) => {
+    const variable = this.resolveVariable(id);
     if (!variable) throw new Error(`Unknown variable: ${id}`);
     if (variable.readOnly) throw new Error(`Variable is read-only: ${variable.name}`);
-    if (typeof value !== variable.type || (typeof value === 'number' && !Number.isFinite(value)))
-      throw new Error(`Expected ${variable.type}: ${variable.name}`);
+    if (path !== undefined) validateJsonPath(path);
+    if (path?.length) {
+      if (this.project.schemaVersion < 3 || variable.type !== 'json')
+        throw new Error('JSON paths require schemaVersion 3 and a json variable');
+      value = replaceJsonPath(this.snapshot.values[variable.id].value, path, value);
+    }
+    value = variableValue(variable, value);
     const previous = this.snapshot.values[variable.id]?.value;
     this.publish({
       values: {
@@ -93,7 +109,10 @@ export class RuntimeController {
         [variable.id]: { value, quality: 'good', timestamp: Date.now() },
       },
     });
-    if (typeof value === 'number') {
+    this.recordNumericChange(variable, value, previous);
+  };
+  private recordNumericChange(variable: Variable, value: Json, previous: Json | undefined) {
+    if (variable.type === 'number' && typeof value === 'number') {
       this.history[variable.id] = [...(this.history[variable.id] ?? []).slice(-119), value];
       const { min, max } = variable.alarm ?? {};
       const bad = (min !== undefined && value < min) || (max !== undefined && value > max);
@@ -103,8 +122,9 @@ export class RuntimeController {
       if (bad && !wasBad)
         this.log(`Alarm: ${variable.name} = ${value} ${variable.unit ?? ''}`, 'warning');
     }
-  };
+  }
   applyProject = (project: Project) => {
+    this.validateRuntimeValues(project);
     validateWindowActions(project);
     for (const flow of project.flows) validateFlow(flow);
     if (
@@ -127,9 +147,10 @@ export class RuntimeController {
     for (const v of project.variables) {
       const old = sameProject ? this.snapshot.values[v.id] : undefined;
       values[v.id] =
-        old && typeof old.value === v.type
+        old &&
+        this.project.variables.some((previous) => previous.id === v.id && previous.type === v.type)
           ? old
-          : { value: v.initial, quality: 'good', timestamp: Date.now() };
+          : { value: variableValue(v, v.initial), quality: 'good', timestamp: Date.now() };
     }
     const windowState = sameProject
       ? reconcileWindowState(
@@ -238,7 +259,13 @@ export class RuntimeController {
           signal.throwIfAborted();
           if (generation !== this.generation) throw new Error('Stale execution');
           for (const edge of flow.edges.filter((e) => e.source === nodeId)) {
-            if (result.port && edge.sourceHandle && edge.sourceHandle !== result.port) continue;
+            if (
+              result.port &&
+              (this.project.schemaVersion >= 3
+                ? (edge.sourceHandle ?? 'true') !== result.port
+                : edge.sourceHandle && edge.sourceHandle !== result.port)
+            )
+              continue;
             const incoming = messages.get(edge.target) ?? [];
             if (incoming.length >= 256) throw new Error('Node input queue limit exceeded');
             incoming.push(result.value);
@@ -273,19 +300,36 @@ export class RuntimeController {
         this.windowAction(String(c.action) as WindowAction, String(c.windowId));
         break;
       case 'read': {
-        const id = this.project.variables.find(
-          (v) => v.id === c.variable || v.name === c.variable,
-        )?.id;
+        const variable = this.resolveVariable(String(c.variable));
+        const id = variable?.id;
         if (!id) throw new Error(`Unknown variable: ${c.variable}`);
         value = this.snapshot.values[id].value;
+        if (c.path !== undefined) {
+          validateJsonPath(c.path);
+          if (c.path.length && (this.project.schemaVersion < 3 || variable?.type !== 'json'))
+            throw new Error('JSON paths require schemaVersion 3 and a json variable');
+          value = readJsonPath(value, c.path);
+        } else value = cloneJson(value);
         break;
       }
-      case 'write':
-        this.setVariable(String(c.variable), Object.hasOwn(c, 'value') ? c.value : input);
+      case 'write': {
+        const written = Object.hasOwn(c, 'value') ? c.value : input;
+        if (c.path !== undefined) validateJsonPath(c.path);
+        this.setVariable(String(c.variable), written, c.path as JsonPath | undefined);
+        if (this.project.schemaVersion >= 3) value = cloneJson(written);
         break;
+      }
       case 'math': {
+        const strict = this.project.schemaVersion >= 3;
+        if (
+          strict &&
+          (typeof input !== 'number' ||
+            typeof c.operand !== 'number' ||
+            !['add', 'subtract', 'multiply', 'divide'].includes(String(c.operation)))
+        )
+          throw new Error('Math requires numeric inputs and a valid operation');
         const a = Number(input),
-          b = Number(c.operand ?? 1);
+          b = Number(strict ? c.operand : (c.operand ?? 1));
         if (!Number.isFinite(a) || !Number.isFinite(b))
           throw new Error('Math node requires finite numbers');
         if (c.operation === 'divide' && b === 0) throw new Error('Division by zero');
@@ -301,8 +345,33 @@ export class RuntimeController {
         break;
       }
       case 'condition': {
-        const b = c.value;
+        const b = this.project.schemaVersion >= 3 ? (c.value ?? null) : c.value;
         const a = input;
+        if (this.project.schemaVersion >= 3) {
+          if (!['eq', 'neq', 'gt', 'gte', 'lt', 'lte'].includes(String(c.operator)))
+            throw new Error('Unknown comparison');
+          const equality = c.operator === 'eq' || c.operator === 'neq';
+          if (
+            !equality &&
+            (typeof a !== 'number' ||
+              typeof b !== 'number' ||
+              !Number.isFinite(a) ||
+              !Number.isFinite(b))
+          )
+            throw new Error('Comparison requires numeric inputs');
+          const pass = equality
+            ? c.operator === 'eq'
+              ? equalJson(a, b)
+              : !equalJson(a, b)
+            : c.operator === 'gt'
+              ? Number(a) > Number(b)
+              : c.operator === 'gte'
+                ? Number(a) >= Number(b)
+                : c.operator === 'lt'
+                  ? Number(a) < Number(b)
+                  : Number(a) <= Number(b);
+          return { value: cloneJson(input), port: pass ? 'true' : 'false' };
+        }
         const pass =
           c.operator === 'eq'
             ? a === b
@@ -319,7 +388,15 @@ export class RuntimeController {
       }
       case 'delay':
         await new Promise<void>((resolve, reject) => {
-          const timeout = Math.min(30000, Math.max(0, Number(c.ms ?? 100)));
+          if (
+            this.project.schemaVersion >= 3 &&
+            (typeof c.ms !== 'number' || !Number.isInteger(c.ms) || c.ms < 0)
+          )
+            throw new Error('Delay ms must be a nonnegative integer');
+          const timeout =
+            this.project.schemaVersion >= 3
+              ? Math.min(60000, Number(c.ms))
+              : Math.min(30000, Math.max(0, Number(c.ms ?? 100)));
           const abort = () => {
             clearTimeout(timer);
             reject(new Error('Cancelled'));
@@ -342,33 +419,8 @@ export class RuntimeController {
         this.log(`Event ${String(c.event ?? 'output')}: ${JSON.stringify(input)}`, 'info', node.id);
         break;
       case 'script': {
-        if (!this.executeScript)
-          throw new Error(
-            'C scripts require the desktop runtime. Run npm run desktop with libtcc installed.',
-          );
-        const script = this.project.scripts.find((s) => s.id === c.scriptId);
-        if (!script) throw new Error('C script not found');
-        const variables = Object.fromEntries(
-          Object.entries(this.snapshot.values)
-            .filter(([, v]) => typeof v.value === 'number')
-            .map(([key, v]) => [key, v.value as number]),
-        );
-        const response = await this.executeScript({
-          source: script.source,
-          input,
-          variables,
-          state: this.scriptState[script.id] ?? {},
-          timeoutMs: script.timeoutMs,
-        });
+        const response = await this.executeScriptTransaction(String(c.scriptId), input, node.id);
         signal.throwIfAborted();
-        for (const [key, v] of Object.entries(response.writes)) {
-          const variable = this.project.variables.find((x) => x.id === key || x.name === key);
-          if (!variable || variable.readOnly || variable.type !== 'number' || !Number.isFinite(v))
-            throw new Error(`Invalid C write: ${key}`);
-        }
-        for (const [key, v] of Object.entries(response.writes)) this.setVariable(key, v);
-        this.scriptState[script.id] = response.state;
-        for (const message of response.logs) this.log(message, 'info', node.id);
         value = response.output;
         break;
       }
@@ -406,6 +458,110 @@ export class RuntimeController {
       }
     }
     return { value };
+  }
+  private validateRuntimeValues(project: Project) {
+    for (const variable of project.variables) {
+      if (variable.type === 'json' && project.schemaVersion < 3)
+        throw new Error('JSON variables require schemaVersion 3');
+      variableValue(variable, variable.initial);
+    }
+    for (const script of project.scripts)
+      if (script.variableAliases !== undefined) {
+        if (project.schemaVersion < 3) throw new Error('C aliases require schemaVersion 3');
+        for (const target of Object.values(script.variableAliases))
+          if (!project.variables.some((v) => v.id === target && v.type === 'number'))
+            throw new Error(`Invalid C alias target: ${target}`);
+      }
+    for (const flow of project.flows)
+      for (const node of flow.nodes)
+        if (node.config.path !== undefined) {
+          if (project.schemaVersion < 3) throw new Error('JSON paths require schemaVersion 3');
+          validateJsonPath(node.config.path);
+        }
+  }
+  private resolveVariable(key: string) {
+    return (
+      this.project.variables.find((v) => v.id === key) ??
+      this.project.variables.find((v) => v.name === key)
+    );
+  }
+  runScript = (scriptId: string, input: Json = null): Promise<ScriptResponse> => {
+    if (this.queued >= 256)
+      return Promise.reject(new Error('Flow queue is full; command was not accepted'));
+    const generation = this.generation;
+    this.queued++;
+    const task = this.queue
+      .then(() => {
+        if (generation !== this.generation) throw new Error('Stale C execution');
+        return this.executeScriptTransaction(scriptId, input);
+      })
+      .finally(() => {
+        this.queued--;
+      });
+    this.queue = task.then(
+      () => {},
+      () => {},
+    );
+    return task;
+  };
+  private async executeScriptTransaction(
+    scriptId: string,
+    input: Json,
+    nodeId?: string,
+  ): Promise<ScriptResponse> {
+    if (!this.executeScript) throw new Error('C scripts require the desktop runtime');
+    const script = this.project.scripts.find((s) => s.id === scriptId);
+    if (!script) throw new Error('C script not found');
+    const generation = this.generation;
+    const variables: Record<string, number> = Object.create(null) as Record<string, number>;
+    const numeric = this.project.variables.filter((v) => v.type === 'number');
+    for (const variable of numeric)
+      variables[variable.name] = this.snapshot.values[variable.id].value as number;
+    for (const variable of numeric)
+      variables[variable.id] = this.snapshot.values[variable.id].value as number;
+    if (script.variableAliases !== undefined) {
+      if (this.project.schemaVersion < 3) throw new Error('C aliases require schemaVersion 3');
+      for (const target of Object.values(script.variableAliases))
+        if (!numeric.some((v) => v.id === target))
+          throw new Error(`Invalid C alias target: ${target}`);
+    }
+    const response = await this.executeScript({
+      source: script.source,
+      input: cloneJson(input),
+      variables,
+      state: { ...(this.scriptState[scriptId] ?? {}) },
+      timeoutMs: script.timeoutMs,
+      ...(script.variableAliases === undefined
+        ? {}
+        : { variableAliases: { ...script.variableAliases } }),
+    });
+    if (generation !== this.generation || this.abort.signal.aborted)
+      throw new Error('Stale C execution');
+    const output = cloneJson(response.output);
+    if (Object.values(response.state).some((v) => !Number.isFinite(v)))
+      throw new Error('Invalid C state');
+    const writes: Record<string, RuntimeValue> = {};
+    for (const [key, value] of Object.entries(response.writes)) {
+      const variable =
+        script.variableAliases === undefined
+          ? this.resolveVariable(key)
+          : this.project.variables.find((v) => v.id === key);
+      if (
+        script.variableAliases !== undefined &&
+        !Object.values(script.variableAliases).includes(key)
+      )
+        throw new Error(`C wrote outside alias scope: ${key}`);
+      if (!variable || variable.readOnly || variable.type !== 'number' || !Number.isFinite(value))
+        throw new Error(`Invalid C write: ${key}`);
+      writes[variable.id] = { value, quality: 'good', timestamp: Date.now() };
+    }
+    const previousValues = this.snapshot.values;
+    this.scriptState[scriptId] = { ...response.state };
+    this.publish({ values: { ...previousValues, ...writes } });
+    for (const [id, current] of Object.entries(writes))
+      this.recordNumericChange(this.resolveVariable(id)!, current.value, previousValues[id]?.value);
+    for (const message of response.logs) this.log(message, 'info', nodeId);
+    return { ...response, output };
   }
   dispose() {
     this.stop();

@@ -20,6 +20,7 @@ fn request(source: &str) -> ScriptRequest {
         variables: BTreeMap::from([("temperature".into(), 20.)]),
         state: BTreeMap::from([("runs".into(), 3.)]),
         timeout_ms: DEFAULT_TEST_TIMEOUT_MS,
+        variable_aliases: None,
     }
 }
 fn worker() -> ScriptHost {
@@ -128,6 +129,14 @@ fi
         .await
         .unwrap_err();
     assert!(error.contains("compile-only validation"), "{error}");
+    assert!(!directory.join("old-runner.executed").exists());
+    let mut alias_request = request("void qg_process(void){}");
+    alias_request.variable_aliases = Some(BTreeMap::new());
+    assert!(host
+        .execute(alias_request, CancellationToken::new())
+        .await
+        .unwrap_err()
+        .contains("variableAliases"));
     assert!(!directory.join("old-runner.executed").exists());
     std::fs::remove_dir_all(directory).unwrap();
 }

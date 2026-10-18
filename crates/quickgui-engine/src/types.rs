@@ -155,6 +155,12 @@ pub struct CScript {
     pub name: String,
     pub source: String,
     pub timeout_ms: u64,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_aliases",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub variable_aliases: Option<BTreeMap<String, String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -203,6 +209,12 @@ pub struct ScriptRequest {
     #[serde(default)]
     pub state: BTreeMap<String, f64>,
     pub timeout_ms: u64,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_aliases",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub variable_aliases: Option<BTreeMap<String, String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -222,4 +234,13 @@ pub struct RuntimeEvent {
     pub time: u64,
     pub flow_id: String,
     pub node_id: String,
+}
+
+fn deserialize_aliases<'de, D>(
+    deserializer: D,
+) -> Result<Option<BTreeMap<String, String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    BTreeMap::<String, String>::deserialize(deserializer).map(Some)
 }

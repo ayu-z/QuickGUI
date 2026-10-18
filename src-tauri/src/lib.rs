@@ -13,6 +13,7 @@ use std::{
     },
 };
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_dialog::DialogExt;
 
 mod build_runtime;
@@ -457,6 +458,35 @@ fn require_current(
     Ok(())
 }
 
+const MAX_CLIPBOARD_BYTES: usize = 30 * 1024 * 1024;
+
+#[tauri::command]
+fn clipboard_read(app: tauri::AppHandle, window: WebviewWindow) -> Result<String, String> {
+    if window.label() != "main" {
+        return Err("Clipboard is available only in the designer".into());
+    }
+    let text = app.clipboard().read_text().map_err(|e| e.to_string())?;
+    if text.len() > MAX_CLIPBOARD_BYTES {
+        return Err("Clipboard text exceeds 30 MiB".into());
+    }
+    Ok(text)
+}
+
+#[tauri::command]
+fn clipboard_write(
+    app: tauri::AppHandle,
+    window: WebviewWindow,
+    text: String,
+) -> Result<(), String> {
+    if window.label() != "main" {
+        return Err("Clipboard is available only in the designer".into());
+    }
+    if text.len() > MAX_CLIPBOARD_BYTES {
+        return Err("Clipboard text exceeds 30 MiB".into());
+    }
+    app.clipboard().write_text(text).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 async fn execute_c(
     app: tauri::AppHandle,
@@ -803,11 +833,33 @@ async fn runtime_run_flow(
 }
 
 #[tauri::command]
+async fn runtime_run_script(
+    app: tauri::AppHandle,
+    window: WebviewWindow,
+    state: State<'_, HostState>,
+    script_id: String,
+    input: Value,
+    generation: Option<u64>,
+) -> Result<ScriptResponse, String> {
+    project_work(&state, window.label(), generation, false)?;
+    let work = begin_work(&state, window.label(), generation)?;
+    let active = session(&state, window.label())?;
+    let host = ScriptHost::new(runner_path(&app)?);
+    let mut engine = active.engine.lock().await;
+    project_work(&state, window.label(), generation, false)?;
+    require_current(&state, window.label(), &active, &engine)?;
+    engine
+        .execute_script(&script_id, input, work.cancellation.clone(), &host)
+        .await
+}
+
+#[tauri::command]
 async fn runtime_set_variable(
     window: WebviewWindow,
     state: State<'_, HostState>,
     name: String,
     value: Value,
+    path: Option<Vec<Value>>,
     generation: Option<u64>,
 ) -> Result<RuntimeSnapshot, String> {
     project_work(&state, window.label(), generation, false)?;
@@ -815,7 +867,7 @@ async fn runtime_set_variable(
     let mut engine = active.engine.lock().await;
     project_work(&state, window.label(), generation, false)?;
     require_current(&state, window.label(), &active, &engine)?;
-    engine.set_variable(&name, value)?;
+    engine.set_variable_path(&name, value, path.as_deref())?;
     let snapshot = engine.snapshot();
     windows::broadcast_snapshot(
         window.app_handle(),
@@ -1351,9 +1403,12 @@ async fn export_source(
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(HostState::default())
         .invoke_handler(tauri::generate_handler![
             execute_c,
+            clipboard_read,
+            clipboard_write,
             validate_c,
             project_generation,
             close_project,
@@ -1363,6 +1418,7 @@ pub fn run() {
             runtime_window_action,
             runtime_run_flow,
             runtime_set_variable,
+            runtime_run_script,
             runtime_snapshot,
             runtime_stop,
             open_preview,
@@ -1375,6 +1431,7 @@ pub fn run() {
             build_runtime::build_runtime,
             build_runtime::cancel_build,
             history::query_history,
+            history::query_history_range,
             history::query_alarms,
             history::ack_alarm
         ])

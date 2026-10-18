@@ -21,6 +21,7 @@ base64 = "0.22"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 sha2 = "0.10"
 quickgui-engine = { path = "../crates/quickgui-engine" }
+tauri-plugin-clipboard-manager = "2"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

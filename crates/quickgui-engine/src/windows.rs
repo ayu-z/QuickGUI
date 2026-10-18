@@ -253,16 +253,16 @@ fn validate_content(project: &Project) -> Result<(), String> {
 }
 
 pub(crate) fn validate(project: &Project) -> Result<(), String> {
-    if !matches!(project.schema_version, 1 | 2) {
+    if !matches!(project.schema_version, 1 | 2 | 3) {
         return Err(format!(
             "Unsupported project schema {}",
             project.schema_version
         ));
     }
     if (project.schema_version == 1 && project.windows.is_some())
-        || (project.schema_version == 2 && project.windows.is_none())
+        || (project.schema_version >= 2 && project.windows.is_none())
     {
-        return Err("Additional windows require schemaVersion 2 and a windows array".into());
+        return Err("Additional windows require schemaVersion 2 or 3 and a windows array".into());
     }
     let windows = project.windows.as_deref().unwrap_or_default();
     if windows.len() > 31 {
@@ -293,8 +293,8 @@ pub(crate) fn validate(project: &Project) -> Result<(), String> {
         .flat_map(|flow| &flow.nodes)
         .filter(|node| node.kind == "window")
     {
-        if project.schema_version != 2 {
-            return Err("Window actions require schemaVersion 2".into());
+        if project.schema_version < 2 {
+            return Err("Window actions require schemaVersion 2 or 3".into());
         }
         let action = node
             .config

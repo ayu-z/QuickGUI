@@ -2,7 +2,10 @@ import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type {
   Connection,
+  HistoryRangeQuery,
+  HistoryRangeResult,
   Json,
+  JsonPath,
   Project,
   RuntimeSnapshot,
   ScriptRequest,
@@ -89,8 +92,10 @@ export const windowAction = (action: 'open' | 'close' | 'focus', windowId: strin
   invokeProject<RuntimeSnapshot>('runtime_window_action', { action, windowId });
 export const runFlow = (flowId: string, input: Json = null) =>
   invokeProject<RuntimeSnapshot>('runtime_run_flow', { flowId, input });
-export const setVariable = (name: string, value: Json) =>
-  invokeProject<RuntimeSnapshot>('runtime_set_variable', { name, value });
+export const setVariable = (name: string, value: Json, path?: JsonPath) =>
+  invokeProject<RuntimeSnapshot>('runtime_set_variable', { name, value, path });
+export const runScript = (scriptId: string, input: Json = null) =>
+  invokeProject<ScriptResponse>('runtime_run_script', { scriptId, input });
 export const snapshot = () => invoke<RuntimeSnapshot>('runtime_snapshot');
 export const stop = () => invokeProject<RuntimeSnapshot>('runtime_stop');
 export const openPreview = (project: Project, windowId?: string) =>
@@ -187,3 +192,13 @@ export const queryAlarms = (limit = 1000) =>
 export const ackAlarm = (id: number) => invokeProject<void>('ack_alarm', { id });
 export const onStorageError = (callback: (error: string) => void) =>
   listen<string>('storage-error', (event) => callback(event.payload));
+
+export type { HistoryRangeQuery, HistoryRangeResult } from '../core/types';
+export const queryHistoryRange = (query: HistoryRangeQuery): Promise<HistoryRangeResult> => {
+  if (!isDesktop())
+    return Promise.reject(new Error('Native SQLite history is unavailable in the browser'));
+  return invokeProject<HistoryRangeResult>('query_history_range', { query });
+};
+
+export const readClipboardText = () => invoke<string>('clipboard_read');
+export const writeClipboardText = (text: string) => invoke<void>('clipboard_write', { text });

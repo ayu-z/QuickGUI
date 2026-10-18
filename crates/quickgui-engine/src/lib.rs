@@ -1,11 +1,16 @@
 //! Portable QuickGUI graph execution. UI documents remain in the project model.
 mod connections;
 mod history;
+mod json_value;
+pub use json_value::{read_path, replace_path, validate_json, validate_path};
 mod types;
 mod windows;
 mod worker;
 pub use connections::{test_connection, Connection, ConnectionTestResult};
-pub use history::{AlarmRecord, HistorySample, HistoryStore, RetentionPolicy};
+pub use history::{
+    AlarmRecord, HistoryRangeQuery, HistoryRangeResult, HistorySample, HistoryStore,
+    RetentionPolicy,
+};
 use serde_json::{json, Value};
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
@@ -118,6 +123,9 @@ impl Engine {
             if !ids.insert(&variable.id) || !names.insert(&variable.name) {
                 return Err("Duplicate variable ID or name".into());
             }
+            if variable.value_type == "json" && project.schema_version < 3 {
+                return Err("JSON variables require schemaVersion 3".into());
+            }
             validate_value(variable, &variable.initial)?;
             snapshot.values.insert(
                 variable.id.clone(),
@@ -134,9 +142,33 @@ impl Engine {
                 return Err("Duplicate flow ID".into());
             }
             validate_flow(flow)?;
+            for node in &flow.nodes {
+                if let Some(path) = node.config.get("path") {
+                    if project.schema_version < 3 {
+                        return Err("JSON paths require schemaVersion 3".into());
+                    }
+                    validate_path(path.as_array().ok_or("JSON path must be an array")?)?;
+                }
+            }
         }
         let mut script_ids = BTreeSet::new();
         for script in &project.scripts {
+            if let Some(aliases) = &script.variable_aliases {
+                if project.schema_version < 3 {
+                    return Err("C aliases require schemaVersion 3".into());
+                }
+                for target in aliases.values() {
+                    if !project
+                        .variables
+                        .iter()
+                        .any(|v| v.id == *target && v.value_type == "number")
+                    {
+                        return Err(format!(
+                            "C alias target must be a declared numeric variable ID: {target}"
+                        ));
+                    }
+                }
+            }
             if !script_ids.insert(&script.id) {
                 return Err("Duplicate script ID".into());
             }
@@ -261,6 +293,31 @@ impl Engine {
         self.notify();
         Ok(())
     }
+    pub fn set_variable_path(
+        &mut self,
+        name: &str,
+        value: Value,
+        path: Option<&[Value]>,
+    ) -> Result<(), String> {
+        let Some(path) = path else {
+            return self.set_variable(name, value);
+        };
+        if path.is_empty() {
+            return self.set_variable(name, value);
+        }
+        if self.project.schema_version < 3 {
+            return Err("JSON paths require schemaVersion 3".into());
+        }
+        let variable = self
+            .resolve_variable(name)
+            .ok_or_else(|| format!("Unknown variable: {name}"))?;
+        if variable.value_type != "json" {
+            return Err("JSON paths require a json variable".into());
+        }
+        let current = &self.snapshot.values[&variable.id].value;
+        let next = replace_path(current, path, value)?;
+        self.set_variable(name, next)
+    }
     /// Startup-only persisted state restore. Read-only UI values may be restored,
     /// but unknown/nonpersistent variables and incompatible types are rejected.
     pub fn restore_persistent_values(
@@ -301,7 +358,12 @@ impl Engine {
     }
     fn script_variables(&self) -> BTreeMap<String, f64> {
         let mut values = BTreeMap::new();
-        for variable in &self.project.variables {
+        for variable in self
+            .project
+            .variables
+            .iter()
+            .filter(|v| v.value_type == "number")
+        {
             if let Some(number) = self
                 .snapshot
                 .values
@@ -312,12 +374,122 @@ impl Engine {
             }
         }
         // Stable IDs win if an author gives a variable another variable's ID as its name.
-        for (id, value) in &self.snapshot.values {
-            if let Some(number) = value.value.as_f64() {
-                values.insert(id.clone(), number);
+        for variable in self
+            .project
+            .variables
+            .iter()
+            .filter(|v| v.value_type == "number")
+        {
+            if let Some(number) = self.snapshot.values[&variable.id].value.as_f64() {
+                values.insert(variable.id.clone(), number);
             }
         }
         values
+    }
+    pub async fn execute_script(
+        &mut self,
+        script_id: &str,
+        input: Value,
+        cancel: CancellationToken,
+        host: &ScriptHost,
+    ) -> Result<ScriptResponse, String> {
+        self.execute_script_context(script_id, input, cancel, host, None, None)
+            .await
+    }
+    async fn execute_script_context(
+        &mut self,
+        script_id: &str,
+        input: Value,
+        cancel: CancellationToken,
+        host: &ScriptHost,
+        flow_id: Option<&str>,
+        node_id: Option<&str>,
+    ) -> Result<ScriptResponse, String> {
+        let script = self
+            .project
+            .scripts
+            .iter()
+            .find(|s| s.id == script_id)
+            .cloned()
+            .ok_or("Script reference is missing")?;
+        let response = host
+            .execute(
+                ScriptRequest {
+                    source: script.source,
+                    input,
+                    variables: self.script_variables(),
+                    state: self
+                        .script_state
+                        .get(script_id)
+                        .cloned()
+                        .unwrap_or_default(),
+                    timeout_ms: script.timeout_ms,
+                    variable_aliases: script.variable_aliases.clone(),
+                },
+                cancel,
+            )
+            .await?;
+        self.apply_script_response_context(script_id, &response, flow_id, node_id)?;
+        Ok(response)
+    }
+    /// All writes and state are validated before publishing a single committed snapshot.
+    pub fn apply_script_response(
+        &mut self,
+        script_id: &str,
+        response: &ScriptResponse,
+    ) -> Result<(), String> {
+        self.apply_script_response_context(script_id, response, None, None)
+    }
+    fn apply_script_response_context(
+        &mut self,
+        script_id: &str,
+        response: &ScriptResponse,
+        flow_id: Option<&str>,
+        node_id: Option<&str>,
+    ) -> Result<(), String> {
+        let script = self
+            .project
+            .scripts
+            .iter()
+            .find(|s| s.id == script_id)
+            .ok_or("Script reference is missing")?;
+        validate_json(&response.output)?;
+        if response.state.values().any(|value| !value.is_finite()) {
+            return Err("Invalid C state".into());
+        }
+        let mut writes = BTreeMap::new();
+        for (name, value) in &response.writes {
+            let variable = if let Some(aliases) = &script.variable_aliases {
+                if !aliases.values().any(|target| target == name) {
+                    return Err(format!("C wrote outside alias scope: {name}"));
+                }
+                self.project.variables.iter().find(|v| v.id == *name)
+            } else {
+                self.resolve_variable(name)
+            }
+            .ok_or_else(|| format!("Script wrote unknown variable: {name}"))?;
+            if variable.read_only || variable.value_type != "number" || !value.is_finite() {
+                return Err(format!("Invalid C write: {name}"));
+            }
+            writes.insert(variable.id.clone(), *value);
+        }
+        for (id, value) in writes {
+            self.snapshot.values.insert(
+                id,
+                RuntimeValue {
+                    value: json!(value),
+                    quality: "good".into(),
+                    timestamp: now_ms(),
+                },
+            );
+        }
+        self.script_state
+            .insert(script_id.to_owned(), response.state.clone());
+        self.notify();
+        for message in &response.logs {
+            self.log("info", message.clone(), flow_id, node_id);
+        }
+        Ok(())
     }
     fn log(&mut self, level: &str, message: String, flow: Option<&str>, node: Option<&str>) {
         self.sequence += 1;
@@ -425,6 +597,7 @@ impl Engine {
                 }
                 self.snapshot.active_nodes = vec![node.id.clone()];
                 self.notify();
+                let original = input.clone();
                 let result = self
                     .execute_node(flow, node, input, cancel.clone(), host)
                     .await
@@ -444,10 +617,13 @@ impl Engine {
                     if scheduled > 10_000 {
                         return Err("Flow exceeded 10000 node activations".into());
                     }
-                    pending
-                        .entry(edge.target.clone())
-                        .or_default()
-                        .push(result.clone());
+                    pending.entry(edge.target.clone()).or_default().push(
+                        if node.kind == "condition" && self.project.schema_version >= 3 {
+                            original.clone()
+                        } else {
+                            result.clone()
+                        },
+                    );
                 }
             }
         }
@@ -468,14 +644,28 @@ impl Engine {
                 self.window_action(text("action"), text("windowId"))?;
                 Ok(input)
             }
-            "read" => self
-                .resolve_variable(text("variable"))
-                .and_then(|v| self.snapshot.values.get(&v.id))
-                .map(|v| v.value.clone())
-                .ok_or_else(|| format!("Unknown variable: {}", text("variable"))),
+            "read" => {
+                let variable = self
+                    .resolve_variable(text("variable"))
+                    .ok_or_else(|| format!("Unknown variable: {}", text("variable")))?;
+                let value = &self.snapshot.values[&variable.id].value;
+                if let Some(path) = node.config.get("path") {
+                    let path = path.as_array().ok_or("JSON path must be an array")?;
+                    if !path.is_empty() && variable.value_type != "json" {
+                        return Err("JSON paths require a json variable".into());
+                    }
+                    return read_path(value, path).cloned();
+                }
+                Ok(value.clone())
+            }
             "write" => {
                 let value = node.config.get("value").cloned().unwrap_or(input);
-                self.set_variable(text("variable"), value.clone())?;
+                let path = node
+                    .config
+                    .get("path")
+                    .map(|v| v.as_array().ok_or("JSON path must be an array"))
+                    .transpose()?;
+                self.set_variable_path(text("variable"), value.clone(), path.map(Vec::as_slice))?;
                 Ok(value)
             }
             "math" => {
@@ -501,8 +691,20 @@ impl Engine {
             "condition" => {
                 let rhs = node.config.get("value").unwrap_or(&Value::Null);
                 let result = match text("operator") {
-                    "eq" => equal_values(&input, rhs),
-                    "neq" => !equal_values(&input, rhs),
+                    "eq" => {
+                        if self.project.schema_version >= 3 {
+                            equal_json(&input, rhs)
+                        } else {
+                            equal_values(&input, rhs)
+                        }
+                    }
+                    "neq" => {
+                        if self.project.schema_version >= 3 {
+                            !equal_json(&input, rhs)
+                        } else {
+                            !equal_values(&input, rhs)
+                        }
+                    }
                     op => {
                         let (a, b) = (
                             input.as_f64().ok_or("Comparison input must be numeric")?,
@@ -556,60 +758,17 @@ impl Engine {
                 Ok(input)
             }
             "script" => {
-                let script = self
-                    .project
-                    .scripts
-                    .iter()
-                    .find(|s| s.id == text("scriptId"))
-                    .cloned()
-                    .ok_or("Script reference is missing")?;
-                let host=host.ok_or("C scripts require the native QuickGUI worker; no simulated result is available")?;
-                let response = host
-                    .execute(
-                        ScriptRequest {
-                            source: script.source,
-                            input,
-                            variables: self.script_variables(),
-                            state: self
-                                .script_state
-                                .get(&script.id)
-                                .cloned()
-                                .unwrap_or_default(),
-                            timeout_ms: script.timeout_ms,
-                        },
+                let host = host.ok_or("C scripts require the native QuickGUI worker")?;
+                let response = self
+                    .execute_script_context(
+                        text("scriptId"),
+                        input,
                         cancel,
+                        host,
+                        Some(&flow.id),
+                        Some(&node.id),
                     )
                     .await?;
-                // Validate the complete write set before applying any script side effect.
-                for (name, value) in &response.writes {
-                    let variable = self
-                        .resolve_variable(name)
-                        .ok_or_else(|| format!("Script wrote unknown variable: {name}"))?;
-                    if variable.read_only {
-                        return Err(format!("Script wrote read-only variable: {name}"));
-                    }
-                    validate_value(variable, &json!(value))?;
-                }
-                for (name, value) in response.writes {
-                    let id = self
-                        .resolve_variable(&name)
-                        .expect("write set validated above")
-                        .id
-                        .clone();
-                    self.snapshot.values.insert(
-                        id,
-                        RuntimeValue {
-                            value: json!(value),
-                            quality: "good".into(),
-                            timestamp: now_ms(),
-                        },
-                    );
-                }
-                self.script_state.insert(script.id, response.state);
-                self.notify();
-                for message in response.logs {
-                    self.log("info", message, Some(&flow.id), Some(&node.id));
-                }
                 Ok(response.output)
             }
             "connection" => {
@@ -664,6 +823,19 @@ impl Engine {
     }
 }
 
+fn equal_json(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Array(a), Value::Array(b)) => {
+            a.len() == b.len() && a.iter().zip(b).all(|(a, b)| equal_json(a, b))
+        }
+        (Value::Object(a), Value::Object(b)) => {
+            a.len() == b.len()
+                && a.iter()
+                    .all(|(key, a)| b.get(key).is_some_and(|b| equal_json(a, b)))
+        }
+        _ => equal_values(a, b),
+    }
+}
 fn equal_values(a: &Value, b: &Value) -> bool {
     match (a.as_f64(), b.as_f64()) {
         (Some(a), Some(b)) => a == b,
@@ -675,6 +847,10 @@ fn validate_value(variable: &Variable, value: &Value) -> Result<(), String> {
         "number" => value.is_number(),
         "string" => value.is_string(),
         "boolean" => value.is_boolean(),
+        "json" => {
+            validate_json(value)?;
+            true
+        }
         _ => false,
     };
     if valid {
@@ -742,7 +918,7 @@ mod tests {
     #[test]
     fn unknown_schema_and_readonly_writes_fail() {
         let mut p = fixture();
-        p.schema_version = 3;
+        p.schema_version = 4;
         assert!(Engine::new(p).is_err());
         let mut p = fixture();
         p.variables[0].read_only = true;
@@ -832,6 +1008,64 @@ mod tests {
         assert!(engine.apply_project(invalid).is_err());
         assert_eq!(engine.project().schema_version, 2);
         assert_eq!(engine.snapshot().window_state.open, ["main"]);
+    }
+    #[test]
+    fn empty_path_is_a_typed_root_write_even_for_legacy_scalars() {
+        let mut e = Engine::new(fixture()).unwrap();
+        e.set_variable_path("v", json!(17), Some(&[])).unwrap();
+        assert_eq!(e.snapshot().values["v"].value, json!(17));
+        assert!(e.set_variable_path("v", json!("wrong"), Some(&[])).is_err());
+        assert_eq!(e.snapshot().values["v"].value, json!(17));
+    }
+    #[test]
+    fn v3_json_paths_are_atomic_bounded_and_preserve_siblings() {
+        let mut p = fixture();
+        p.schema_version = 3;
+        p.windows = Some(vec![]);
+        p.variables[0].value_type = "json".into();
+        p.variables[0].initial = json!({"a":[null,1],"b":2});
+        let mut e = Engine::new(p.clone()).unwrap();
+        e.set_variable_path("v", json!(3), Some(&[json!("a"), json!(0)]))
+            .unwrap();
+        e.set_variable_path("v", json!(4), Some(&[json!("b")]))
+            .unwrap();
+        let expected = json!({"a":[3,1],"b":4});
+        assert_eq!(e.snapshot().values["v"].value, expected);
+        for path in [
+            vec![json!("a"), json!(2)],
+            vec![json!("missing")],
+            vec![json!("a"), json!("0")],
+        ] {
+            assert!(e.set_variable_path("v", json!(9), Some(&path)).is_err());
+            assert_eq!(e.snapshot().values["v"].value, expected);
+        }
+        assert!(e.set_variable("v", json!("x".repeat(1024 * 1024))).is_err());
+        let mut deep = json!(0);
+        for _ in 0..33 {
+            deep = json!([deep]);
+        }
+        assert!(e.set_variable("v", deep).is_err());
+        p.revision += 1;
+        e.apply_project(p).unwrap();
+        assert_eq!(e.snapshot().values["v"].value, expected);
+    }
+    #[tokio::test]
+    async fn v3_conditions_use_structural_json_equality_and_forward_original_payload() {
+        let mut p = fixture();
+        p.schema_version = 3;
+        p.windows = Some(vec![]);
+        p.variables[0].value_type = "json".into();
+        p.variables[0].initial = Value::Null;
+        p.flows[0].nodes[1].kind = "condition".into();
+        p.flows[0].nodes[1].config = BTreeMap::from([
+            ("operator".into(), json!("eq")),
+            ("value".into(), json!({"x":[2.0,null]})),
+        ]);
+        let mut e = Engine::new(p).unwrap();
+        e.run_flow("f", json!({"x":[2,null]}), CancellationToken::new(), None)
+            .await
+            .unwrap();
+        assert_eq!(e.snapshot().values["v"].value, json!({"x":[2,null]}));
     }
     #[test]
     fn script_contract_is_camel_case() {

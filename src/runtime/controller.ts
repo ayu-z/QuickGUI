@@ -1,4 +1,4 @@
-import type { Json, Project, RuntimeLog, RuntimeSnapshot } from '../core/types';
+import type { Json, JsonPath, Project, RuntimeLog, RuntimeSnapshot } from '../core/types';
 import * as native from '../native/bridge';
 import { RuntimeController } from './engine';
 
@@ -54,11 +54,11 @@ export class NativeRuntimeController extends RuntimeController {
       })
       .catch((error) => this.log(String(error), 'error'));
   }
-  override setVariable = (id: string, value: Json) => {
+  override setVariable = (id: string, value: Json, path?: JsonPath) => {
     if (this.disposed || this.closing) return;
     void this.ready
       .then(async () => {
-        if (!this.disposed && !this.closing) this.accept(await native.setVariable(id, value));
+        if (!this.disposed && !this.closing) this.accept(await native.setVariable(id, value, path));
       })
       .catch((error) => this.log(String(error), 'error'));
   };
@@ -100,6 +100,7 @@ export class NativeRuntimeController extends RuntimeController {
             variables: {},
             state: {},
             timeoutMs: script.timeoutMs,
+            variableAliases: script.variableAliases,
           });
           if (this.disposed || this.closing) return;
         }
@@ -127,6 +128,13 @@ export class NativeRuntimeController extends RuntimeController {
           ],
         });
       });
+  };
+  override runScript = async (scriptId: string, input: Json = null) => {
+    await this.ready;
+    if (this.disposed || this.closing) throw new Error('Project is closed or closing');
+    const response = await native.runScript(scriptId, input);
+    this.accept(await native.snapshot());
+    return response;
   };
   override runFlow = async (id: string, input: Json = null) => {
     await this.ready;

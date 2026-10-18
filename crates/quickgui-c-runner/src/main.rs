@@ -95,20 +95,33 @@ pub unsafe extern "C" fn qg_emit_string(value: *const c_char) {
         with_context(|c| c.response.output = serde_json::Value::String(value));
     }
 }
+fn canonical_slot(context: &mut Context, name: &str) -> Option<String> {
+    let slot = match &context.request.variable_aliases {
+        Some(aliases) => aliases.get(name).cloned(),
+        None => Some(name.to_owned()),
+    };
+    match slot {
+        Some(slot) if context.request.variables.contains_key(&slot) => Some(slot),
+        _ => {
+            context.error = Some(format!("Unknown numeric variable or alias: {name}"));
+            None
+        }
+    }
+}
 #[no_mangle]
 pub unsafe extern "C" fn qg_get_number(name: *const c_char) -> f64 {
     text(name)
         .map(|name| {
             with_context(|c| {
+                let Some(slot) = canonical_slot(c, &name) else {
+                    return 0.0;
+                };
                 c.response
                     .writes
-                    .get(&name)
-                    .or_else(|| c.request.variables.get(&name))
+                    .get(&slot)
+                    .or_else(|| c.request.variables.get(&slot))
                     .copied()
-                    .unwrap_or_else(|| {
-                        c.error = Some(format!("Unknown numeric variable: {name}"));
-                        0.0
-                    })
+                    .unwrap_or(0.0)
             })
         })
         .unwrap_or(0.0)
@@ -117,12 +130,15 @@ pub unsafe extern "C" fn qg_get_number(name: *const c_char) -> f64 {
 pub unsafe extern "C" fn qg_set_number(name: *const c_char, value: f64) {
     if let Some(name) = text(name) {
         with_context(|c| {
+            let Some(slot) = canonical_slot(c, &name) else {
+                return;
+            };
             if !value.is_finite() {
                 c.error = Some("Non-finite variable write".into());
             } else if c.response.writes.len() >= 4096 {
                 c.error = Some("Variable write limit exceeded".into());
             } else {
-                c.response.writes.insert(name, value);
+                c.response.writes.insert(slot, value);
             }
         });
     }
@@ -383,6 +399,18 @@ fn execute(request: ScriptRequest, check_only: bool) -> Result<ScriptResponse, S
     {
         return Err("C input must contain finite numbers".into());
     }
+    if let Some(aliases) = &request.variable_aliases {
+        if aliases.len() > 4096 {
+            return Err("C alias limit exceeded".into());
+        }
+        if !check_only
+            && aliases
+                .values()
+                .any(|target| !request.variables.contains_key(target))
+        {
+            return Err("Unknown C alias target".into());
+        }
+    }
     let source = request.source.clone();
     let input_json = serde_json::to_string(&request.input).map_err(|e| e.to_string())?;
     if input_json.len() > 1024 * 1024 {
@@ -448,15 +476,14 @@ fn main() {
         #[cfg(not(feature = "aot"))]
         let capability = match jit::available() {
             Ok(path) => {
-                serde_json::json!({"available":true,"mode":"jit","hostAbi":2,"compileCheck":true,"library":path})
+                serde_json::json!({"available":true,"mode":"jit","hostAbi":2,"compileCheck":true,"variableAliases":true,"library":path})
             }
             Err(error) => {
-                serde_json::json!({"available":false,"mode":"jit","hostAbi":2,"compileCheck":true,"error":error})
+                serde_json::json!({"available":false,"mode":"jit","hostAbi":2,"compileCheck":true,"variableAliases":true,"error":error})
             }
         };
         #[cfg(feature = "aot")]
-        let capability =
-            serde_json::json!({"available":true,"mode":"aot","hostAbi":2,"compileCheck":true});
+        let capability = serde_json::json!({"available":true,"mode":"aot","hostAbi":2,"compileCheck":true,"variableAliases":true});
         println!("{capability}");
         return;
     }
@@ -470,6 +497,7 @@ fn main() {
             variables: Default::default(),
             state: Default::default(),
             timeout_ms: 1000,
+            variable_aliases: None,
         };
         match execute(request, check_only) {
             Ok(response) => println!("{}", serde_json::to_string(&response).unwrap()),

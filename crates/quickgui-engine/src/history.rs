@@ -1,6 +1,8 @@
 //! Bounded SQLite history. Call from a background persistence worker, never
 //! perform disk I/O directly inside the engine's synchronous observer callback.
+mod range;
 use crate::{now_ms, Project, RuntimeSnapshot, Variable};
+pub use range::{HistoryRangeQuery, HistoryRangeResult};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -111,6 +113,7 @@ impl HistoryStore {
             CREATE TABLE IF NOT EXISTS persistent_values(variable_id TEXT PRIMARY KEY,value_type TEXT NOT NULL,value_json TEXT NOT NULL,updated_at INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS history_samples(id INTEGER PRIMARY KEY AUTOINCREMENT,variable_id TEXT NOT NULL,timestamp INTEGER NOT NULL,recorded_at INTEGER NOT NULL,value REAL NOT NULL,quality TEXT NOT NULL);
             CREATE INDEX IF NOT EXISTS samples_variable_id ON history_samples(variable_id,id DESC);
+            CREATE INDEX IF NOT EXISTS samples_variable_time ON history_samples(variable_id,timestamp,id);
             CREATE INDEX IF NOT EXISTS samples_timestamp ON history_samples(timestamp);
             CREATE TABLE IF NOT EXISTS runtime_logs(log_key TEXT PRIMARY KEY,timestamp INTEGER NOT NULL,level TEXT NOT NULL,message TEXT NOT NULL,node_id TEXT,flow_id TEXT);
             CREATE INDEX IF NOT EXISTS logs_timestamp ON runtime_logs(timestamp);
@@ -333,6 +336,9 @@ impl HistoryStore {
                     persisted.insert(variable.id.clone(), desired);
                 }
             }
+            if variable.value_type != "number" {
+                continue;
+            }
             let Some(value) = current.value.as_f64() else {
                 continue;
             };
@@ -504,6 +510,7 @@ fn compatible(variable: &Variable, value: &Value) -> bool {
         "number" => value.as_f64().is_some_and(f64::is_finite),
         "string" => value.is_string(),
         "boolean" => value.is_boolean(),
+        "json" => crate::validate_json(value).is_ok(),
         _ => false,
     }
 }
@@ -527,6 +534,31 @@ mod tests {
             },
         );
         s
+    }
+    #[test]
+    fn json_persistence_round_trips_without_numeric_history_or_alarms() {
+        let mut p = project();
+        p.schema_version = 3;
+        p.windows = Some(vec![]);
+        p.variables[0].value_type = "json".into();
+        p.variables[0].initial = serde_json::json!({"rows":[1,null]});
+        let mut store = HistoryStore::open(":memory:").unwrap();
+        let mut engine = Engine::new(p.clone()).unwrap();
+        engine
+            .set_variable("sensor", serde_json::json!({"rows":[2,{"ok":true}]}))
+            .unwrap();
+        store.record_snapshot(&p, &engine.snapshot()).unwrap();
+        let restored = store.restore_values(&p).unwrap();
+        assert_eq!(
+            restored["sensor"],
+            serde_json::json!({"rows":[2,{"ok":true}]})
+        );
+        engine
+            .set_variable("sensor", serde_json::json!(99))
+            .unwrap();
+        store.record_snapshot(&p, &engine.snapshot()).unwrap();
+        assert!(store.query_history("sensor", 100).unwrap().is_empty());
+        assert!(store.query_alarms(100).unwrap().is_empty());
     }
     #[test]
     fn persistent_values_survive_reopen_and_respect_type_project_and_flag() {

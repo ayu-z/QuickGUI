@@ -15,6 +15,10 @@ double qg_input_number(void);
  * no embedded NUL. A wrong typed accessor records a host error for the call. */
 const char *qg_input_json(void);
 const char *qg_input_string(void);
+/* An explicit ScriptRequest.variableAliases map is a closed name scope. Both
+ * get/set resolve aliases to the same canonical variable-ID slot, so reads
+ * observe pending writes through any alias. Missing aliases/targets fail the
+ * whole invocation. ABI remains v2; hosts negotiate variableAliases support. */
 double qg_get_number(const char *name);
 void qg_set_number(const char *name, double value);
 void qg_emit_number(double value);

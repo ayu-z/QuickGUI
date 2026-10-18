@@ -162,6 +162,54 @@ pub async fn query_history(
 }
 
 #[tauri::command]
+pub async fn query_history_range(
+    window: WebviewWindow,
+    state: State<'_, HostState>,
+    query: quickgui_engine::HistoryRangeQuery,
+    generation: Option<u64>,
+) -> Result<quickgui_engine::HistoryRangeResult, String> {
+    query.validate()?;
+    project_work(&state, window.label(), generation, false)?;
+    let _work = begin_work(&state, window.label(), generation)?;
+    let active = session(&state, window.label())?;
+    {
+        let engine = active.engine.lock().await;
+        crate::require_current(&state, window.label(), &active, &engine)?;
+        for id in &query.variable_ids {
+            if !engine
+                .project()
+                .variables
+                .iter()
+                .any(|v| v.id == *id && v.value_type == "number")
+            {
+                return Err(format!(
+                    "History requires a declared numeric variable ID: {id}"
+                ));
+            }
+        }
+    }
+    let recorder = active
+        .history
+        .clone()
+        .ok_or("History storage has not been initialized")?;
+    recorder.flush().await?;
+    project_work(&state, window.label(), generation, false)?;
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        recorder
+            .store
+            .lock()
+            .map_err(|e| e.to_string())?
+            .query_history_range(&query)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    project_work(&state, window.label(), generation, false)?;
+    let engine = active.engine.lock().await;
+    crate::require_current(&state, window.label(), &active, &engine)?;
+    Ok(result)
+}
+
+#[tauri::command]
 pub async fn query_alarms(
     window: WebviewWindow,
     state: State<'_, HostState>,

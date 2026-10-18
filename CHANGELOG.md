@@ -1,5 +1,21 @@
 # 变动日志
 
+## 2026-10-18 — v3 运行数据与脚本映射基础
+
+- 为后续编辑器升级建立 v3 类型、控件属性描述和运行数据接口；JSON 变量支持 1 MiB/32 层限制、原子现有路径写入、根路径兼容和持久化。v3 运算与条件语义在浏览器/Rust 间统一，旧版本保留原路径。
+- 历史查询增加批量时间范围、原始样本或 avg/min/max/last 分桶，空桶和截断明确；只采样声明为 number 的变量，复用 SQLite 并增加时间索引。
+- C 源码与 ABI 2 保持不变，worker 增加 variableAliases 能力与封闭名字映射；同一变量的多别名使用同一写槽。直接脚本执行新增统一 runScript 接口，写集和状态整批验证后提交。
+- 增加主设计器窗口限定的原生剪贴板读写命令，文本上限 30 MiB；新增 tauri-plugin-clipboard-manager 2.x 依赖及锁定记录。
+- 新增 `src/core/jsonValue.ts`、`src/core/widgetDefinitions.ts`：安全 JSON 操作与下一阶段 UI 共用的属性定义。
+- 修改 `src/core/types.ts`：v3、JSON/路径、属性版本、编辑状态、资源作用域、组件身份、历史 DTO 和脚本别名类型。
+- 修改 `src/runtime/engine.ts`、`src/runtime/controller.ts`、`src/runtime/windowState.ts`、`src/native/bridge.ts`：数据、历史、脚本及剪贴板接口。
+- 新增 `crates/quickgui-engine/src/json_value.rs`、`crates/quickgui-engine/src/history/range.rs`；修改 `crates/quickgui-engine/src/types.rs`、`crates/quickgui-engine/src/lib.rs`、`crates/quickgui-engine/src/windows.rs`、`crates/quickgui-engine/src/history.rs`、`crates/quickgui-engine/src/worker.rs`：原子读写、v3 校验、历史聚合与能力检查。
+- 修改 `crates/quickgui-c-runner/src/main.rs`、`crates/quickgui-c-runner/tests/execution.rs`、`sdk/quickgui.h`：别名协议、兼容调用及测试适配。
+- 新增 `crates/quickgui-c-runner/tests/aliases.rs`、`sdk/tests/aliases.c`、`sdk/tests/README.md`、`tests/runtime-v3.test.ts`：JSON、持久化、历史边界和真实 JIT/AOT 合同验证及复现说明。
+- 修改 `src-tauri/Cargo.toml`、`Cargo.lock`、`src-tauri/src/lib.rs`、`src-tauri/src/history.rs`：原生命令、代际校验及剪贴板依赖。修改 `CHANGELOG.md` 记录本组变化；无源文件删除或重命名。
+- 专项验证：相关 33 项 TS 测试、Rust workspace 64 项常规测试、14 项真实 C 测试通过；同源别名/原子写入合同已分别在本机 JIT 与 macOS ARM64 AOT 执行通过。其余默认忽略的专项未用常规测试冒充。编辑器界面整合与最终打包在后续逻辑变更验证。
+- 提交边界复核：从 Git 索引导出独立源码快照，`npm run check` 的 TypeScript 与 136 项单测通过，确认本组不依赖尚未提交的编辑器界面改动。
+
 ## 2026-10-18 — 合并画布标题与工具栏
 
 - 将 `qg-canvas-toolbar` 的网格、吸附、缩放、100% 重置和适应画布操作合并到唯一的 `canvas-heading`，原两行改为一行，窗口尺寸只显示一次。

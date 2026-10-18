@@ -84,7 +84,7 @@ impl ScriptHost {
         };
         let timeout = Duration::from_millis(request.timeout_ms.clamp(1, 60_000));
         let deadline = tokio::time::Instant::now() + timeout;
-        if check_only {
+        if check_only || request.variable_aliases.is_some() {
             // Probe with empty stdin: an older runner cannot receive or execute
             // user source before proving compile-only support.
             let capabilities = run_worker(
@@ -102,12 +102,23 @@ impl ScriptHost {
                     "C worker does not advertise compile-only validation; rebuild native artifacts"
                         .to_owned()
                 })?;
-            if capabilities
-                .get("compileCheck")
-                .and_then(serde_json::Value::as_bool)
-                != Some(true)
+            if check_only
+                && capabilities
+                    .get("compileCheck")
+                    .and_then(serde_json::Value::as_bool)
+                    != Some(true)
             {
                 return Err("C worker does not support compile-only validation; rebuild native artifacts before validating scripts".into());
+            }
+            if request.variable_aliases.is_some()
+                && capabilities
+                    .get("variableAliases")
+                    .and_then(serde_json::Value::as_bool)
+                    != Some(true)
+            {
+                return Err(
+                    "C worker does not support variableAliases; rebuild native artifacts".into(),
+                );
             }
         }
         let args: &[&str] = if check_only { &["--check"] } else { &[] };
