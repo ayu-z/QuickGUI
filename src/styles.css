@@ -17,6 +17,7 @@
   --border: #2d2f38;
   --accent: #a18af9;
   --accent-solid: #8b5cf6;
+  --accent-solid-hover: #7c4be8;
   --accent-bg: #2e2544;
   --danger: #f48787;
   --input: #23242b;
@@ -35,6 +36,7 @@
   --border: #e2e3ec;
   --accent: #7645d9;
   --accent-solid: #7c4be8;
+  --accent-solid-hover: #6938d2;
   --accent-bg: #eee7ff;
   --danger: #c94352;
   --input: #f6f7fa;
@@ -226,7 +228,7 @@ a {
   font-weight: 500;
   font-size: 11px;
 }
-.button:hover:not(:disabled) {
+.button:hover:not(:disabled):not(.primary) {
   background: var(--surface-hover);
 }
 .button.primary {
@@ -235,7 +237,8 @@ a {
   border-color: var(--accent-solid);
 }
 .button.primary:hover:not(:disabled) {
-  filter: brightness(1.1);
+  background: var(--accent-solid-hover);
+  border-color: var(--accent-solid-hover);
 }
 .button.full {
   width: 100%;

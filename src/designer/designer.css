@@ -883,6 +883,8 @@
   --xy-node-color: var(--text, #e4e6eb);
   --xy-controls-button-background-color: var(--surface, #23262d);
   --xy-controls-button-color: var(--text, #e4e6eb);
+  --xy-controls-button-background-color-hover: var(--surface-hover, #2b2c35);
+  --xy-controls-button-color-hover: var(--text, #e4e6eb);
   --xy-controls-button-border-color: var(--border, #313640);
   --xy-minimap-background-color: var(--panel, #1a1d23);
   --xy-minimap-mask-background-color: #0003;
@@ -1100,9 +1102,6 @@
   width: 26px;
   height: 26px;
   box-sizing: content-box;
-}
-.qg-flow-editor .react-flow__controls-button:hover {
-  background: var(--panel, #1a1d23);
 }
 .qg-flow-editor .react-flow__minimap {
   border: 1px solid var(--border, #313640);
