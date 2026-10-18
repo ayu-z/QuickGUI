@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "quickgui.status-card",
+  "name": "React 状态卡片",
+  "version": "1.0.0",
+  "entry": "src/StatusCard.tsx",
+  "styles": "src/styles.css",
+  "width": 320,
+  "height": 200,
+  "props": { "label": "Production cell", "value": 12, "unit": "cycles" },
+  "events": ["advance"]
+}

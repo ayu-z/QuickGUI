@@ -1,0 +1,7 @@
+node_modules/
+dist/
+target/
+.toolchain/
+src-tauri/gen/
+src-tauri/resources/c-runner/*
+!src-tauri/resources/c-runner/README.txt

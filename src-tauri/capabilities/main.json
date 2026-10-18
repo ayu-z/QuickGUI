@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "local-windows",
+  "description": "Event exchange for the local designer and HMI preview; native files use explicit host commands.",
+  "windows": ["main", "preview"],
+  "permissions": ["core:default"]
+}

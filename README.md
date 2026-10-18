@@ -1,0 +1,121 @@
+# QuickGUI
+
+面向 Windows 与 macOS 的 HMI 设计器。使用控件级 UI / CODE 属性编辑、可视化流程和真实 C 脚本构建可独立运行的桌面应用。
+
+## 启动
+
+需要 Node.js 22.12+、Rust stable；本机 C 构建需要 CMake 和 C 编译器。macOS 使用 Xcode Command Line Tools；Windows 的 Rust/MSVC 构建使用 Visual Studio C++ 工具链，TinyCC 引导另需 MSYS2/MinGW 的 shell、make 和 gcc。
+
+```sh
+npm ci
+npm run setup:c
+cargo build -p quickgui-c-runner
+npm run desktop
+```
+
+只查看设计器和浏览器预览：
+
+```sh
+npm run dev
+```
+
+浏览器地址为 `http://127.0.0.1:1420`。浏览器可编辑工程、运行普通流程、测试绑定和导入导出工程；真实 C 与原生串口/TCP/MQTT 操作使用桌面版。浏览器不会伪造这些执行结果。
+
+## 工作流程
+
+1. 从控件库点击或拖入控件，在画布移动、缩放、设置容器布局。
+2. 选中控件，使用属性表单或 **CODE** 编辑该控件的 `props`、`style`、`states`。无效代码保留为草稿，最后有效画面继续显示。导出前必须处理草稿。
+3. 在数据页定义类型化变量，在控件的绑定区域连接变量或事件流程。
+4. 在流程页连接节点；条件节点使用 `true` / `false` 输出。事件支持手动、启动、定时触发。
+5. 在 C 脚本页编辑真实 C。通过 QuickGUI SDK 访问 JSON/字符串/数字输入输出、数字变量、状态和日志。
+6. 打开预览。工程变化经过校验后更新；C 改动先只编译检查，失败时保持上一有效预览。原生预览有自己的运行会话和系统窗口。
+7. 导出原始 `.qgui` 工程、独立源码工程或本机独立运行应用。
+
+桌面数据页提供 SQLite 数值历史、阈值报警和报警确认。勾选变量的持久化选项后，重开同一工程可恢复类型兼容的值；设计器和预览的运行数据分别保存。
+
+## 自定义 React 组件
+
+组件目录包含 `manifest.json`、TSX 入口及可选 CSS。示例目录 `examples/components/status-card` 可直接构建：
+
+```sh
+node scripts/build-component.mjs examples/components/status-card artifacts/status-card.qgcomponent
+```
+
+在设计器的“模块 → 导入组件包”中选择生成文件，确认信任代码后添加实例。实例的属性和样式仍通过 UI / CODE 编辑，组件声明的事件可连接流程。组件内部在 ShadowRoot 中挂载独立 React 根以隔离样式；这不是代码安全沙箱。
+
+组件包保留完整源码；独立工程导出会提取组件源码并提供标准 esbuild 重建入口，修改 TSX 后可在脱离设计器的环境继续构建。
+
+示例工程的“启动循环”通过 `事件 → 读取次数 → 加一 → 写回 → 日志` 执行。底部 **模拟数据** 开关显式启用示例温度/压力信号，不连接真实设备。
+
+## 关闭工程
+
+点击顶部工程名称 → **关闭工程**，可以选择：
+
+- **保存工程并关闭**：先保存/下载工程文件，再停止运行并返回空工作区。有未应用的 CODE 草稿时，需要先处理草稿才能导出。
+- **保留恢复副本并关闭**：将当前内容和 CODE 草稿保存到本机恢复区，停止工程后可从欢迎页恢复。恢复区保留最近一次副本，不代替长期文件备份。
+- **取消**：继续编辑当前工程。
+
+关闭会取消流程、定时源、在途 C/连接任务和构建，关闭独立预览，并将运行数据刷新到 SQLite；原始文件和历史数据库不删除。持久化失败时保持工程打开并报告错误，可以重试。关闭后刷新设计器仍停留在空工作区，不会自动生成另一个工程。新建工程从空窗口开始，泵站示例可以从欢迎页单独打开。
+
+## 工程版本与兼容性
+
+JSON 保存的是工程数据，也包含 C 源码、资源及自定义组件源码/bundle；内置控件和运行引擎仍由设计器提供。因此，仅保存 JSON 不能保证未来任意设计器版本都能无损打开和运行。
+
+当前仅支持 `schemaVersion: 1`，没有跨版本自动迁移。读取会明确拒绝不支持的版本、未知控件/节点或未知结构字段，避免把字段悄悄删除后再保存；`props`、节点 `config` 等明确开放的配置映射仍保留扩展值。详见 [工程兼容性说明](docs/project-compatibility.md)。
+
+## 窗口与图标
+
+点击窗口属性设置原生窗口标题、尺寸、限制、置顶、全屏、位置恢复、内容背景与圆角。窗口外框使用系统样式：Windows 11 可选系统默认、方角、圆角或小圆角；macOS 使用系统外框。
+
+应用图标、窗口图标和 Windows 桌面快捷方式图标可独立配置。图像存入工程，构建时生成 ICO/ICNS。应用包和快捷方式图标随发布更新，预览图标不会替换设计器的应用图标。
+
+右上角设置提供应用主题令牌和多语言字典。控件样式通过 `$color.primary` 引用主题；文本通过 `@pump.title` 引用翻译。定义字符串变量 `locale` 后，可由绑定/流程在运行时选择语言。
+
+## 原始工程和源码交付
+
+`.qgui` 是包含 `quickgui.json` 的 ZIP 工程包；也可直接打开 JSON。图片、C 源码、模块定义与依赖信息随工程保存，路径不依赖原机器。
+
+命令行导出可独立开发的源码工程：
+
+```sh
+node scripts/export-project.mjs path/to/quickgui.json path/to/export
+```
+
+导出包含 React 渲染器、Rust 引擎、C SDK/源码、原生宿主和构建脚本，使用标准 npm/Cargo/CMake 工具，不需要 QuickGUI 设计器或 CLI。源码导出为单向快照；任意修改后的 React/Rust/C 代码不自动逆向为设计器控件。
+
+在导出目录构建原生应用：
+
+```sh
+npm ci
+node scripts/build-native.mjs --aot
+```
+
+发布默认提前编译 C。普通使用者无需 Node、Rust、CMake、C 编译器或设计器。首次源码构建通常需要联网下载依赖；完全离线重建需要预先准备包缓存。
+
+构建设计器本身：
+
+```sh
+npm run desktop:build
+```
+
+Windows 和 macOS 应在各自系统上构建。开发者证书、Apple 公证及 Windows 签名凭据不包含在工程中。未提供签名凭据的本机构建不等于完成公开分发签名。
+
+## 验证
+
+```sh
+npm run check
+npm run build
+npm run test:e2e
+cargo test --workspace
+npm run test:c
+```
+
+首次运行浏览器测试需 `npx playwright install chromium`。真实 C 测试需要先执行 `npm run setup:c`。验证记录和平台边界见 `docs/verification.md`；架构与数据契约见 `docs/architecture.md`；C API 见 `sdk/README.md`。
+
+## 当前工程约定
+
+- 本地恢复数据保存在设计器 WebView 的本地存储；导出工程才是可搬运的持久交付。
+- 运行日志有界，变量值与模块可序列化状态在兼容的热更新中保留。
+- C 模块是可信本机代码；子进程用于故障隔离，不宣称构成恶意代码安全沙箱。
+- 所有源文件变更记录于 `CHANGELOG.md`。是否初始化 Git 与提交状态按用户授权处理。
+- CI 定义三种目标架构；本地测试只能证明当前实际执行的平台，不能代替其他平台的 CI 或实机验收。

@@ -1,0 +1,175 @@
+use serde_json::{json, Value};
+use std::{fs, path::Path};
+
+include!(concat!(env!("OUT_DIR"), "/export_sources.rs"));
+
+pub fn export(project: &Value, output: &Path) -> Result<(), String> {
+    if project.get("schemaVersion").and_then(Value::as_u64) != Some(1) {
+        return Err("Unsupported project schema".into());
+    }
+    if output.exists()
+        && fs::read_dir(output)
+            .map_err(|e| e.to_string())?
+            .next()
+            .is_some()
+    {
+        return Err("Source export requires an empty output directory".into());
+    }
+    fs::create_dir_all(output).map_err(|e| e.to_string())?;
+    for (relative, contents) in EXPORT_SOURCES {
+        let path = output.join(relative);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        fs::write(path, contents).map_err(|e| e.to_string())?;
+    }
+    for (relative, contents) in EXPORT_SOURCES {
+        if let Some(relative) = relative.strip_prefix("templates/runtime/") {
+            let path = output.join(relative);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            }
+            fs::write(path, contents).map_err(|e| e.to_string())?;
+        }
+    }
+    fs::write(
+        output.join("project.json"),
+        serde_json::to_vec_pretty(project).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+    let publish = project.get("publish").ok_or("Missing publish settings")?;
+    let config_path = output.join("src-tauri/tauri.conf.json");
+    let mut config: Value =
+        serde_json::from_slice(&fs::read(&config_path).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+    for (key, source) in [
+        ("productName", "appName"),
+        ("identifier", "identifier"),
+        ("version", "version"),
+    ] {
+        if let Some(value) = publish
+            .get(source)
+            .filter(|v| v.as_str().is_some_and(|s| !s.is_empty()))
+        {
+            config[key] = value.clone();
+        }
+    }
+    if let Some(publisher) = publish
+        .get("publisher")
+        .filter(|v| v.as_str().is_some_and(|s| !s.is_empty()))
+    {
+        config["bundle"]["publisher"] = publisher.clone();
+    }
+    let window = project.get("window").ok_or("Missing window settings")?;
+    let mut native = json!({"label":"preview","url":"index.html?runtime=1","decorations":true});
+    for key in [
+        "title",
+        "width",
+        "height",
+        "minWidth",
+        "minHeight",
+        "resizable",
+        "alwaysOnTop",
+        "fullscreen",
+        "maximized",
+        "center",
+    ] {
+        if let Some(value) = window.get(key) {
+            native[key] = value.clone();
+        }
+    }
+    config["app"]["windows"] = json!([native]);
+    fs::write(
+        config_path,
+        serde_json::to_vec_pretty(&config).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+    if let Some(scripts) = project.get("scripts").and_then(Value::as_array) {
+        let directory = output.join("project-scripts");
+        fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
+        for (i, script) in scripts.iter().enumerate() {
+            fs::write(
+                directory.join(format!("script-{i}.c")),
+                script.get("source").and_then(Value::as_str).unwrap_or(""),
+            )
+            .map_err(|e| e.to_string())?;
+        }
+    }
+    if let Some(modules) = project.get("modules").and_then(Value::as_array) {
+        for (index, module) in modules.iter().enumerate() {
+            let Some(files) = module
+                .get("implementation")
+                .and_then(|i| i.get("files"))
+                .and_then(Value::as_object)
+            else {
+                continue;
+            };
+            let id = module
+                .get("id")
+                .and_then(Value::as_str)
+                .filter(|id| {
+                    id.len() <= 100
+                        && id
+                            .as_bytes()
+                            .first()
+                            .is_some_and(|b| b.is_ascii_alphabetic())
+                        && id
+                            .chars()
+                            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
+                })
+                .map(str::to_owned)
+                .unwrap_or_else(|| format!("module-{index}"));
+            for (relative, text) in files {
+                if relative.is_empty()
+                    || relative.chars().any(char::is_control)
+                    || relative.contains('\\')
+                    || relative.contains(':')
+                    || relative
+                        .split('/')
+                        .any(|part| part.is_empty() || part == "." || part == "..")
+                {
+                    return Err(format!("Unsafe component source path: {relative}"));
+                }
+                let text = text.as_str().ok_or("Component source must be UTF-8 text")?;
+                let path = output.join("components").join(&id).join(relative);
+                fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
+                fs::write(path, text).map_err(|e| e.to_string())?;
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn exports_full_json_and_standalone_native_entry_without_overwriting_existing_work() {
+        let project = json!({"schemaVersion":1,"name":"</script><script>unexpected()</script>","window":{"title":"Quoted \" title","width":960,"height":640},"publish":{"appName":"Pump Station","identifier":"dev.example.pump","version":"1.2.3","publisher":""},"scripts":[{"id":"../../outside","source":"void qg_process(void) {}"}],"assets":[{"id":"asset","data":"data:text/plain;base64,dGVzdA=="}]});
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let directory =
+            std::env::temp_dir().join(format!("quickgui-source-{}-{nonce}", std::process::id()));
+        export(&project, &directory).unwrap();
+        let actual: Value =
+            serde_json::from_slice(&fs::read(directory.join("project.json")).unwrap()).unwrap();
+        assert_eq!(actual, project);
+        let entry = fs::read_to_string(directory.join("src/main.tsx")).unwrap();
+        assert!(entry.contains("createRuntime(project)"));
+        assert!(!entry.contains("unexpected()"));
+        let config: Value =
+            serde_json::from_slice(&fs::read(directory.join("src-tauri/tauri.conf.json")).unwrap())
+                .unwrap();
+        assert_eq!(config["app"]["windows"][0]["label"], "preview");
+        assert_eq!(config["productName"], "Pump Station");
+        assert!(directory.join("project-scripts/script-0.c").is_file());
+        assert!(directory.join("sdk/quickgui.h").is_file());
+        assert!(directory
+            .join("crates/quickgui-engine/src/lib.rs")
+            .is_file());
+        assert!(export(&project, &directory).unwrap_err().contains("empty"));
+        fs::remove_dir_all(directory).unwrap();
+    }
+}

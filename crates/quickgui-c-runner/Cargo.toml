@@ -1,0 +1,22 @@
+[package]
+name = "quickgui-c-runner"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+build = "build.rs"
+
+[features]
+default = []
+aot = []
+
+[dependencies]
+quickgui-engine = { path = "../quickgui-engine" }
+serde_json.workspace = true
+libloading = "0.8"
+sha2 = "0.10"
+
+[build-dependencies]
+sha2 = "0.10"
+
+[dev-dependencies]
+tokio.workspace = true

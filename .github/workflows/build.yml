@@ -1,0 +1,91 @@
+name: Native and source validation
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+          - os: macos-15
+            target: aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Typecheck, test, and build frontend
+        run: npm run check && npm run build
+      - name: Test portable engine and C worker
+        run: cargo test -p quickgui-engine -p quickgui-c-runner
+      - name: Build a real C script with the system compiler
+        run: node scripts/build-aot.mjs sdk/aot/example.c .toolchain/ci-aot --target ${{ matrix.target }}
+      - name: Execute and verify the AOT C worker
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          import { createHash } from 'node:crypto';
+          import { spawnSync } from 'node:child_process';
+          import { resolve } from 'node:path';
+          import assert from 'node:assert/strict';
+          const source = readFileSync('sdk/aot/example.c', 'utf8');
+          const manifest = JSON.parse(readFileSync('.toolchain/ci-aot/aot-manifest.json', 'utf8'));
+          const executable = resolve('.toolchain/ci-aot', manifest[createHash('sha256').update(source).digest('hex')]);
+          const result = spawnSync(executable, [], { input: JSON.stringify({ source, input: 7, variables: {}, state: {}, timeoutMs: 1000 }) + '\n', encoding: 'utf8' });
+          assert.equal(result.status, 0, result.stderr);
+          const response = JSON.parse(result.stdout.trim());
+          assert.equal(response.output, 21);
+          assert.equal(response.state.runs, 1);
+          NODE
+      - name: Check native host for the matrix architecture
+        run: cargo check -p quickgui-desktop --target ${{ matrix.target }}
+      - name: Test source export, project archives and native scheduling
+        run: cargo test -p quickgui-desktop --lib
+      - name: Build native host for the matrix architecture
+        run: cargo build -p quickgui-desktop --target ${{ matrix.target }}
+      - name: Store native build (not an installer)
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.target }}
+          path: |
+            target/${{ matrix.target }}/debug/quickgui-desktop
+            target/${{ matrix.target }}/debug/quickgui-desktop.exe
+          if-no-files-found: error
+
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-test-results
+          path: test-results/

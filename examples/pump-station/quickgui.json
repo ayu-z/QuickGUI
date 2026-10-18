@@ -1,0 +1,803 @@
+{
+  "schemaVersion": 1,
+  "id": "quickgui.pump-station.example",
+  "name": "泵站控制面板",
+  "revision": 0,
+  "locale": "zh-CN",
+  "theme": {
+    "mode": "dark",
+    "tokens": {
+      "color.primary": "#8b5cf6",
+      "color.primaryHover": "#a78bfa",
+      "color.text": "#edf0f7",
+      "color.muted": "#969eaf",
+      "color.surface": "#20232c",
+      "color.background": "#17191f",
+      "color.border": "#333743",
+      "color.success": "#48d5a0",
+      "color.warning": "#e9b66c"
+    }
+  },
+  "window": {
+    "title": "泵站控制面板",
+    "width": 960,
+    "height": 640,
+    "minWidth": 640,
+    "minHeight": 420,
+    "resizable": true,
+    "alwaysOnTop": false,
+    "fullscreen": false,
+    "maximized": false,
+    "center": true,
+    "rememberPosition": true,
+    "background": "#17191f",
+    "contentRadius": 0,
+    "cornerPreference": "system"
+  },
+  "publish": {
+    "appName": "Pump Station",
+    "identifier": "com.quickgui.pumpstation",
+    "version": "1.0.0",
+    "publisher": "",
+    "desktopShortcut": true
+  },
+  "widgets": [
+    {
+      "id": "heading",
+      "type": "text",
+      "name": "页面标题",
+      "layout": {
+        "x": 32,
+        "y": 28,
+        "width": 600,
+        "height": 32
+      },
+      "props": {
+        "text": "泵站控制面板",
+        "enabled": true,
+        "visible": true
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 24,
+        "borderRadius": 8,
+        "fontWeight": 600
+      },
+      "states": {},
+      "bindings": {},
+      "events": {}
+    },
+    {
+      "id": "subtitle",
+      "type": "text",
+      "name": "页面说明",
+      "layout": {
+        "x": 32,
+        "y": 68,
+        "width": 700,
+        "height": 24
+      },
+      "props": {
+        "text": "PRODUCTION LINE A  /  设备运行概览",
+        "enabled": true,
+        "visible": true
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 11,
+        "borderRadius": 8,
+        "letterSpacing": 1.2
+      },
+      "states": {},
+      "bindings": {},
+      "events": {}
+    },
+    {
+      "id": "metric_panel",
+      "type": "panel",
+      "name": "温度卡片",
+      "layout": {
+        "x": 32,
+        "y": 120,
+        "width": 280,
+        "height": 180
+      },
+      "props": {
+        "text": "容器",
+        "enabled": true,
+        "visible": true
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 12,
+        "background": "$color.surface",
+        "borderWidth": 1,
+        "borderColor": "$color.border",
+        "borderStyle": "solid"
+      },
+      "states": {},
+      "bindings": {},
+      "events": {}
+    },
+    {
+      "id": "temperature_label",
+      "type": "text",
+      "name": "温度标题",
+      "layout": {
+        "x": 52,
+        "y": 138,
+        "width": 220,
+        "height": 24
+      },
+      "props": {
+        "text": "进水温度",
+        "enabled": true,
+        "visible": true
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {}
+    },
+    {
+      "id": "temperature",
+      "type": "gauge",
+      "name": "温度仪表",
+      "layout": {
+        "x": 70,
+        "y": 166,
+        "width": 196,
+        "height": 116
+      },
+      "props": {
+        "text": "仪表",
+        "enabled": true,
+        "visible": true,
+        "value": 42.6,
+        "min": 0,
+        "max": 100,
+        "unit": "°C"
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {
+        "value": {
+          "variable": "temperature",
+          "mode": "oneWay"
+        }
+      },
+      "events": {}
+    },
+    {
+      "id": "pressure_panel",
+      "type": "panel",
+      "name": "压力卡片",
+      "layout": {
+        "x": 332,
+        "y": 120,
+        "width": 280,
+        "height": 180
+      },
+      "props": {
+        "text": "容器",
+        "enabled": true,
+        "visible": true
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 12,
+        "background": "$color.surface",
+        "borderWidth": 1,
+        "borderColor": "$color.border",
+        "borderStyle": "solid"
+      },
+      "states": {},
+      "bindings": {},
+      "events": {}
+    },
+    {
+      "id": "pressure_label",
+      "type": "text",
+      "name": "压力标题",
+      "layout": {
+        "x": 352,
+        "y": 138,
+        "width": 220,
+        "height": 24
+      },
+      "props": {
+        "text": "管道压力",
+        "enabled": true,
+        "visible": true
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {}
+    },
+    {
+      "id": "pressure",
+      "type": "text",
+      "name": "压力读数",
+      "layout": {
+        "x": 352,
+        "y": 182,
+        "width": 200,
+        "height": 52
+      },
+      "props": {
+        "text": "0.36 MPa",
+        "enabled": true,
+        "visible": true,
+        "unit": "MPa"
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 38,
+        "borderRadius": 8,
+        "fontWeight": 600
+      },
+      "states": {},
+      "bindings": {
+        "text": {
+          "variable": "pressure",
+          "mode": "oneWay"
+        }
+      },
+      "events": {}
+    },
+    {
+      "id": "pressure_note",
+      "type": "text",
+      "name": "压力提示",
+      "layout": {
+        "x": 352,
+        "y": 254,
+        "width": 220,
+        "height": 22
+      },
+      "props": {
+        "text": "● 正常范围  0.20–0.60 MPa",
+        "enabled": true,
+        "visible": true
+      },
+      "style": {
+        "color": "$color.success",
+        "fontSize": 11,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {}
+    },
+    {
+      "id": "control_panel",
+      "type": "panel",
+      "name": "操作卡片",
+      "layout": {
+        "x": 632,
+        "y": 120,
+        "width": 296,
+        "height": 180
+      },
+      "props": {
+        "text": "容器",
+        "enabled": true,
+        "visible": true
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 12,
+        "background": "$color.surface",
+        "borderWidth": 1,
+        "borderColor": "$color.border",
+        "borderStyle": "solid"
+      },
+      "states": {},
+      "bindings": {},
+      "events": {}
+    },
+    {
+      "id": "control_label",
+      "type": "text",
+      "name": "控制标题",
+      "layout": {
+        "x": 652,
+        "y": 138,
+        "width": 220,
+        "height": 24
+      },
+      "props": {
+        "text": "运行控制",
+        "enabled": true,
+        "visible": true
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {}
+    },
+    {
+      "id": "power",
+      "type": "switch",
+      "name": "自动运行",
+      "layout": {
+        "x": 652,
+        "y": 182,
+        "width": 248,
+        "height": 36
+      },
+      "props": {
+        "text": "自动运行",
+        "enabled": true,
+        "visible": true,
+        "value": false
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {
+        "value": {
+          "variable": "running",
+          "mode": "twoWay"
+        }
+      },
+      "events": {}
+    },
+    {
+      "id": "start_button",
+      "type": "button",
+      "name": "启动循环",
+      "layout": {
+        "x": 652,
+        "y": 234,
+        "width": 248,
+        "height": 42
+      },
+      "props": {
+        "text": "启动循环",
+        "enabled": true,
+        "visible": true
+      },
+      "style": {
+        "color": "#ffffff",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.primary",
+        "fontWeight": 600
+      },
+      "states": {
+        "hover": {
+          "background": "$color.primaryHover"
+        }
+      },
+      "bindings": {},
+      "events": {
+        "click": "start-cycle"
+      }
+    },
+    {
+      "id": "chart_panel",
+      "type": "panel",
+      "name": "趋势卡片",
+      "layout": {
+        "x": 32,
+        "y": 320,
+        "width": 580,
+        "height": 276
+      },
+      "props": {
+        "text": "容器",
+        "enabled": true,
+        "visible": true
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 12,
+        "background": "$color.surface",
+        "borderWidth": 1,
+        "borderColor": "$color.border",
+        "borderStyle": "solid"
+      },
+      "states": {},
+      "bindings": {},
+      "events": {}
+    },
+    {
+      "id": "chart_label",
+      "type": "text",
+      "name": "趋势标题",
+      "layout": {
+        "x": 52,
+        "y": 338,
+        "width": 400,
+        "height": 24
+      },
+      "props": {
+        "text": "温度趋势",
+        "enabled": true,
+        "visible": true
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 13,
+        "borderRadius": 8,
+        "fontWeight": 600
+      },
+      "states": {},
+      "bindings": {},
+      "events": {}
+    },
+    {
+      "id": "chart",
+      "type": "chart",
+      "name": "实时温度",
+      "layout": {
+        "x": 52,
+        "y": 380,
+        "width": 540,
+        "height": 190
+      },
+      "props": {
+        "text": "趋势图",
+        "enabled": true,
+        "visible": true,
+        "value": 42.6,
+        "min": 0,
+        "max": 100,
+        "unit": ""
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {
+        "value": {
+          "variable": "temperature",
+          "mode": "oneWay"
+        }
+      },
+      "events": {}
+    },
+    {
+      "id": "status_panel",
+      "type": "panel",
+      "name": "参数卡片",
+      "layout": {
+        "x": 632,
+        "y": 320,
+        "width": 296,
+        "height": 276
+      },
+      "props": {
+        "text": "容器",
+        "enabled": true,
+        "visible": true
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 12,
+        "background": "$color.surface",
+        "borderWidth": 1,
+        "borderColor": "$color.border",
+        "borderStyle": "solid"
+      },
+      "states": {},
+      "bindings": {},
+      "events": {}
+    },
+    {
+      "id": "status_label",
+      "type": "text",
+      "name": "参数标题",
+      "layout": {
+        "x": 652,
+        "y": 338,
+        "width": 220,
+        "height": 24
+      },
+      "props": {
+        "text": "参数设置",
+        "enabled": true,
+        "visible": true
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 13,
+        "borderRadius": 8,
+        "fontWeight": 600
+      },
+      "states": {},
+      "bindings": {},
+      "events": {}
+    },
+    {
+      "id": "speed_label",
+      "type": "text",
+      "name": "转速标题",
+      "layout": {
+        "x": 652,
+        "y": 382,
+        "width": 220,
+        "height": 22
+      },
+      "props": {
+        "text": "目标转速  /  %",
+        "enabled": true,
+        "visible": true
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {}
+    },
+    {
+      "id": "speed",
+      "type": "slider",
+      "name": "目标转速",
+      "layout": {
+        "x": 652,
+        "y": 416,
+        "width": 248,
+        "height": 36
+      },
+      "props": {
+        "text": "滑块",
+        "enabled": true,
+        "visible": true,
+        "value": 65,
+        "min": 0,
+        "max": 100,
+        "unit": ""
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {
+        "value": {
+          "variable": "speed",
+          "mode": "twoWay"
+        }
+      },
+      "events": {}
+    },
+    {
+      "id": "cycle_label",
+      "type": "text",
+      "name": "循环标题",
+      "layout": {
+        "x": 652,
+        "y": 480,
+        "width": 220,
+        "height": 22
+      },
+      "props": {
+        "text": "累计循环",
+        "enabled": true,
+        "visible": true
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {}
+    },
+    {
+      "id": "cycles",
+      "type": "text",
+      "name": "循环次数",
+      "layout": {
+        "x": 652,
+        "y": 516,
+        "width": 220,
+        "height": 36
+      },
+      "props": {
+        "text": "0",
+        "enabled": true,
+        "visible": true,
+        "unit": "次"
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 27,
+        "borderRadius": 8,
+        "fontWeight": 600
+      },
+      "states": {},
+      "bindings": {
+        "text": {
+          "variable": "cycles",
+          "mode": "oneWay"
+        }
+      },
+      "events": {}
+    }
+  ],
+  "variables": [
+    {
+      "id": "temperature",
+      "name": "temperature",
+      "type": "number",
+      "initial": 42.6,
+      "unit": "°C",
+      "alarm": {
+        "max": 80
+      }
+    },
+    {
+      "id": "pressure",
+      "name": "pressure",
+      "type": "number",
+      "initial": 0.36,
+      "unit": "MPa"
+    },
+    {
+      "id": "running",
+      "name": "running",
+      "type": "boolean",
+      "initial": false
+    },
+    {
+      "id": "speed",
+      "name": "speed",
+      "type": "number",
+      "initial": 65,
+      "unit": "%"
+    },
+    {
+      "id": "cycles",
+      "name": "cycles",
+      "type": "number",
+      "initial": 0,
+      "persistent": true
+    }
+  ],
+  "flows": [
+    {
+      "id": "start-cycle",
+      "name": "启动循环",
+      "enabled": true,
+      "nodes": [
+        {
+          "id": "trigger",
+          "kind": "event",
+          "label": "点击启动",
+          "position": {
+            "x": 30,
+            "y": 130
+          },
+          "config": {}
+        },
+        {
+          "id": "read-cycles",
+          "kind": "read",
+          "label": "读取次数",
+          "position": {
+            "x": 260,
+            "y": 130
+          },
+          "config": {
+            "variable": "cycles"
+          }
+        },
+        {
+          "id": "increment",
+          "kind": "math",
+          "label": "次数 + 1",
+          "position": {
+            "x": 490,
+            "y": 130
+          },
+          "config": {
+            "operation": "add",
+            "operand": 1
+          }
+        },
+        {
+          "id": "write-cycles",
+          "kind": "write",
+          "label": "保存次数",
+          "position": {
+            "x": 720,
+            "y": 130
+          },
+          "config": {
+            "variable": "cycles"
+          }
+        },
+        {
+          "id": "log-cycle",
+          "kind": "log",
+          "label": "记录运行",
+          "position": {
+            "x": 950,
+            "y": 130
+          },
+          "config": {
+            "message": "Cycle completed"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "trigger-read-cycles",
+          "source": "trigger",
+          "target": "read-cycles"
+        },
+        {
+          "id": "read-cycles-increment",
+          "source": "read-cycles",
+          "target": "increment"
+        },
+        {
+          "id": "increment-write-cycles",
+          "source": "increment",
+          "target": "write-cycles"
+        },
+        {
+          "id": "write-cycles-log-cycle",
+          "source": "write-cycles",
+          "target": "log-cycle"
+        }
+      ]
+    }
+  ],
+  "translations": {
+    "zh-CN": {
+      "pump.title": "泵站控制面板",
+      "pump.start": "启动循环"
+    },
+    "en": {
+      "pump.title": "Pump station",
+      "pump.start": "Start cycle"
+    }
+  },
+  "scripts": [
+    {
+      "id": "counter-script",
+      "name": "cycle_counter.c",
+      "source": "/* QuickGUI C SDK — compile and run in an isolated worker.\n * The same C source is used for preview and native release builds. */\n#include \"quickgui.h\"\n\nvoid qg_process(void) {\n    double next = qg_input_number() + 1.0;\n    qg_set_number(\"cycles\", next);\n    qg_state_set(\"last_value\", next);\n    qg_log(\"Cycle completed\");\n    qg_emit_number(next);\n}\n",
+      "timeoutMs": 1000
+    }
+  ],
+  "modules": [],
+  "assets": [],
+  "connections": []
+}

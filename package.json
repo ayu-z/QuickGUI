@@ -1,0 +1,49 @@
+{
+  "name": "quickgui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "tauri": "tauri",
+    "desktop": "cargo build -p quickgui-c-runner && tauri dev",
+    "desktop:build": "node scripts/build-native.mjs",
+    "check": "tsc -b && vitest run",
+    "icons": "node scripts/icons.mjs",
+    "export:source": "node scripts/export-project.mjs",
+    "prepare:native": "node scripts/build-native.mjs --prepare",
+    "setup:c": "node scripts/setup-tcc.mjs",
+    "test:rust": "cargo test --workspace",
+    "test:c": "cargo test -p quickgui-c-runner --test execution -- --include-ignored",
+    "component:build": "node scripts/build-component.mjs",
+    "format": "prettier --write src tests scripts docs README.md AGENTS.md"
+  },
+  "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
+    "@tauri-apps/api": "^2.0.0",
+    "@xyflow/react": "^12.8.0",
+    "fflate": "^0.8.2",
+    "lucide-react": "^0.468.0",
+    "monaco-editor": "^0.52.2",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "@tauri-apps/cli": "^2.0.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "esbuild": "^0.28.2",
+    "prettier": "^3.9.10",
+    "typescript": "~5.9.3",
+    "vite": "^7.1.0",
+    "vitest": "^5.0.5"
+  }
+}
