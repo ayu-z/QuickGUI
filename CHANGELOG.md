@@ -1,5 +1,19 @@
 # 变动日志
 
+## 2026-10-18 — 统一下拉框高度并修复菜单失焦关闭
+
+- 设计器单行下拉框统一为 32px，使用一致的内边距、行高及主题色箭头，消除浏览器原生外观造成的高度差异；排除工程控件、预览场景、多选和列表框，保留工程自设尺寸。
+- 工程、导出和右键菜单在点击外部、焦点移出或收到窗口 blur 时关闭；菜单内移动焦点保持打开。工程与导出菜单互斥，Esc 关闭后恢复触发按钮焦点，并补充展开状态关联。
+- 修复属性面板错误的输入背景令牌，亮色主题不再出现深色底与深色文字混用。
+- 新增 `src/hooks/useDismissibleLayer.ts`：共享外部指针、焦点与窗口失焦关闭逻辑，卸载时清理监听。
+- 修改 `src/App.tsx`、`src/designer/ContextMenu.tsx`：接入失焦关闭、菜单互斥、Esc 和焦点恢复。
+- 修改 `src/styles.css`、`src/designer/propertyInspector.css`：下拉框统一尺寸与外观、属性输入主题背景。
+- 新增 `tests/e2e/dropdowns.spec.ts`：5 项亮/暗高度、画布/预览尺寸隔离、外部点击、Tab/焦点移出、菜单内部操作、互斥、Esc、下载及窗口 blur 回归。
+- 修改 `CHANGELOG.md` 记录本组变更；无源文件删除或重命名，无工程格式、依赖、配置迁移或 C SDK/协议/编译路径变更。原有 `QuickGUI_Icons/` 未改动或纳入提交。
+- 验证：`npm run check` 的 TypeScript 与 195 项单测、`npm run build`、41 项 Chromium E2E、5 项 WebKit 专项及 `cargo test --workspace` 的 65 项常规测试均通过。首次回归发现画布控件被尺寸规则误命中，以及测试 DOM 类型/递归参数推断错误，已限定样式作用域、明确 DOM 类型并序列化初始参数后复跑通过。
+- `npx tauri build --debug --bundles app` 通过，更新 `target/debug/bundle/macos/QuickGUI.app`（67.31 MiB）；保留已有 Monaco 大包及桥接混合导入提示。亮/暗主题截图及测量在忽略的 `artifacts/dropdown-audit/`，已目视检查。
+- Prettier 与 Git 差异检查通过。本轮未重复默认忽略的真实 C/AOT 专项；窗口 blur 为浏览器事件回归，原生系统焦点自动点击、Windows/Intel Mac 实机和签名公证未验收。
+
 ## 2026-10-18 — 重绘折叠 Q LOGO 并校准桌面图标尺寸
 
 - 按提供的品牌展示图重建较厚的折叠丝带 Q，保留青/蓝/紫/粉/金渐变和开放内孔，保存为 `public/quickgui.svg`，统一顶部品牌、欢迎页与浏览器 favicon。顶部缩至 28px、欢迎页缩至 64px，保持透明留白与适度投影。

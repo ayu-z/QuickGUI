@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { commandForKey, type CommandItem, type DesignerCommand, type Point } from './commands';
+import { useDismissibleLayer } from '../hooks/useDismissibleLayer';
 
 export function ContextMenu({
   point,
@@ -15,6 +16,7 @@ export function ContextMenu({
   const element = useRef<HTMLDivElement>(null),
     previous = useRef<HTMLElement | null>(null);
   const [position, setPosition] = useState(point);
+  useDismissibleLayer(true, element, onClose);
   useLayoutEffect(() => {
     previous.current = document.activeElement as HTMLElement;
     const menu = element.current!;
@@ -24,12 +26,7 @@ export function ContextMenu({
       y: Math.max(6, Math.min(point.y, innerHeight - bounds.height - 6)),
     });
     menu.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
-    const dismiss = (event: PointerEvent) => {
-      if (!menu.contains(event.target as Node)) onClose();
-    };
-    document.addEventListener('pointerdown', dismiss, true);
     return () => {
-      document.removeEventListener('pointerdown', dismiss, true);
       if (document.activeElement === document.body || menu.contains(document.activeElement))
         previous.current?.focus();
     };

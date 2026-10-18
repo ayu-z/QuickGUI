@@ -104,6 +104,7 @@ import { upgradeProject, upgradeWidget, migrationSummary } from './core/migratio
 import { assertJsonValue } from './core/jsonValue';
 import { variableReferences } from './core/references';
 import { getWidgetDefinition, getBindableProperties, getJsonPath } from './core/widgetDefinitions';
+import { useDismissibleLayer } from './hooks/useDismissibleLayer';
 
 function PreviewWindow() {
   const windowId = new URLSearchParams(location.search).get('windowId') ?? 'main';
@@ -224,6 +225,10 @@ function ProjectWorkspace({
   const [preview, setPreview] = useState(false),
     [exportMenu, setExportMenu] = useState(false),
     [projectMenu, setProjectMenu] = useState(false);
+  const projectMenuRef = useRef<HTMLDivElement>(null),
+    exportMenuRef = useRef<HTMLDivElement>(null);
+  useDismissibleLayer(projectMenu, projectMenuRef, () => setProjectMenu(false));
+  useDismissibleLayer(exportMenu, exportMenuRef, () => setExportMenu(false));
   const previewQueue = useRef<Promise<void>>(Promise.resolve());
   const previewGeneration = useRef(0);
   const [buildProgress, setBuildProgress] = useState<string | null>(null);
@@ -901,14 +906,33 @@ function ProjectWorkspace({
           <strong>QuickGUI</strong>
           <span>DESIGNER</span>
         </div>
-        <div className="project-menu-wrap">
-          <button className="project-switch" onClick={() => setProjectMenu(!projectMenu)}>
+        <div
+          ref={projectMenuRef}
+          className="project-menu-wrap"
+          onKeyDown={(event) => {
+            if (event.key === 'Escape' && projectMenu) {
+              event.preventDefault();
+              event.stopPropagation();
+              setProjectMenu(false);
+              projectMenuRef.current?.querySelector('button')?.focus();
+            }
+          }}
+        >
+          <button
+            className="project-switch"
+            aria-expanded={projectMenu}
+            aria-controls="project-dropdown"
+            onClick={() => {
+              setExportMenu(false);
+              setProjectMenu(!projectMenu);
+            }}
+          >
             <span className="project-dot" />
             {project.name}
             <ChevronDown size={13} />
           </button>
           {projectMenu && (
-            <div className="dropdown project-dropdown">
+            <div id="project-dropdown" className="dropdown project-dropdown">
               <button
                 onClick={() => {
                   setProjectMenu(false);
@@ -985,14 +1009,33 @@ function ProjectWorkspace({
           <Play size={14} fill="currentColor" />
           {t.preview}
         </button>
-        <div className="export-menu-wrap">
-          <button className="button primary" onClick={() => setExportMenu(!exportMenu)}>
+        <div
+          ref={exportMenuRef}
+          className="export-menu-wrap"
+          onKeyDown={(event) => {
+            if (event.key === 'Escape' && exportMenu) {
+              event.preventDefault();
+              event.stopPropagation();
+              setExportMenu(false);
+              exportMenuRef.current?.querySelector('button')?.focus();
+            }
+          }}
+        >
+          <button
+            className="button primary"
+            aria-expanded={exportMenu}
+            aria-controls="export-dropdown"
+            onClick={() => {
+              setProjectMenu(false);
+              setExportMenu(!exportMenu);
+            }}
+          >
             <Download size={14} />
             {t.export}
             <ChevronDown size={13} />
           </button>
           {exportMenu && (
-            <div className="dropdown export-dropdown">
+            <div id="export-dropdown" className="dropdown export-dropdown">
               <button onClick={exportOriginal}>
                 <Package size={18} />
                 <span>

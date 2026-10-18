@@ -59,7 +59,7 @@
   border: 1px solid var(--border, #333743);
   border-radius: 4px;
   color: var(--text, #edf0f7);
-  background: var(--input-bg, #17191f);
+  background: var(--input, #17191f);
   padding: 6px 7px;
   font: inherit;
   font-size: 11px;
