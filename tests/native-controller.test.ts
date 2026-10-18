@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   start: vi.fn(),
   validate: vi.fn(),
   run: vi.fn(),
+  script: vi.fn(),
   write: vi.fn(),
   stop: vi.fn(),
   close: vi.fn(),
@@ -22,6 +23,7 @@ vi.mock('../src/native/bridge', () => ({
   onStorageError: async () => () => {},
   runtimeStart: mocks.start,
   runFlow: mocks.run,
+  runScript: mocks.script,
   setVariable: mocks.write,
   stop: mocks.stop,
   closeProject: mocks.close,
@@ -103,6 +105,10 @@ describe('native snapshot ordering', () => {
     expect(mocks.start).toHaveBeenCalledTimes(1);
     expect(engine.getProject().scripts[0].source).toBe(project.scripts[0].source);
     expect(engine.getSnapshot().revision).toBe(0);
+    await expect(
+      engine.runScript(invalid.scripts[0].id, { value: 1 }, invalid.revision),
+    ).rejects.toThrow(/revision was not accepted/);
+    expect(mocks.script).not.toHaveBeenCalled();
     const fixed = structuredClone(project);
     fixed.revision = 2;
     fixed.scripts[0].source += '\n/* fixed */';

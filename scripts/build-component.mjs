@@ -1,6 +1,16 @@
 import { build } from 'esbuild';
-import { zipSync, strToU8 } from 'fflate';
-import { readdir, readFile, writeFile, mkdir, lstat, realpath } from 'node:fs/promises';
+import {
+  readdir,
+  readFile,
+  writeFile,
+  mkdir,
+  lstat,
+  realpath,
+  rename,
+  rm,
+  chmod,
+} from 'node:fs/promises';
+import { randomUUID, createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -39,13 +49,32 @@ const contained = (root, file) => {
     (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))
   );
 };
-const isJson = (value) =>
-  value === null ||
-  typeof value === 'string' ||
-  typeof value === 'boolean' ||
-  (typeof value === 'number' && Number.isFinite(value)) ||
-  (Array.isArray(value) && value.every(isJson)) ||
-  (!!value && typeof value === 'object' && Object.values(value).every(isJson));
+let sharedContract;
+async function contracts() {
+  sharedContract ??= (async () => {
+    // The exported source tree contains these same schemas. Compile them for Node
+    // in memory so the CLI and designer accept exactly the same package/project.
+    const result = await build({
+      stdin: {
+        contents: `export { componentManifestSchema, exportComponentPackage, importComponentPackage } from './src/core/componentPackage.ts';
+export { validateProject } from './src/core/validation.ts';`,
+        resolveDir: path.resolve(scriptRoot, '..'),
+        sourcefile: 'quickgui-build-contracts.ts',
+        loader: 'ts',
+      },
+      bundle: true,
+      write: false,
+      platform: 'node',
+      format: 'esm',
+      target: 'node22',
+      logLevel: 'silent',
+    });
+    return import(
+      `data:text/javascript;base64,${Buffer.from(result.outputFiles[0].contents).toString('base64')}`
+    );
+  })();
+  return sharedContract;
+}
 
 async function readSources(root) {
   const files = {};
@@ -80,48 +109,85 @@ async function readSources(root) {
   return files;
 }
 
-function validateManifest(manifest, files) {
-  if (manifest.schemaVersion !== 1) throw new Error('manifest.schemaVersion must be 1');
-  if (!/^[A-Za-z][A-Za-z0-9._-]{0,99}$/.test(manifest.id ?? ''))
-    throw new Error('manifest.id must be an ASCII component identifier');
-  if (typeof manifest.name !== 'string' || !manifest.name || manifest.name.length > 200)
-    throw new Error('manifest.name is required (maximum 200 characters)');
-  if (!/^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/.test(manifest.version ?? ''))
-    throw new Error('manifest.version must be a semantic version');
-  for (const key of ['width', 'height'])
-    if (!Number.isFinite(manifest[key]) || manifest[key] <= 0 || manifest[key] > 10_000)
-      throw new Error(`manifest.${key} must be between 0 and 10000`);
-  if (!safePath(manifest.entry) || !Object.hasOwn(files, manifest.entry))
+function validateManifest(manifest, files, contract) {
+  // componentManifestSchema includes the strict shared propertyDefinitionSchema.
+  contract.componentManifestSchema.parse(manifest);
+  if (!Object.hasOwn(files, manifest.entry))
     throw new Error('manifest.entry must name an included source file');
   if (
     manifest.styles !== undefined &&
-    (!safePath(manifest.styles) ||
-      !Object.hasOwn(files, manifest.styles) ||
-      !manifest.styles.endsWith('.css'))
+    (!Object.hasOwn(files, manifest.styles) || !manifest.styles.endsWith('.css'))
   )
     throw new Error('manifest.styles must name an included CSS file');
-  if (
-    !manifest.props ||
-    typeof manifest.props !== 'object' ||
-    Array.isArray(manifest.props) ||
-    !isJson(manifest.props)
-  )
-    throw new Error('manifest.props must be an object containing JSON defaults');
-  for (const key of Object.keys(manifest.props))
-    if (
-      !/^[A-Za-z_][A-Za-z0-9_]{0,99}$/.test(key) ||
-      ['__proto__', 'constructor', 'prototype'].includes(key)
-    )
-      throw new Error(`Unsupported property name: ${key}`);
-  if (
-    !Array.isArray(manifest.events) ||
-    manifest.events.length > 64 ||
-    new Set(manifest.events).size !== manifest.events.length ||
-    manifest.events.some(
-      (event) => typeof event !== 'string' || !/^[A-Za-z][A-Za-z0-9_.:-]{0,63}$/.test(event),
-    )
-  )
-    throw new Error('manifest.events must contain unique event names (maximum 64)');
+}
+
+const identityFields = ['id', 'name', 'version', 'width', 'height'];
+function identity(module) {
+  return Object.fromEntries(identityFields.map((key) => [key, module[key]]));
+}
+async function readProjectUpdate(options, contract) {
+  if (Boolean(options.project) !== Boolean(options.module))
+    throw new Error(
+      '--project and --module must be supplied together; choose the exact local module ID',
+    );
+  if (!options.project) return undefined;
+  const filename = await realpath(path.resolve(options.project));
+  const stats = await lstat(filename);
+  if (!stats.isFile() || stats.size > 30_000_000)
+    throw new Error('Project must be a JSON file no larger than 30 MB');
+  const text = await readFile(filename, 'utf8');
+  const project = JSON.parse(text);
+  contract.validateProject(project);
+  const index = project.modules.findIndex((module) => module.id === options.module);
+  if (index < 0)
+    throw new Error(
+      `No local module has ID ${options.module}; manifest IDs are not used for target selection`,
+    );
+  if (project.modules[index].implementation?.kind !== 'react')
+    throw new Error('Only a React module can be rebuilt from component sources');
+  return { filename, text, project, index, mode: stats.mode & 0o777 };
+}
+async function stageFile(destination, bytes, mode) {
+  await mkdir(path.dirname(destination), { recursive: true });
+  const temporary = path.join(
+    path.dirname(destination),
+    `.${path.basename(destination)}.${randomUUID()}.tmp`,
+  );
+  try {
+    await writeFile(temporary, bytes, { flag: 'wx', ...(mode === undefined ? {} : { mode }) });
+    if (mode !== undefined) await chmod(temporary, mode);
+    return temporary;
+  } catch (error) {
+    await rm(temporary, { force: true });
+    throw error;
+  }
+}
+async function publishBuild(destination, bytes, update, candidate) {
+  let packageTemp, projectTemp;
+  try {
+    packageTemp = await stageFile(destination, bytes);
+    if (update) {
+      const text = JSON.stringify(candidate, null, 2) + '\n';
+      if (Buffer.byteLength(text) > 30_000_000)
+        throw new Error('Rebuilt project exceeds the 30 MB limit');
+      projectTemp = await stageFile(update.filename, text, update.mode);
+      if ((await readFile(update.filename, 'utf8')) !== update.text)
+        throw new Error('Project changed during the build; no project update was applied');
+    }
+    await rename(packageTemp, destination);
+    packageTemp = undefined;
+    if (update) {
+      if ((await readFile(update.filename, 'utf8')) !== update.text)
+        throw new Error('Project changed during the build; no project update was applied');
+      // A same-directory rename publishes the whole validated document at once.
+      await rename(projectTemp, update.filename);
+      projectTemp = undefined;
+    }
+  } finally {
+    await Promise.all(
+      [packageTemp, projectTemp].filter(Boolean).map((file) => rm(file, { force: true })),
+    );
+  }
 }
 
 function mountEntry(entry, styles) {
@@ -161,13 +227,34 @@ export function mount(container, initialProps, emit, initialContext) {
 }`;
 }
 
-export async function buildComponent(sourceDirectory, outputFilename) {
+export async function buildComponent(sourceDirectory, outputFilename, options = {}) {
+  const contract = await contracts();
+  const update = await readProjectUpdate(options, contract);
   const root = await realpath(path.resolve(sourceDirectory));
   const files = await readSources(root);
   if (!files['manifest.json'])
     throw new Error('The component directory must contain manifest.json');
   const manifest = JSON.parse(files['manifest.json']);
-  validateManifest(manifest, files);
+  validateManifest(manifest, files, contract);
+  if (update) {
+    const previous = update.project.modules[update.index];
+    const expected = previous.packageIdentity ?? identity(previous);
+    for (const key of identityFields)
+      if (manifest[key] !== expected[key])
+        throw new Error(
+          `Source manifest ${key} differs from this module's immutable package identity; import it as a new component instead`,
+        );
+    if (
+      update.project.schemaVersion < 3 &&
+      (manifest.schemaVersion === 2 ||
+        previous.packageIdentity ||
+        previous.resourceScopeId ||
+        previous.embeddedResourceScope)
+    )
+      throw new Error(
+        'This rebuild needs project schema v3; upgrade the working copy in the designer first',
+      );
+  }
   const dependencies = path.resolve(scriptRoot, '../node_modules');
   const result = await build({
     stdin: {
@@ -232,6 +319,7 @@ export async function buildComponent(sourceDirectory, outputFilename) {
     width: manifest.width,
     height: manifest.height,
     widgets: [],
+    ...(manifest.propertyDefinitions ? { propertyDefinitions: manifest.propertyDefinitions } : {}),
     exposedProps: Object.fromEntries(
       Object.entries(manifest.props).map(([name, value]) => [
         name,
@@ -240,33 +328,88 @@ export async function buildComponent(sourceDirectory, outputFilename) {
     ),
     implementation: { kind: 'react', files, bundle, events: manifest.events },
   };
-  const json = strToU8(JSON.stringify(module, null, 2));
-  if (json.byteLength > 20_000_000) throw new Error('Expanded component exceeds 20 MB');
-  const bytes = zipSync({ 'module.json': json }, { level: 6 });
-  if (bytes.byteLength > 16_000_000) throw new Error('Component package exceeds 16 MB');
+  let rebuilt = module,
+    candidate;
+  if (update) {
+    candidate = structuredClone(update.project);
+    const previous = candidate.modules[update.index];
+    rebuilt = {
+      ...previous,
+      implementation: module.implementation,
+      exposedProps: module.exposedProps,
+    };
+    if (module.propertyDefinitions === undefined) delete rebuilt.propertyDefinitions;
+    else rebuilt.propertyDefinitions = module.propertyDefinitions;
+    candidate.modules[update.index] = rebuilt;
+    candidate.revision += 1;
+    contract.validateProject(candidate);
+  }
+  const portable =
+    manifest.schemaVersion === 2 && !rebuilt.packageIdentity
+      ? { ...rebuilt, packageIdentity: identity(manifest) }
+      : rebuilt;
+  const bytes = contract.exportComponentPackage(portable, candidate);
+  // Do not publish an artifact that the designer's current importer will reject.
+  contract.importComponentPackage(bytes);
+  if (JSON.stringify(await readSources(root)) !== JSON.stringify(files))
+    throw new Error(
+      'Component source files changed during the build; retry from a stable source snapshot',
+    );
+  const requestedName = options.module ?? manifest.id;
+  const artifactName = /^[A-Za-z][A-Za-z0-9._-]{0,99}$/.test(requestedName)
+    ? requestedName
+    : `${manifest.id}-${createHash('sha256').update(requestedName).digest('hex').slice(0, 12)}`;
   const destination = path.resolve(
-    outputFilename ?? path.join(root, '..', `${manifest.id}.qgcomponent`),
+    outputFilename ?? path.join(root, '..', `${artifactName}.qgcomponent`),
   );
-  await mkdir(path.dirname(destination), { recursive: true });
-  await writeFile(destination, bytes);
-  return { module, destination, bytes: bytes.byteLength };
+  if (
+    destination === update?.filename ||
+    (options.project && destination === path.resolve(options.project)) ||
+    (contained(root, destination) &&
+      Object.hasOwn(files, path.relative(root, destination).split(path.sep).join('/')))
+  )
+    throw new Error('Component package destination cannot overwrite a source or project file');
+  await publishBuild(destination, bytes, update, candidate);
+  return {
+    module: rebuilt,
+    destination,
+    bytes: bytes.byteLength,
+    ...(update ? { project: update.filename, localModuleId: options.module } : {}),
+  };
 }
 
-if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
-  if (!process.argv[2]) {
-    console.error(
-      'Usage: node scripts/build-component.mjs <component-directory> [output.qgcomponent]',
+function parseArguments(args) {
+  const positional = [],
+    options = {};
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--project' || arg === '--module') {
+      const key = arg.slice(2);
+      if (options[key] !== undefined || !args[i + 1] || args[i + 1].startsWith('--'))
+        throw new Error(`${arg} requires one value and cannot be repeated`);
+      options[key] = args[++i];
+    } else if (arg.startsWith('--')) throw new Error(`Unknown option: ${arg}`);
+    else positional.push(arg);
+  }
+  if (!positional.length || positional.length > 2)
+    throw new Error(
+      'Usage: node scripts/build-component.mjs <component-directory> [output.qgcomponent] [--project project.json --module localModuleId]',
     );
+  if (Boolean(options.project) !== Boolean(options.module))
+    throw new Error(
+      '--project and --module must be supplied together; choose the exact local module ID',
+    );
+  return { source: positional[0], output: positional[1], options };
+}
+if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
+  try {
+    const { source, output, options } = parseArguments(process.argv.slice(2));
+    const result = await buildComponent(source, output, options);
+    console.log(
+      `Built ${result.module.name} v${result.module.version}: ${result.destination} (${result.bytes} bytes)${result.project ? `\nUpdated local module ${result.localModuleId} in ${result.project}` : ''}`,
+    );
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
-  } else {
-    try {
-      const result = await buildComponent(process.argv[2], process.argv[3]);
-      console.log(
-        `Built ${result.module.name} v${result.module.version}: ${result.destination} (${result.bytes} bytes)`,
-      );
-    } catch (error) {
-      console.error(error instanceof Error ? error.message : String(error));
-      process.exitCode = 1;
-    }
   }
 }

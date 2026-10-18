@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ComponentModule, Json, Project } from '../core/types';
+import { assetUrl } from '../core/project';
 
 export interface CustomComponentContext {
   locale: string;
@@ -9,6 +10,7 @@ export interface CustomComponentContext {
   width: number;
   height: number;
   t: (key: string) => string;
+  asset: (id: string) => string | undefined;
 }
 interface ComponentInstance {
   update: (props: Record<string, Json>, context: CustomComponentContext) => void;
@@ -75,6 +77,7 @@ export function CustomComponent({
     translations: { ...project.translations?.[locale] },
     t: (key) =>
       project.translations?.[locale]?.[key] ?? project.translations?.[project.locale]?.[key] ?? key,
+    asset: (id) => assetUrl(project, id),
   };
   const latest = useRef({ props, context, onEmit, events: module.implementation?.events ?? [] });
   latest.current = { props, context, onEmit, events: module.implementation?.events ?? [] };

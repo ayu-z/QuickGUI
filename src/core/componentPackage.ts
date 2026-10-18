@@ -1,6 +1,7 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { z } from 'zod';
-import type { ComponentModule, Json } from './types';
+import type { ComponentModule, Json, Project, ResourceScope } from './types';
+import { propertyDefinitionSchema } from './propertySchema';
 
 export const COMPONENT_PACKAGE_LIMIT = 16_000_000;
 const SOURCE_FILE_LIMIT = 1_000_000;
@@ -46,21 +47,54 @@ export function isSafeComponentPath(path: string): boolean {
   );
 }
 
-export const componentManifestSchema = z.object({
-  schemaVersion: z.literal(1),
-  id: z.string().regex(/^[A-Za-z][A-Za-z0-9._-]{0,99}$/),
-  name: z.string().min(1).max(200),
-  version: z.string().regex(/^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/),
-  entry: z.string().refine(isSafeComponentPath),
-  styles: z.string().refine(isSafeComponentPath).optional(),
-  width: z.number().positive().max(10_000),
-  height: z.number().positive().max(10_000),
-  props: z.record(propertyName, json),
-  events: z
-    .array(eventName)
-    .max(64)
-    .refine((events) => new Set(events).size === events.length, 'Event names must be unique'),
-});
+export const componentManifestSchema = z
+  .object({
+    schemaVersion: z.union([z.literal(1), z.literal(2)]),
+    id: z.string().regex(/^[A-Za-z][A-Za-z0-9._-]{0,99}$/),
+    name: z.string().min(1).max(200),
+    version: z.string().regex(/^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/),
+    entry: z.string().refine(isSafeComponentPath),
+    styles: z.string().refine(isSafeComponentPath).optional(),
+    width: z.number().positive().max(10_000),
+    height: z.number().positive().max(10_000),
+    props: z.record(propertyName, json),
+    propertyDefinitions: z.record(propertyName, propertyDefinitionSchema).optional(),
+    events: z
+      .array(eventName)
+      .max(64)
+      .refine((events) => new Set(events).size === events.length, 'Event names must be unique'),
+  })
+  .superRefine((manifest, ctx) => {
+    if (manifest.schemaVersion === 1 && manifest.propertyDefinitions)
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Property definitions require component manifest v2',
+      });
+  });
+const packageResourcesSchema = z
+  .object({
+    id: z.string(),
+    theme: z
+      .object({ mode: z.enum(['dark', 'light', 'system']), tokens: z.record(z.string()) })
+      .strict(),
+    translations: z.record(z.record(z.string())),
+    locale: z.enum(['zh-CN', 'en']),
+    localeVariableId: z.string().optional(),
+    assetAliases: z.record(z.string()).optional(),
+    assets: z
+      .array(
+        z
+          .object({
+            id: z.string(),
+            name: z.string(),
+            mime: z.string(),
+            data: z.string().max(20_000_000),
+          })
+          .strict(),
+      )
+      .optional(),
+  })
+  .strict();
 
 export const reactImplementationSchema = z
   .object({
@@ -171,6 +205,7 @@ const packageModuleSchema = z
         .strict(),
     ),
     implementation: reactImplementationSchema,
+    propertyDefinitions: z.record(propertyName, propertyDefinitionSchema).optional(),
   })
   .strict()
   .superRefine((module, context) => {
@@ -201,6 +236,15 @@ const packageModuleSchema = z
         message: 'Component property defaults differ from its source manifest',
         path: ['exposedProps'],
       });
+    if (
+      canonicalJson((module.propertyDefinitions ?? {}) as unknown as Json) !==
+      canonicalJson((manifest.propertyDefinitions ?? {}) as unknown as Json)
+    )
+      context.addIssue({
+        code: 'custom',
+        message: 'Component property definitions differ from its source manifest',
+        path: ['propertyDefinitions'],
+      });
   });
 
 /** Parse only; importing this package does not execute its JavaScript. The host must obtain trust consent before mounting it. */
@@ -224,12 +268,70 @@ export function importComponentPackage(bytes: Uint8Array): ComponentModule {
   if (!files['module.json']) throw new Error('Component archive is missing module.json');
   if (files['module.json'].byteLength > EXPANDED_LIMIT)
     throw new Error('Expanded component package exceeds 20 MB');
-  return packageModuleSchema.parse(JSON.parse(strFromU8(files['module.json']))) as ComponentModule;
+  const raw = JSON.parse(strFromU8(files['module.json']));
+  if (raw && Object.hasOwn(raw, 'schemaVersion')) {
+    const envelope = z
+      .object({
+        schemaVersion: z.literal(2),
+        module: packageModuleSchema,
+        resources: packageResourcesSchema.optional(),
+      })
+      .strict()
+      .parse(raw);
+    return {
+      ...envelope.module,
+      ...(envelope.resources ? { embeddedResourceScope: envelope.resources as ResourceScope } : {}),
+    } as ComponentModule;
+  }
+  return packageModuleSchema.parse(raw) as ComponentModule;
 }
 
-export function exportComponentPackage(module: ComponentModule): Uint8Array {
-  const parsed = packageModuleSchema.parse(module);
-  const json = strToU8(JSON.stringify(parsed, null, 2));
+export function exportComponentPackage(module: ComponentModule, project?: Project): Uint8Array {
+  const { packageIdentity, resourceScopeId, embeddedResourceScope, ...portable } = module;
+  const parsed = packageModuleSchema.parse({ ...portable, ...packageIdentity });
+  const resources =
+    project?.resourceScopes?.find((scope) => scope.id === resourceScopeId) ??
+    embeddedResourceScope ??
+    (project
+      ? {
+          id: `package_${module.id}`,
+          theme: project.theme,
+          translations: project.translations ?? {},
+          locale: project.locale,
+          assets: project.assets,
+        }
+      : undefined);
+  const scopeAssets = Object.entries(resources?.assetAliases ?? {}).flatMap(([id, target]) => {
+    const asset =
+      project?.assets.find((asset) => asset.id === target) ??
+      resources?.assets?.find((asset) => asset.id === target);
+    return asset ? [{ ...asset, id }] : [];
+  });
+  const portableAssets = new Map<string, Project['assets'][number]>();
+  for (const asset of [...(resources?.assets ?? []), ...scopeAssets, ...(project?.assets ?? [])])
+    if (!portableAssets.has(asset.id)) portableAssets.set(asset.id, asset);
+  const portableResources = resources
+    ? {
+        ...resources,
+        localeVariableId: undefined,
+        assetAliases: undefined,
+        assets: [...portableAssets.values()],
+      }
+    : undefined;
+  const modern = Boolean(packageIdentity || parsed.propertyDefinitions || resources);
+  const json = strToU8(
+    JSON.stringify(
+      modern
+        ? {
+            schemaVersion: 2,
+            module: parsed,
+            ...(portableResources ? { resources: portableResources } : {}),
+          }
+        : parsed,
+      null,
+      2,
+    ),
+  );
   if (json.byteLength > EXPANDED_LIMIT) throw new Error('Expanded component package exceeds 20 MB');
   const bytes = zipSync({ 'module.json': json }, { level: 6 });
   if (bytes.byteLength > COMPONENT_PACKAGE_LIMIT)

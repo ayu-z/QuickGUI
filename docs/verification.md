@@ -2,6 +2,23 @@
 
 执行环境：2026-10-18，macOS ARM64，Node 26、Rust 1.98、Apple Clang 21、CMake 4。
 
+## v3 编辑与属性升级验证（2026-10-18）
+
+- `npm run check`：TypeScript 与 195 项测试通过，覆盖迁移往返、版本拒绝、元数据/CODE 校验、事务多选、JSON 原子路径、跨工程依赖/复用、资源优先级、组件实际 esbuild 重建及失败时工程不变。
+- `npm run build`：通过；保留已有 Monaco 大包及 bridge 动态/静态混合导入提示。
+- `npm run test:e2e`：36 项 Chromium 浏览器测试通过，无跳过。包含滚轮锚点、平移/缩放/多选撤销、右键菜单及快捷键、升级取消/确认/撤销、同工程与跨工程粘贴、信任与依赖复用、属性及 JSON 输入、ID/名称和 `value`/`/value` 双窗口路径回写。
+- 目视核验新版属性面板、粘贴审阅及共享 JSON 预览；1440×1000 与 1100×760 的画布边缘菜单完整可见，键盘首尾导航和取消正常。中文粘贴摘要、焦点循环及恢复有回归覆盖。
+- `cargo test --workspace`：65 项常规测试通过；其中 41 项引擎、20 项宿主及 4 项 runner。默认忽略的测试另列，不计入常规通过数。
+- `npm run test:c`：14 项真实 C 测试通过。重新构建 `sdk/tests/aliases.c` 的 macOS ARM64 AOT runner，再执行 `jit_and_aot_share_alias_and_atomic_write_contract`，同源 JIT/AOT 别名、读己之写、原子提交合同通过；ABI 保持 2。
+- 集成检查发现并修复名称绑定读写不一致、属性路径与变量路径混用、动态语言回退、升级只改标记导致旧表格/选项语义变化、运行时接受新变量前允许编辑、内嵌图片被别名覆盖等问题。新增 Rust 导出测试的借用编译错误已修复；调整测试中的路径/副本名称预期后，最终检查全部通过。
+- Prettier、`cargo fmt --all -- --check`、`git diff --check` 通过。截图、导出工程、原生资源暂存与测试日志均为忽略生成物。
+- 最终 `npx tauri build --debug --bundles app` 通过，更新 `target/debug/bundle/macos/QuickGUI.app`（67.12 MiB）；最终包已包含剪贴板资源优先级修复。原生 C 资源重新准备，暂存 worker 能力报告为 ABI 2、compileCheck/variableAliases 可用，libtcc 从资源目录加载。
+- 导出新的 v3 多窗口/JSON/曲线/表格/React/C 别名独立工程，`npm ci` 与 `npm run build` 通过；沿用现有安装脚本策略。修改导出 TSX 后，使用导出工具的 `--project/--module` 实际重建并回填 `project.json`，保留本地 ID、原包身份与资源，生成新的运行 bundle。
+- 独立源码目录的 `cargo check --workspace` 通过。生产静态站点完成 8 项实际浏览器检查：双窗口 JSON/React 共享值、表格叶子写入及排序、曲线有限坐标采样、重建组件标记和本地交互、子窗口关闭/流程重开；无页面异常，也未请求设计器开发服务器。
+- 最终应用包内 worker 与暂存 worker SHA-256 一致；从工作区外目录执行包内 worker，self-test 返回 output=21、state.runs=1，并加载包内 libtcc。同一份 aliases.c 在包内 JIT 与独立 AOT 执行均返回 output=21、state.runs=4、writes.native-count=21。未打独立应用安装包，未验收分发签名。
+
+本轮浏览器测试未覆盖操作系统剪贴板成功读写或跨进程传递；原生命令具备窗口权限与大小限制，但不能据此声称系统剪贴板实机验收。原生窗口自动点击、Windows/Intel Mac 实机、签名公证、真实设备及长时间性能验收仍遵循下述边界。
+
 ## 已执行
 
 - TypeScript 类型检查与生产前端构建。

@@ -32,6 +32,9 @@ import {
 import type { Flow, FlowNode, Json, Locale, NodeKind, Project } from '../core/types';
 import { Field, NumberInput, Toggle } from './Fields';
 import { listProjectWindows } from '../core/windows';
+import { JsonValueField } from '../panels/JsonValueField';
+import { assertJsonPath } from '../core/jsonValue';
+import type { JsonPath } from '../core/types';
 import '@xyflow/react/dist/style.css';
 import './designer.css';
 
@@ -128,8 +131,15 @@ export interface FlowEditorProps {
   onChange: (flows: Flow[]) => void;
   activeNodes?: string[];
   locale: Locale;
+  onRequestUpgrade?: (apply: () => void) => void;
 }
-export function FlowEditor({ project, onChange, activeNodes = [], locale }: FlowEditorProps) {
+export function FlowEditor({
+  project,
+  onChange,
+  activeNodes = [],
+  locale,
+  onRequestUpgrade,
+}: FlowEditorProps) {
   const [selectedFlowId, setSelectedFlowId] = useState(project.flows[0]?.id ?? '');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
@@ -601,6 +611,30 @@ export function FlowEditor({ project, onChange, activeNodes = [], locale }: Flow
                       />
                     </Field>
                   </>
+                )}
+                {(selectedNode.kind === 'read' || selectedNode.kind === 'write') && (
+                  <Field
+                    label={zh ? 'JSON 字段路径' : 'JSON field path'}
+                    hint={
+                      zh
+                        ? '例如 ["data",0,"value"]；[] 表示整个变量，仅访问已有字段。'
+                        : 'For example ["data",0,"value"]. [] addresses the whole value; only existing fields are accessed.'
+                    }
+                  >
+                    <JsonValueField
+                      key={selectedNode.id}
+                      label={zh ? 'JSON 字段路径' : 'JSON field path'}
+                      value={selectedNode.config.path ?? []}
+                      onCommit={(value) => {
+                        if (!Array.isArray(value))
+                          throw new Error(zh ? '路径必须是数组' : 'Path must be an array');
+                        assertJsonPath(value as JsonPath);
+                        const apply = () => updateConfig('path', value);
+                        if (project.schemaVersion < 3) onRequestUpgrade?.(apply);
+                        else apply();
+                      }}
+                    />
+                  </Field>
                 )}
                 {selectedNode.kind === 'condition' && (
                   <>

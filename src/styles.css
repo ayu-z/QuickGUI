@@ -1689,3 +1689,67 @@ a {
   flex: 1;
   min-height: 0;
 }
+.qg-tree-row {
+  display: flex;
+  align-items: center;
+  min-height: 29px;
+  padding-right: 5px;
+  gap: 2px;
+  position: relative;
+}
+.qg-tree-row.selected {
+  background: var(--accent-bg);
+}
+.qg-tree-row.editor-hidden .layer-row {
+  opacity: 0.45;
+}
+.qg-tree-row .layer-row {
+  padding: 5px 3px;
+  flex: 1;
+  min-width: 0;
+  gap: 6px;
+  font-size: 10px;
+  background: transparent;
+}
+.qg-tree-row .layer-row > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.qg-tree-row .layer-row.selected:before {
+  display: none;
+}
+.qg-tree-row .layer-row svg {
+  flex: none;
+}
+.qg-tree-toggle,
+.qg-tree-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 23px;
+  flex: none;
+  padding: 0;
+  color: var(--muted);
+  border-radius: 3px;
+}
+.qg-tree-toggle.empty {
+  visibility: hidden;
+}
+.qg-tree-action {
+  opacity: 0;
+}
+.qg-tree-row:hover .qg-tree-action,
+.qg-tree-row:focus-within .qg-tree-action,
+.qg-tree-action.on {
+  opacity: 1;
+}
+.qg-tree-action.on {
+  color: var(--accent);
+}
+.qg-tree-action:hover,
+.qg-tree-toggle:hover {
+  background: var(--surface-hover);
+}

@@ -6,7 +6,7 @@ include!(concat!(env!("OUT_DIR"), "/export_sources.rs"));
 pub fn export(project: &Value, output: &Path) -> Result<(), String> {
     if !matches!(
         project.get("schemaVersion").and_then(Value::as_u64),
-        Some(1 | 2)
+        Some(1 | 2 | 3)
     ) {
         return Err("Unsupported project schema".into());
     }
@@ -147,6 +147,36 @@ pub fn export(project: &Value, output: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn exports_v3_json_paths_and_scopes_without_downgrading() {
+        let project = json!({
+            "schemaVersion":3, "window":{"title":"V3","width":960,"height":640},
+            "windows":[{"id":"detail","widgets":[]}],
+            "publish":{"appName":"V3","identifier":"dev.example.v3","version":"1.0.0"},
+            "variables":[{"id":"data","type":"json","initial":{"samples":[1,null]}}],
+            "widgets":[{"id":"value","definitionVersion":2,"bindings":{"value":{"variable":"data","path":["samples",0],"mode":"twoWay"}}}],
+            "resourceScopes":[{"id":"source","locale":"en"}],
+            "scripts":[{"id":"aliased","variableAliases":{"original":"local"},"source":"void qg_process(void) {}"}]
+        });
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let directory =
+            std::env::temp_dir().join(format!("quickgui-v3-{}-{nonce}", std::process::id()));
+        export(&project, &directory).unwrap();
+        let actual: Value =
+            serde_json::from_slice(&fs::read(directory.join("project.json")).unwrap()).unwrap();
+        assert_eq!(actual, project);
+        assert!(directory.join("src/core/propertySchema.ts").is_file());
+        fs::remove_dir_all(&directory).unwrap();
+        let mut future = project;
+        future["schemaVersion"] = json!(4);
+        assert!(export(&future, &directory)
+            .unwrap_err()
+            .contains("Unsupported"));
+        assert!(!directory.exists());
+    }
     #[test]
     fn exports_full_json_and_standalone_native_entry_without_overwriting_existing_work() {
         let project = json!({"schemaVersion":1,"name":"</script><script>unexpected()</script>","window":{"title":"Quoted \" title","width":960,"height":640},"publish":{"appName":"Pump Station","identifier":"dev.example.pump","version":"1.2.3","publisher":""},"scripts":[{"id":"../../outside","source":"void qg_process(void) {}"}],"assets":[{"id":"asset","data":"data:text/plain;base64,dGVzdA=="}]});

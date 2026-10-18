@@ -1,5 +1,86 @@
 # 变动日志
 
+## 2026-10-18 — v3 画布操作、详细属性与跨工程组件
+
+### 目的与行为
+
+- 完成画布直接滚轮锚点缩放（10%–800%）、空格/中键平移、按窗口/模块记忆视图、框选/Shift 多选、批量移动、八向缩放及 Shift 比例约束；右键菜单、快捷键、对齐分布、图层顺序与树状锁定/隐藏共用命令。每次手势或批量操作是一条撤销历史，编辑状态不改变运行可见性。
+- 14 类控件统一属性元数据，支持搜索、分组、草稿提交/取消、重置与取消覆盖、状态样式、绑定模式/类型约束。UI/CODE 编辑同一控件；详细输入、选项、图片、容器、仪表、多曲线图表和动态表格语义由设计态/预览/独立运行共用。
+- 新工程为 schema v3；旧 v1/v2 保持原格式，明确使用新能力才升级工作副本，旧控件仍保留 definitionVersion 1。单独升级控件时转换趋势曲线、旧表头、选择值与输入提交语义，保留未知扩展，无法表示的冲突拒绝并回滚。
+- 跨工程复制依赖闭包并审阅，默认新建 ID、关闭导入流程与窗口自动启动，复用及 C/React 信任须明确选择；同打开会话复制保留引用与旧格式。源主题/语言/资源与目标主题可选择，C 别名和 React 原包身份保留源码不改写。移除连接凭据，系统剪贴板失败明确降级为本进程内存。
+- JSON 初值/运行值与流程读写支持类型化路径，叶子写入不丢兄弟数据；运行值等待修订接受后编辑，编译失败不会把旧 C 执行冒充新脚本测试。名称/ID 与 value/JSON Pointer 目标按统一规则处理；引用检查覆盖历史曲线、C 别名及语言变量。
+- 组件包 v2 携带属性描述、主题、翻译与图片；内嵌图片优先且同 ID 去重。组件构建复用校验定义；独立源码通过 --project/--module 按本地 ID 原子回填运行 bundle，保留原包身份及资源。原生/CLI 导出支持完整 v3。
+- 更新操作、兼容性、架构、独立源码重建与验证文档；无新增本组依赖（剪贴板 Rust 依赖已在前一基础提交记录），无源文件删除或重命名。用户原有 QuickGUI_Icons/ 不属于本次改动。
+
+### 源文件操作
+
+- 修改 `README.md`
+- 修改 `docs/architecture.md`
+- 修改 `docs/project-compatibility.md`
+- 修改 `docs/verification.md`
+- 修改 `scripts/build-component.mjs`
+- 修改 `scripts/export-project.mjs`
+- 修改 `src-tauri/src/source_export.rs`
+- 修改 `src/App.tsx`
+- 新增 `src/core/clipboard.ts`
+- 修改 `src/core/componentPackage.ts`
+- 新增 `src/core/migration.ts`
+- 修改 `src/core/project.ts`
+- 新增 `src/core/propertySchema.ts`
+- 新增 `src/core/references.ts`
+- 修改 `src/core/store.ts`
+- 修改 `src/core/validation.ts`
+- 修改 `src/core/widgetDefinitions.ts`
+- 修改 `src/core/windows.ts`
+- 修改 `src/designer/CanvasEditor.tsx`
+- 新增 `src/designer/ContextMenu.tsx`
+- 修改 `src/designer/Fields.tsx`
+- 修改 `src/designer/FlowEditor.tsx`
+- 修改 `src/designer/Inspector.tsx`
+- 新增 `src/designer/LayerTree.tsx`
+- 新增 `src/designer/LegacyInspector.tsx`
+- 新增 `src/designer/commands.ts`
+- 修改 `src/designer/designer.css`
+- 新增 `src/designer/propertyInspector.css`
+- 新增 `src/panels/JsonValueField.tsx`
+- 新增 `src/panels/PasteReviewDialog.tsx`
+- 新增 `src/panels/pasteReview.css`
+- 修改 `src/runtime/CustomComponent.tsx`
+- 新增 `src/runtime/DataWidgets.tsx`
+- 修改 `src/runtime/RuntimeWindows.tsx`
+- 修改 `src/runtime/WidgetRenderer.tsx`
+- 修改 `src/runtime/controller.ts`
+- 修改 `src/runtime/engine.ts`
+- 修改 `src/runtime/runtime.css`
+- 修改 `src/styles.css`
+- 修改 `templates/runtime/README.md`
+- 新增 `tests/clipboard.test.ts`
+- 修改 `tests/component-package.test.ts`
+- 新增 `tests/component-rebuild.test.ts`
+- 新增 `tests/e2e/canvas-interactions.spec.ts`
+- 新增 `tests/e2e/v3-integration.spec.ts`
+- 新增 `tests/e2e/widget-properties.spec.ts`
+- 新增 `tests/editor-commands.test.ts`
+- 新增 `tests/editor-transactions.test.ts`
+- 修改 `tests/native-controller.test.ts`
+- 修改 `tests/project-compatibility.test.ts`
+- 新增 `tests/project-v3.test.ts`
+- 修改 `tests/project-windows.test.ts`
+- 修改 `tests/runtime-v3.test.ts`
+- 新增 `tests/widget-definitions.test.ts`
+- 新增 `tests/widget-migration.test.ts`
+- 修改 `CHANGELOG.md` 记录本组变动，不递归记录日志自身。
+
+### 验证与限制
+
+- npm run check：TypeScript 与 195 项单元/构建测试通过；npm run build 通过，保留已有 Monaco 大包及桥接混合导入提示。
+- npm run test:e2e：36 项 Chromium 交互通过，无跳过；额外迁移/绑定/语言定向测试已纳入上述单测。实际目视检查属性、粘贴和双窗口 JSON 界面，以及 1440×1000/1100×760 右键菜单。
+- cargo test --workspace：65 项常规测试通过；npm run test:c：14 项真实 C 测试通过；同源 aliases.c 重新构建 AOT 后，JIT/AOT 别名与原子写入合同通过。
+- 最终 npx tauri build --debug --bundles app 通过，生成 target/debug/bundle/macos/QuickGUI.app（67.12 MiB），包含最后的资源优先级修复；重新准备的 C worker 宣告 ABI 2、compileCheck 与 variableAliases 能力。独立 v3 多窗口/JSON/图表/表格/React/C 别名工程已实际导出，npm ci 与生产构建通过；导出 TSX 修改后按本地模块 ID 重建和原子回填成功。
+- 独立目录 cargo check --workspace 通过；独立生产构建的 8 项浏览器检查验证双窗口 JSON/React 同步、表格路径写入/排序、图表采样和窗口流程重开，无页面异常或设计器开发服务器依赖。包内 worker 从工作区外目录 self-test 成功；同源 C 在包内 JIT 和独立 AOT 的 output/state/writes 一致。构建生成的 icon.icns 已恢复原版本，本轮未打独立应用安装包或验证分发签名。
+- 集成中发现的属性路径、语言回退、旧控件迁移、名称绑定、运行值提交时序与内嵌资产覆盖问题已修复并增加回归；新增 Rust 测试借用错误及测试预期差异已修正，复跑通过。
+- Prettier、cargo fmt 与 Git 差异检查通过。系统剪贴板成功路径/跨进程、原生系统窗口自动点击、Windows/Intel Mac、签名公证、物理设备及耐久/性能验收未执行；不以浏览器、回环或开发态测试替代这些验证。生成物按忽略规则处理。
+
 ## 2026-10-18 — v3 运行数据与脚本映射基础
 
 - 为后续编辑器升级建立 v3 类型、控件属性描述和运行数据接口；JSON 变量支持 1 MiB/32 层限制、原子现有路径写入、根路径兼容和持久化。v3 运算与条件语义在浏览器/Rust 间统一，旧版本保留原路径。

@@ -13,6 +13,223 @@
   --qg-muted: #969eaf;
   --qg-surface: #20232c;
 }
+.qg-modern {
+  border-style: solid;
+  border-width: 0;
+}
+.qg-binding-error {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 3px 5px;
+  background: #512020;
+  color: #ffcccc;
+  font-size: 10px;
+  overflow: auto;
+  max-height: 45%;
+}
+.qg-modern button,
+.qg-modern input,
+.qg-modern select,
+.qg-modern textarea {
+  font: inherit;
+  color: inherit;
+}
+.qg-modern-button,
+.qg-modern-input {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: inherit;
+  color: inherit;
+  background: transparent;
+  text-align: inherit;
+  outline-offset: -2px;
+  padding: 0;
+}
+.qg-modern-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.qg-modern-input {
+  min-width: 0;
+  resize: none;
+}
+.qg-modern-number {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  gap: 6px;
+}
+.qg-modern-number > span {
+  flex-shrink: 0;
+}
+.qg-modern-text small {
+  font-size: 0.65em;
+}
+.qg-modern-switch {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  gap: 10px;
+  cursor: pointer;
+}
+.qg-modern-switch > span:first-child {
+  flex: 1;
+}
+.qg-modern-switch input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.qg-modern-switch input:focus-visible + .qg-switch-track {
+  outline: 2px solid var(--qg-primary);
+  outline-offset: 3px;
+}
+.qg-modern-slider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 100%;
+}
+.qg-modern-slider input {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  padding: 0;
+}
+.qg-modern-slider output {
+  white-space: nowrap;
+}
+.qg-modern-slider.vertical {
+  flex-direction: column;
+}
+.qg-modern-slider.vertical input {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: auto;
+  height: 100%;
+}
+.qg-modern-progress {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  overflow: hidden;
+}
+.qg-modern-progress.vertical {
+  display: flex;
+  align-items: flex-end;
+}
+.qg-modern-progress > span {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.qg-modern-gauge {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.qg-data-chart,
+.qg-data-table {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+.qg-data-chart > svg {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+}
+.qg-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 0.85em;
+  padding: 4px;
+}
+.qg-chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.qg-chart-legend i {
+  width: 14px;
+  height: 3px;
+  display: inline-block;
+}
+.qg-data-message {
+  padding: 12px;
+  font-size: 0.9em;
+  overflow: auto;
+}
+.qg-chart-history-status,
+.qg-table-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-shrink: 0;
+  font-size: 0.8em;
+  padding: 4px;
+}
+.qg-chart-history-status button,
+.qg-table-pagination button {
+  background: transparent;
+  border: 1px solid var(--qg-border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.qg-data-table .qg-table-scroll {
+  flex: 1;
+  min-height: 0;
+}
+.qg-data-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font: inherit;
+}
+.qg-data-table th,
+.qg-data-table td {
+  border-bottom: 1px solid var(--qg-border);
+  padding: 6px 10px;
+}
+.qg-data-table th {
+  position: sticky;
+  top: 0;
+  background: var(--qg-surface);
+  z-index: 1;
+}
+.qg-data-table th button {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  width: 100%;
+  text-align: inherit;
+  cursor: pointer;
+}
+.qg-data-table.striped tbody tr:nth-child(even) {
+  background: color-mix(in srgb, currentColor 5%, transparent);
+}
+.qg-data-table tbody tr:focus-visible {
+  outline: 2px solid var(--qg-primary);
+  outline-offset: -2px;
+}
+.qg-data-table tbody tr:hover {
+  background: color-mix(in srgb, var(--qg-primary) 12%, transparent);
+}
 .qg-widget {
   width: 100%;
   height: 100%;

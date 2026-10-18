@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import type { Json, Project, Widget } from './types';
 import { reactImplementationSchema } from './componentPackage';
+import { assertJsonPath, assertJsonValue, validateJsonPath } from './jsonValue';
+import { validatePropertyPatch } from './widgetDefinitions';
+import { propertyDefinitionSchema } from './propertySchema';
 import {
   listProjectWindows,
   MAIN_WINDOW_ID,
@@ -34,32 +37,69 @@ const styleKeys = new Set([
   'justifyContent',
   'gap',
 ]);
-export const widgetCodeSchema = z
-  .object({ props: z.record(json), style, states: z.record(style) })
-  .strict()
-  .superRefine((value, ctx) => {
-    for (const [group, values] of Object.entries({
-      style: value.style,
-      ...Object.fromEntries(Object.entries(value.states).map(([key, v]) => [`states.${key}`, v])),
-    })) {
-      for (const [key, val] of Object.entries(values)) {
-        if (!styleKeys.has(key))
-          ctx.addIssue({
-            code: 'custom',
-            message: `Unsupported style property: ${key}`,
-            path: [group, key],
-          });
-        if (typeof val === 'string' && /url\s*\(|expression\s*\(|@import|javascript:/i.test(val))
-          ctx.addIssue({
-            code: 'custom',
-            message: 'External CSS resources are not allowed in inline styles',
-            path: [group, key],
-          });
+const modernStyleKeys = new Set([
+  ...styleKeys,
+  'fontStyle',
+  'textDecoration',
+  'whiteSpace',
+  'wordBreak',
+  'textOverflow',
+  'overflow',
+  'paddingTop',
+  'paddingRight',
+  'paddingBottom',
+  'paddingLeft',
+  'borderTopLeftRadius',
+  'borderTopRightRadius',
+  'borderBottomLeftRadius',
+  'borderBottomRightRadius',
+  'verticalAlign',
+  'flexWrap',
+  'rowGap',
+  'columnGap',
+]);
+function codeSchema(keys: Set<string>) {
+  return z
+    .object({ props: z.record(json), style, states: z.record(style) })
+    .strict()
+    .superRefine((value, ctx) => {
+      for (const [group, values] of Object.entries({
+        style: value.style,
+        ...Object.fromEntries(Object.entries(value.states).map(([key, v]) => [`states.${key}`, v])),
+      })) {
+        for (const [key, val] of Object.entries(values)) {
+          if (!keys.has(key))
+            ctx.addIssue({
+              code: 'custom',
+              message: `Unsupported style property: ${key}`,
+              path: [group, key],
+            });
+          if (typeof val === 'string' && /url\s*\(|expression\s*\(|@import|javascript:/i.test(val))
+            ctx.addIssue({
+              code: 'custom',
+              message: 'External CSS resources are not allowed in inline styles',
+              path: [group, key],
+            });
+        }
       }
-    }
-  });
-export function parseWidgetCode(raw: string): Pick<Widget, 'props' | 'style' | 'states'> {
-  return widgetCodeSchema.parse(JSON.parse(raw));
+    });
+}
+export const widgetCodeSchema = codeSchema(styleKeys);
+export const modernWidgetCodeSchema = codeSchema(modernStyleKeys);
+export function parseWidgetCode(
+  raw: string,
+  widget?: Widget,
+  project?: Project,
+): Pick<Widget, 'props' | 'style' | 'states'> {
+  const parsed = (
+    widget?.definitionVersion === 2 ? modernWidgetCodeSchema : widgetCodeSchema
+  ).parse(JSON.parse(raw));
+  if (widget?.definitionVersion === 2) {
+    const issues = validatePropertyPatch(widget, parsed, project);
+    if (issues.length)
+      throw new Error(issues.map((issue) => `${issue.path}: ${issue.message}`).join('\n'));
+  }
+  return parsed;
 }
 const layout = z
   .object({
@@ -288,6 +328,95 @@ const projectBaseSchema = z
   })
   .strict();
 
+const pathSchema = z
+  .array(z.union([z.string(), z.number().int().nonnegative()]))
+  .max(32)
+  .superRefine((path, ctx) => {
+    try {
+      assertJsonPath(path);
+    } catch (e) {
+      ctx.addIssue({ code: 'custom', message: String(e) });
+    }
+  });
+const modernWidget = widget
+  .extend({
+    definitionVersion: z.union([z.literal(1), z.literal(2)]).optional(),
+    editor: z
+      .object({ locked: z.boolean().optional(), hidden: z.boolean().optional() })
+      .strict()
+      .optional(),
+    resourceScopeId: z.string().min(1).optional(),
+    layout: layout
+      .extend({
+        wrap: z.boolean().optional(),
+        alignItems: z.string().optional(),
+        justifyContent: z.string().optional(),
+        rowGap: z.number().nonnegative().optional(),
+        columnGap: z.number().nonnegative().optional(),
+      })
+      .strict(),
+    bindings: z.record(
+      z
+        .object({
+          variable: z.string(),
+          mode: z.enum(['oneWay', 'twoWay', 'once']),
+          path: pathSchema.optional(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+const resourceScopeSchema = z
+  .object({
+    id: z.string().min(1),
+    theme: projectBaseSchema.shape.theme,
+    translations: z.record(z.record(z.string())),
+    locale: z.enum(['zh-CN', 'en']),
+    localeVariableId: z.string().optional(),
+    assetAliases: z.record(z.string()).optional(),
+    assets: z.array(projectBaseSchema.shape.assets.element).optional(),
+  })
+  .strict();
+const modernProject = projectBaseSchema
+  .extend({
+    schemaVersion: z.literal(3),
+    windows: z
+      .array(projectWindowSchema.extend({ widgets: z.array(modernWidget).max(10000) }).strict())
+      .max(MAX_ADDITIONAL_WINDOWS),
+    widgets: z.array(modernWidget).max(10000),
+    variables: z.array(
+      projectBaseSchema.shape.variables.element
+        .extend({ type: z.enum(['number', 'string', 'boolean', 'json']), initial: json })
+        .strict(),
+    ),
+    scripts: z.array(
+      projectBaseSchema.shape.scripts.element
+        .extend({ variableAliases: z.record(z.string().min(1)).optional() })
+        .strict(),
+    ),
+    modules: z.array(
+      projectBaseSchema.shape.modules.element
+        .extend({
+          widgets: z.array(modernWidget),
+          packageIdentity: z
+            .object({
+              id: z.string(),
+              name: z.string(),
+              version: z.string(),
+              width: z.number().positive(),
+              height: z.number().positive(),
+            })
+            .strict()
+            .optional(),
+          propertyDefinitions: z.record(propertyDefinitionSchema).optional(),
+          resourceScopeId: z.string().optional(),
+          embeddedResourceScope: resourceScopeSchema.optional(),
+        })
+        .strict(),
+    ),
+    resourceScopes: z.array(resourceScopeSchema).max(1000).optional(),
+  })
+  .strict();
 export const projectSchema = z.discriminatedUnion('schemaVersion', [
   projectBaseSchema,
   projectBaseSchema
@@ -296,6 +425,7 @@ export const projectSchema = z.discriminatedUnion('schemaVersion', [
       windows: z.array(projectWindowSchema).max(MAX_ADDITIONAL_WINDOWS),
     })
     .strict(),
+  modernProject,
 ]);
 
 export function validateProject(raw: unknown): Project {
@@ -307,11 +437,11 @@ export function validateProject(raw: unknown): Project {
   if (!input || !Object.hasOwn(input, 'schemaVersion') || input.schemaVersion === undefined) {
     throw new Error(
       english
-        ? 'The project is missing schemaVersion. This designer supports schemaVersion 1 and 2. The original file has not been modified.'
-        : '工程缺少 schemaVersion，当前设计器支持 schemaVersion 1 和 2。原文件未修改。',
+        ? 'The project is missing schemaVersion. This designer supports schemaVersion 1, 2 and 3. The original file has not been modified.'
+        : '工程缺少 schemaVersion，当前设计器支持 schemaVersion 1、2 和 3。原文件未修改。',
     );
   }
-  if (input.schemaVersion !== 1 && input.schemaVersion !== 2) {
+  if (input.schemaVersion !== 1 && input.schemaVersion !== 2 && input.schemaVersion !== 3) {
     const version =
       ['string', 'number', 'boolean'].includes(typeof input.schemaVersion) ||
       input.schemaVersion === null
@@ -319,8 +449,8 @@ export function validateProject(raw: unknown): Project {
         : '(invalid value)';
     throw new Error(
       english
-        ? `Unsupported project schemaVersion ${version}. This designer supports schemaVersion 1 and 2. Do not save over the original file. The original file has not been modified.`
-        : `不支持工程 schemaVersion ${version}，当前设计器支持 schemaVersion 1 和 2。请勿保存覆盖原件；原文件未修改。`,
+        ? `Unsupported project schemaVersion ${version}. This designer supports schemaVersion 1, 2 and 3. Do not save over the original file. The original file has not been modified.`
+        : `不支持工程 schemaVersion ${version}，当前设计器支持 schemaVersion 1、2 和 3。请勿保存覆盖原件；原文件未修改。`,
     );
   }
   let project: Project;
@@ -377,9 +507,30 @@ export function validateProject(raw: unknown): Project {
     if (new Set(list.map((item) => item.id)).size !== list.length)
       throw new Error('Duplicate object IDs');
   }
-  for (const variable of project.variables)
-    if (typeof variable.initial !== variable.type)
+  for (const variable of project.variables) {
+    if (variable.type === 'json') {
+      assertJsonValue(variable.initial);
+      if (variable.alarm) throw new Error('JSON variables cannot have numeric alarms');
+    } else if (typeof variable.initial !== variable.type)
       throw new Error(`Invalid initial type: ${variable.name}`);
+  }
+  const scopes = new Set((project.resourceScopes ?? []).map((scope) => scope.id));
+  if (scopes.size !== (project.resourceScopes?.length ?? 0))
+    throw new Error('Duplicate resource scope IDs');
+  for (const scope of project.resourceScopes ?? [])
+    if (
+      scope.localeVariableId &&
+      !project.variables.some(
+        (variable) => variable.id === scope.localeVariableId && variable.type === 'string',
+      )
+    )
+      throw new Error(`Missing locale variable: ${scope.localeVariableId}`);
+  for (const script of project.scripts)
+    for (const target of Object.values(script.variableAliases ?? {}))
+      if (
+        !project.variables.some((variable) => variable.id === target && variable.type === 'number')
+      )
+        throw new Error(`Invalid script variable alias target: ${target}`);
   if (new Set(project.variables.map((v) => v.name)).size !== project.variables.length)
     throw new Error('Duplicate variable names');
   for (const id of [
@@ -391,8 +542,22 @@ export function validateProject(raw: unknown): Project {
       throw new Error(`Missing icon asset: ${id}`);
   for (const flow of project.flows) {
     validateFlow(flow);
+    for (const node of flow.nodes) {
+      if (node.config.path === undefined) continue;
+      if (project.schemaVersion < 3) throw new Error('JSON paths require schemaVersion 3');
+      const path = node.config.path;
+      validateJsonPath(path);
+      if (['read', 'write'].includes(node.kind) && path.length > 0) {
+        const variable =
+          project.variables.find((entry) => entry.id === node.config.variable) ??
+          project.variables.find((entry) => entry.name === node.config.variable);
+        if (!variable || variable.type !== 'json')
+          throw new Error(`JSON paths require a json variable: ${node.id}`);
+      }
+    }
     for (const node of flow.nodes.filter((node) => node.kind === 'window')) {
-      if (project.schemaVersion !== 2) throw new Error('Window flow nodes require schemaVersion 2');
+      if (project.schemaVersion === 1)
+        throw new Error('Window flow nodes require schemaVersion 2 or 3');
       const { action, windowId } = node.config;
       if (typeof action !== 'string' || !['open', 'close', 'focus'].includes(action))
         throw new Error(`Invalid window action: ${node.id}`);
@@ -412,11 +577,36 @@ export function validateProject(raw: unknown): Project {
     if (ids.size !== widgets.length) throw new Error('Duplicate widget IDs within a module');
     const byId = new Map(widgets.map((widget) => [widget.id, widget]));
     for (const w of widgets) {
-      widgetCodeSchema.parse({ props: w.props, style: w.style, states: w.states });
+      (w.definitionVersion === 2 ? modernWidgetCodeSchema : widgetCodeSchema).parse({
+        props: w.props,
+        style: w.style,
+        states: w.states,
+      });
+      if (w.resourceScopeId && !scopes.has(w.resourceScopeId))
+        throw new Error(`Missing resource scope: ${w.resourceScopeId}`);
+      if (w.definitionVersion === 2) {
+        const issues = validatePropertyPatch(
+          w,
+          { props: w.props, style: w.style, states: w.states, bindings: w.bindings },
+          project,
+        );
+        if (issues.length)
+          throw new Error(
+            issues.map((issue) => `${w.id}.${issue.path}: ${issue.message}`).join('\n'),
+          );
+      }
       if (w.parentId && !ids.has(w.parentId)) throw new Error(`Missing parent: ${w.parentId}`);
-      for (const binding of Object.values(w.bindings))
+      for (const binding of Object.values(w.bindings)) {
         if (!variableIds.has(binding.variable))
           throw new Error(`Missing variable: ${binding.variable}`);
+        if (binding.path?.length) {
+          const variable =
+            project.variables.find((entry) => entry.id === binding.variable) ??
+            project.variables.find((entry) => entry.name === binding.variable);
+          if (variable?.type !== 'json')
+            throw new Error(`JSON paths require a json variable: ${w.id}`);
+        }
+      }
       for (const flowId of Object.values(w.events))
         if (!flowIds.has(flowId)) throw new Error(`Missing flow: ${flowId}`);
       if (w.type === 'module') {
@@ -440,6 +630,8 @@ export function validateProject(raw: unknown): Project {
   const indegree = new Map(project.modules.map((module) => [module.id, 0]));
   const moduleEdges = new Map<string, string[]>();
   for (const module of project.modules) {
+    if (module.resourceScopeId && !scopes.has(module.resourceScopeId))
+      throw new Error(`Missing resource scope: ${module.resourceScopeId}`);
     checkWidgets(module.widgets);
     const ids = new Set(module.widgets.map((widget) => widget.id));
     for (const property of Object.values(module.exposedProps)) {

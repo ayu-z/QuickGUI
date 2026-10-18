@@ -182,6 +182,8 @@ describe('v3 runtime contract', () => {
         logs: [],
       };
     });
+    await expect(e.runScript('s', 0, p.revision + 1)).rejects.toThrow(/revision was not accepted/);
+    expect(requests).toHaveLength(0);
     await expect(e.runScript('s', 0)).rejects.toThrow(/Invalid C write/);
     expect(e.getSnapshot().values.n.value).toBe(1);
     expect(requests[0].variables.data).toBeUndefined();

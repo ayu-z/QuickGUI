@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 
 export function Field({
@@ -45,6 +45,9 @@ export function NumberInput({
   max,
   step = 1,
   label,
+  commitOnBlur = false,
+  integer = false,
+  mixed = false,
 }: {
   value: number;
   onChange: (value: number) => void;
@@ -52,9 +55,13 @@ export function NumberInput({
   max?: number;
   step?: number;
   label?: string;
+  commitOnBlur?: boolean;
+  integer?: boolean;
+  mixed?: boolean;
 }) {
-  const [draft, setDraft] = useState(String(value));
-  useEffect(() => setDraft(String(value)), [value]);
+  const [draft, setDraft] = useState(mixed ? '' : String(value));
+  const cancelled = useRef(false);
+  useEffect(() => setDraft(mixed ? '' : String(value)), [value, mixed]);
   return (
     <input
       type="number"
@@ -63,25 +70,44 @@ export function NumberInput({
       min={min}
       max={max}
       step={step}
+      placeholder={mixed ? '—' : undefined}
       onChange={(event) => {
         const text = event.target.value;
         setDraft(text);
         if (!text.trim()) return;
         const number = Number(text);
-        if (Number.isFinite(number) && number >= (min ?? -Infinity) && number <= (max ?? Infinity))
+        if (
+          !commitOnBlur &&
+          Number.isFinite(number) &&
+          (!integer || Number.isInteger(number)) &&
+          number >= (min ?? -Infinity) &&
+          number <= (max ?? Infinity)
+        )
           onChange(number);
       }}
       onBlur={() => {
+        if (cancelled.current) {
+          cancelled.current = false;
+          return;
+        }
         const number = Number(draft);
         if (!draft.trim() || !Number.isFinite(number)) {
           setDraft(String(value));
           return;
         }
-        const clamped = Math.max(min ?? -Infinity, Math.min(max ?? Infinity, number));
+        const clamped = Math.max(
+          min ?? -Infinity,
+          Math.min(max ?? Infinity, integer ? Math.round(number) : number),
+        );
         setDraft(String(clamped));
         if (clamped !== value) onChange(clamped);
       }}
       onKeyDown={(event) => {
+        if (event.key === 'Escape' && commitOnBlur) {
+          cancelled.current = true;
+          setDraft(mixed ? '' : String(value));
+          event.currentTarget.blur();
+        }
         if (event.key === 'Enter') event.currentTarget.blur();
       }}
     />

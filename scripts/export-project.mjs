@@ -50,18 +50,18 @@ export function decodeProject(bytes) {
 
 function checkWindowFormat(project) {
   if (
-    ![1, 2].includes(project?.schemaVersion) ||
+    ![1, 2, 3].includes(project?.schemaVersion) ||
     !project.publish ||
     !project.window ||
     !Array.isArray(project.widgets)
   )
     throw new Error(
-      'Invalid project: expected schemaVersion 1 or 2, window, widgets and publish settings',
+      'Invalid project: expected schemaVersion 1, 2 or 3, window, widgets and publish settings',
     );
   if (project.schemaVersion === 1 && Object.hasOwn(project, 'windows'))
     throw new Error('schemaVersion 1 cannot contain windows; use schemaVersion 2');
   if (
-    project.schemaVersion === 2 &&
+    project.schemaVersion >= 2 &&
     (!Array.isArray(project.windows) || project.windows.length > 31)
   )
     throw new Error(
@@ -174,7 +174,7 @@ function checkWindowFormat(project) {
   for (const flow of project.flows ?? [])
     for (const node of flow.nodes ?? []) {
       if (node.kind !== 'window') continue;
-      if (project.schemaVersion !== 2) throw new Error('Window flow nodes require schemaVersion 2');
+      if (project.schemaVersion === 1) throw new Error('Window flow nodes require schemaVersion 2');
       const { action, windowId } = node.config ?? {};
       if (!['open', 'close', 'focus'].includes(action) || !ids.has(windowId))
         throw new Error(`Invalid window action or target: ${node.id}`);

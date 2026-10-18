@@ -1,10 +1,13 @@
 import type { Project, Widget, WidgetType } from './types';
+import { createWidgetDefaults } from './widgetDefinitions';
 
 export const uid = (prefix = 'id') => `${prefix}_${crypto.randomUUID().slice(0, 8)}`;
 export function createEmptyProject(name = '未命名工程'): Project {
   const project = createProject();
   return {
     ...project,
+    schemaVersion: 3,
+    windows: [],
     name,
     window: { ...project.window, title: name },
     publish: { ...project.publish, appName: 'QuickGUI App' },
@@ -62,7 +65,12 @@ export const widgetNames: Record<WidgetType, [string, string]> = {
   table: ['数据表', 'Table'],
   module: ['组件模块', 'Module'],
 };
-export function createWidget(type: WidgetType, x = 32, y = 32): Widget {
+export function createWidget(
+  type: WidgetType,
+  x = 32,
+  y = 32,
+  definitionVersion: 1 | 2 = 1,
+): Widget {
   const sizes: Partial<Record<WidgetType, [number, number]>> = {
     panel: [300, 180],
     text: [220, 32],
@@ -121,6 +129,7 @@ export function createWidget(type: WidgetType, x = 32, y = 32): Widget {
     states: {},
     bindings: {},
     events: {},
+    ...(definitionVersion === 2 ? { ...createWidgetDefaults(type, 2), definitionVersion } : {}),
   };
 }
 

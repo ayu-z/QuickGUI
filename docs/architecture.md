@@ -8,7 +8,7 @@
 
 ## 单一工程模型
 
-`Project` 是唯一源模型，支持单窗口 schemaVersion=1 和多窗口 schemaVersion=2，所有可引用对象具有稳定 ID。序列化的公开类型在 `src/core/types.ts`；输入校验在 `src/core/validation.ts`。两种格式保留 `window/widgets` 作为固定主窗口，v2 的 `windows` 数组保存附加窗口的名称、配置、控件与启动开关。所有窗口共享工程级变量、流程和资源；只在渲染层投影当前窗口，运行与保存始终接收完整工程。
+`Project` 是唯一源模型，支持 schemaVersion=1/2/3，所有可引用对象具有稳定 ID。序列化的公开类型在 `src/core/types.ts`；输入校验在 `src/core/validation.ts`。三个版本保留 `window/widgets` 作为固定主窗口，v2/v3 的 `windows` 数组保存附加窗口。v3 新增 JSON、版本化控件属性与资源作用域。所有窗口共享工程级变量、流程和资源；只在渲染层投影当前窗口，运行与保存始终接收完整工程。
 
 局部 CODE 仅接受 `props/style/states`，不能重写对象 ID、类型或树。无效草稿按控件 ID 保留，不进入预览版本。画布、表单和合法 CODE 更新通过同一个事务历史支持撤销/重做。缓存、构建目录和运行记录不作为工程源文件。
 
@@ -20,33 +20,41 @@
 
 变量快照以稳定 ID 为键，含值、质量和毫秒时间戳。变量名称可更改；宿主数据 API 允许使用 ID 或名称。双向输入先提交写入请求并执行类型检查。`once` 绑定捕获实例首次有效值。
 
+`widgetDefinitions.ts` 定义 14 类控件的属性、初值、运行回退、编辑器、约束、绑定及事件；Inspector、CODE 校验与新版渲染器共用。`definitionVersion: 1` 保留旧语义，2 开启新版容器继承、输入提交、曲线与表格等行为。变量路径使用类型化数组，属性目标使用 JSON Pointer；二者不可混用。运行中的 JSON 路径写入以当前快照为基准原子替换，避免多窗口覆盖兄弟字段。
+
+编辑器以窗口/模块作用域保存多选、主选、草稿和视图；拖拽事务将多次鼠标移动收敛为一条历史。锁定与隐藏存于 `editor`，运行器忽略。剪贴板审阅固定 ID 映射并校验目标指纹，模型变化后必须重新准备；依赖复用、源主题及代码信任均显式选择，提交为单一事务。
+
 ## 流程语义
 
 图是 DAG。事件是入口，边按端口路由；条件分支只发送对应 `true` / `false` 输出。普通多输入节点逐条处理消息，不把多个输入静默丢弃为最后一条。执行有取消令牌、激活上限与有界诊断。
 
 节点配置：
 
-| 节点       | 配置                                             |
-| ---------- | ------------------------------------------------ |
-| event      | trigger=manual/startup/interval，intervalMs      |
-| read/write | variable；write 可选 value，否则透传输入         |
-| math       | operation=add/subtract/multiply/divide，operand  |
-| condition  | operator=gt/gte/lt/lte/eq/neq，value             |
-| delay      | ms                                               |
-| log        | message                                          |
-| script     | scriptId                                         |
-| http       | url、method、body                                |
-| connection | connectionId                                     |
-| emit       | event                                            |
-| window     | action=open/close/focus，windowId；不能关闭 main |
+| 节点       | 配置                                                     |
+| ---------- | -------------------------------------------------------- |
+| event      | trigger=manual/startup/interval，intervalMs              |
+| read/write | variable、可选 JSON path；write 可选 value，否则透传输入 |
+| math       | operation=add/subtract/multiply/divide，operand          |
+| condition  | operator=gt/gte/lt/lte/eq/neq，value                     |
+| delay      | ms                                                       |
+| log        | message                                                  |
+| script     | scriptId                                                 |
+| http       | url、method、body                                        |
+| connection | connectionId                                             |
+| emit       | event                                                    |
+| window     | action=open/close/focus，windowId；不能关闭 main         |
 
 定时器由原生会话管理；热更新取消旧调度，忙时跳过采样 tick，防止积压。显式命令不会通过丢弃策略伪装成功。事件节点按 ID 触发，定时源不会顺带触发同图其他事件入口。
+
+v3 math 拒绝非数值隐式转换；eq/neq 使用 JSON 结构比较，条件分支保留原始输入；write 向后传递实际写入值。v1/v2 保留旧转换规则。直接 C 测试通过运行控制器执行，要求当前修订已接受；编译失败不能继续执行旧脚本并误报为新脚本结果。
 
 ## C ABI 与工作进程
 
 C ABI v2 支持 JSON、字符串和数字输入/输出；变量写集与模块状态目前为数字字典，日志使用 UTF-8。头文件定义在 SDK 中。跨进程只交换序列化请求/响应，不传指针、回调地址或文件句柄。未注册变量、只读写入、非有限数值均失败。
 
 工作进程有时间和输出限制，崩溃不会带崩设计器或引擎。每次调用使用可回收进程，逻辑状态由宿主序列化保留。C 写集验证通过后再提交，失败不应用部分变量写入。
+
+`variableAliases` 在宿主请求中声明源代码变量名到本地数字变量 ID 的封闭映射；多个别名共用同一待写槽，保证同次执行读己之写。worker 通过能力协商声明支持，ABI 2 和 C 源码不变，JIT/AOT 共用协议。
 
 开发加载固定提交 TinyCC，发布将同份 C 源码以 CMake/系统编译器构建并链接同一 Rust runner。AOT 清单以源码哈希定位产物，拒绝不匹配的源码。TinyCC 使用上游 `ONE_SOURCE=yes` 避免与 macOS 系统框架内部符号冲突。
 
@@ -63,5 +71,9 @@ C ABI v2 支持 JSON、字符串和数字输入/输出；变量写集与模块�
 已实现的 React 组件包保留 TSX/CSS 源码、属性默认值、事件声明和编译产物；导入先解析验证，信任确认后才运行。ShadowRoot 只做样式隔离。源码导出提取组件文件并提供 esbuild 重建。
 
 SQLite 按工程及运行会话组隔离保存持久变量、变化数值采样、日志和报警；同组主/子窗口共享数据。写入使用有界后台队列与事务，查询前刷新；持久值按稳定ID与类型恢复。报警确认和恢复正常是两个独立动作。
+
+历史范围查询一次最多 16 个数字变量，每条默认 1000/最多 2000 点，总计最多 20000 点。支持 raw/avg/min/max/last、毫秒边界、空桶和截断诊断；avg 是已存有效样本的算术平均。JSON 可持久化，但不会作为数值历史或报警样本。趋势图实时缓存与 SQLite 历史各自使用明确模式。
+
+组件包 v2 保存完整源码、bundle、属性元数据及主题/翻译/资源。跨工程副本保留不可变 `packageIdentity`，本地 ID 独立。嵌入资源优先于别名，别名再映射到工程资源；动态语言与源语言回退分开。组件构建复用工程校验器，`--project/--module` 按本地 ID 原子回填独立工程，构建失败不替换有效 JSON。
 
 工业协议包、复杂可重入子流程、完整 SCADA 报表与冗余、角色权限以及远程多用户协作通过后续独立模块扩展。

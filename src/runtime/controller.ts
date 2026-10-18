@@ -129,8 +129,12 @@ export class NativeRuntimeController extends RuntimeController {
         });
       });
   };
-  override runScript = async (scriptId: string, input: Json = null) => {
+  override runScript = async (scriptId: string, input: Json = null, expectedRevision?: number) => {
     await this.ready;
+    if (expectedRevision !== undefined && this.project.revision !== expectedRevision)
+      throw new Error(
+        'The requested project revision was not accepted; script execution was cancelled',
+      );
     if (this.disposed || this.closing) throw new Error('Project is closed or closing');
     const response = await native.runScript(scriptId, input);
     this.accept(await native.snapshot());

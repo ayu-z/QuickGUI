@@ -12,6 +12,8 @@ export interface ProjectRecovery {
 export interface EditorState {
   project: Project | null;
   selectedId: string | null;
+  selectedIds: string[];
+  transactionLabel: string | null;
   activeWindowId: string;
   section: Section;
   inspector: 'widget' | 'window';
@@ -28,6 +30,23 @@ export interface EditorState {
 }
 export const STORAGE_KEY = 'quickgui.project.v1';
 export const CLOSED_STORAGE_KEY = 'quickgui.closed-project.v1';
+function equalValue(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const keys = Object.keys(a),
+    other = Object.keys(b);
+  return (
+    keys.length === other.length &&
+    keys.every(
+      (key) =>
+        Object.hasOwn(b, key) &&
+        equalValue((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]),
+    )
+  );
+}
+const sameContent = (a: Project, b: Project) =>
+  equalValue({ ...a, revision: 0 }, { ...b, revision: 0 });
 function validWindowId(project: Project, id: unknown): string {
   return typeof id === 'string' && listProjectWindows(project).some((window) => window.id === id)
     ? id
@@ -91,6 +110,12 @@ export class EditorStore {
   private listeners = new Set<() => void>();
   private state: EditorState;
   private timer?: ReturnType<typeof setTimeout>;
+  private transaction?: {
+    project: Project;
+    selectedId: string | null;
+    selectedIds: string[];
+    dirty: boolean;
+  };
   constructor(project?: Project) {
     const recovered = project ? { project, drafts: {}, activeWindowId: 'main' } : loadRecovery();
     const activeWidgets = recovered.project
@@ -102,6 +127,10 @@ export class EditorStore {
         activeWidgets.find((widget) => widget.id === 'start_button')?.id ??
         activeWidgets[0]?.id ??
         null,
+      selectedIds: activeWidgets.length
+        ? [activeWidgets.find((widget) => widget.id === 'start_button')?.id ?? activeWidgets[0].id]
+        : [],
+      transactionLabel: null,
       section: 'design',
       inspector: 'widget',
       past: [],
@@ -124,14 +153,71 @@ export class EditorStore {
     for (const listener of this.listeners) listener();
   }
   private set(patch: Partial<EditorState>) {
+    if (Object.hasOwn(patch, 'selectedId') && !Object.hasOwn(patch, 'selectedIds'))
+      patch.selectedIds = patch.selectedId ? [patch.selectedId] : [];
+    if (patch.selectedIds) {
+      const primary = Object.hasOwn(patch, 'selectedId') ? patch.selectedId : this.state.selectedId;
+      if (!primary || !patch.selectedIds.includes(primary))
+        patch.selectedId = patch.selectedIds.at(-1) ?? null;
+    }
     this.state = { ...this.state, ...patch };
     this.emit();
   }
   setSection = (section: Section) => {
+    if (section !== this.state.section) this.cancelTransaction();
     if (this.state.project && !this.state.closing) this.set({ section });
   };
   select = (selectedId: string | null) => {
     if (this.state.project && !this.state.closing) this.set({ selectedId, inspector: 'widget' });
+  };
+  setSelection = (ids: string[], primaryId?: string | null) => {
+    if (!this.state.project || this.state.closing) return;
+    const selectedIds = [...new Set(ids)].filter((id) =>
+      editorSelection(this.state.project!, this.state.activeWindowId, id),
+    );
+    const selectedId =
+      primaryId && selectedIds.includes(primaryId) ? primaryId : (selectedIds.at(-1) ?? null);
+    this.set({ selectedIds, selectedId, inspector: 'widget' });
+  };
+  beginTransaction = (label = 'Edit') => {
+    if (!this.state.project || this.state.closing) return;
+    if (this.transaction) this.commitTransaction();
+    this.transaction = {
+      project: this.state.project,
+      selectedId: this.state.selectedId,
+      selectedIds: [...this.state.selectedIds],
+      dirty: this.state.dirty,
+    };
+    this.set({ transactionLabel: label });
+  };
+  commitTransaction = () => {
+    const transaction = this.transaction;
+    if (!transaction || !this.state.project) return;
+    this.transaction = undefined;
+    const changed = !sameContent(transaction.project, this.state.project);
+    this.set({
+      transactionLabel: null,
+      ...(changed
+        ? { past: [...this.state.past.slice(-99), transaction.project], future: [], dirty: true }
+        : { dirty: transaction.dirty }),
+    });
+    this.scheduleSave();
+  };
+  cancelTransaction = () => {
+    const transaction = this.transaction;
+    if (!transaction || !this.state.project) return;
+    this.transaction = undefined;
+    const changed = !sameContent(transaction.project, this.state.project);
+    this.set({
+      transactionLabel: null,
+      ...(changed
+        ? { project: { ...transaction.project, revision: this.state.project.revision + 1 } }
+        : {}),
+      selectedId: transaction.selectedId,
+      selectedIds: transaction.selectedIds,
+      dirty: transaction.dirty,
+    });
+    this.scheduleSave();
   };
   inspectWindow = () => {
     if (this.state.project && !this.state.closing)
@@ -140,6 +226,7 @@ export class EditorStore {
   setActiveWindow = (id: string) => {
     if (!this.state.project || this.state.closing) return;
     getProjectWindow(this.state.project, id);
+    this.cancelTransaction();
     this.set({ activeWindowId: id, selectedId: null, inspector: 'window', section: 'design' });
     this.scheduleSave();
   };
@@ -152,7 +239,7 @@ export class EditorStore {
       throw new Error('窗口名称应为 1–200 个有效字符 / Enter a valid window name');
     const id = uid('window');
     this.update((project) => {
-      project.schemaVersion = 2;
+      if (project.schemaVersion !== 3) project.schemaVersion = 2;
       const config: WindowConfig = {
         ...structuredClone(project.window),
         title: trimmed,
@@ -204,7 +291,13 @@ export class EditorStore {
     if (!project || this.state.closing) return;
     if (id === 'main') throw new Error('不能删除主窗口 / The main window cannot be deleted');
     const window = getProjectWindow(project, id);
-    if (window.widgets.some((widget) => Object.hasOwn(this.state.drafts, widget.id)))
+    if (
+      window.widgets.some((widget) =>
+        Object.keys(this.state.drafts).some(
+          (key) => key === widget.id || key.endsWith(`::${widget.id}`),
+        ),
+      )
+    )
       throw new Error(
         '此窗口有未应用的 CODE 草稿，请先应用或还原草稿 / Resolve this window’s CODE drafts before deleting it',
       );
@@ -222,6 +315,9 @@ export class EditorStore {
     this.set({
       activeWindowId,
       selectedId: editorSelection(this.state.project!, activeWindowId, this.state.selectedId),
+      selectedIds: this.state.selectedIds.filter((id) =>
+        editorSelection(this.state.project!, activeWindowId, id),
+      ),
       inspector: activeWindowId !== this.state.activeWindowId ? 'window' : this.state.inspector,
     });
   };
@@ -229,6 +325,7 @@ export class EditorStore {
     if (!this.state.project || this.state.closing) return;
     const next = structuredClone(this.state.project);
     mutator(next);
+    if (equalValue(next, this.state.project)) return;
     next.revision = this.state.project.revision + 1;
     const activeWindowId = validWindowId(next, this.state.activeWindowId);
     this.set({
@@ -236,8 +333,9 @@ export class EditorStore {
       ...(activeWindowId !== this.state.activeWindowId
         ? { activeWindowId, selectedId: null, inspector: 'window' as const }
         : {}),
-      past: [...this.state.past.slice(-99), this.state.project],
-      future: [],
+      ...(this.transaction
+        ? {}
+        : { past: [...this.state.past.slice(-99), this.state.project], future: [] }),
       dirty: true,
     });
     this.scheduleSave();
@@ -251,7 +349,7 @@ export class EditorStore {
     });
   addWidget = (type: Widget['type'], x = 48, y = 48) => {
     if (!this.state.project || this.state.closing) return;
-    const widget = createWidget(type, x, y);
+    const widget = createWidget(type, x, y, this.state.project.schemaVersion === 3 ? 2 : 1);
     this.update((p) => {
       getProjectWindow(p, this.state.activeWindowId).widgets.push(widget);
     });
@@ -292,16 +390,26 @@ export class EditorStore {
     this.update((p) => getProjectWindow(p, this.state.activeWindowId).widgets.push(...copies));
     this.select(copy.id);
   };
-  setDraft = (id: string, text: string | undefined) => {
+  getDraft = (id: string, scope?: string): string | undefined => {
+    const key = scope ? `${scope}::${id}` : id;
+    return Object.hasOwn(this.state.drafts, key) ? this.state.drafts[key] : this.state.drafts[id];
+  };
+  setDraft = (id: string, text: string | undefined, scope?: string) => {
     if (!this.state.project || this.state.closing) return;
     const drafts = { ...this.state.drafts };
-    if (text === undefined) delete drafts[id];
-    else drafts[id] = text;
+    const key = scope ? `${scope}::${id}` : id;
+    if (text === undefined) delete drafts[key];
+    else drafts[key] = text;
+    if (scope) delete drafts[id];
     this.set({ drafts });
     this.scheduleSave();
   };
   undo = () => {
     if (!this.state.project || this.state.closing) return;
+    if (this.transaction) {
+      this.cancelTransaction();
+      return;
+    }
     const previous = this.state.past.at(-1);
     if (!previous) return;
     const activeWindowId = validWindowId(previous, this.state.activeWindowId);
@@ -312,11 +420,15 @@ export class EditorStore {
       dirty: true,
       activeWindowId,
       selectedId: editorSelection(previous, activeWindowId, this.state.selectedId),
+      selectedIds: this.state.selectedIds.filter((id) =>
+        editorSelection(previous, activeWindowId, id),
+      ),
     });
     this.scheduleSave();
   };
   redo = () => {
     if (!this.state.project || this.state.closing) return;
+    if (this.transaction) this.commitTransaction();
     const next = this.state.future[0];
     if (!next) return;
     const activeWindowId = validWindowId(next, this.state.activeWindowId);
@@ -327,15 +439,18 @@ export class EditorStore {
       dirty: true,
       activeWindowId,
       selectedId: editorSelection(next, activeWindowId, this.state.selectedId),
+      selectedIds: this.state.selectedIds.filter((id) => editorSelection(next, activeWindowId, id)),
     });
     this.scheduleSave();
   };
   replaceProject = (project: Project, drafts: Record<string, string> = {}, windowId = 'main') => {
     if (this.state.closing) throw new Error('Wait for the current project to finish closing');
     const validated = validateProject(project);
+    this.transaction = undefined;
     const activeWindowId = validWindowId(validated, windowId);
     this.set({
       project: validated,
+      transactionLabel: null,
       selectedId: getProjectWindow(validated, activeWindowId).widgets[0]?.id ?? null,
       activeWindowId,
       drafts: { ...drafts },
@@ -352,6 +467,7 @@ export class EditorStore {
   /** Persist before stopping the runtime. Failed storage writes leave the editor active. */
   beginClose = (keepRecovery = true) => {
     if (!this.state.project || this.state.closing) return;
+    this.commitTransaction();
     const recovery = {
       project: this.state.project,
       drafts: { ...this.state.drafts },
@@ -377,6 +493,7 @@ export class EditorStore {
     if (!this.state.closing) throw new Error('Project close was not prepared');
     this.set({
       project: null,
+      transactionLabel: null,
       selectedId: null,
       activeWindowId: 'main',
       drafts: {},
@@ -420,6 +537,7 @@ export class EditorStore {
     this.timer = setTimeout(this.saveRecovery, 500);
   }
   dispose() {
+    this.transaction = undefined;
     clearTimeout(this.timer);
     this.listeners.clear();
   }

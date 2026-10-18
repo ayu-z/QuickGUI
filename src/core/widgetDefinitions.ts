@@ -7,6 +7,7 @@ import type {
   WidgetStyle,
   WidgetType,
 } from './types';
+import { readJsonPath, validateJsonPath } from './jsonValue';
 
 export type JsonPath = (string | number)[];
 export type PropertyEditor =
@@ -88,7 +89,7 @@ export function isSafePath(path: readonly (string | number)[]): boolean {
   );
 }
 /** Simple property names remain compatible; nested properties use RFC 6901 pointers. */
-export function propertyPath(key: string): JsonPath {
+export function propertyPath(key: string, root?: unknown): JsonPath {
   const parts = key.startsWith('/')
     ? key
         .slice(1)
@@ -99,21 +100,39 @@ export function propertyPath(key: string): JsonPath {
         })
     : [key];
   if (!key || !isSafePath(parts)) throw new Error('Invalid property path');
-  return parts;
+  let current = root;
+  return parts.map((part) => {
+    const segment = Array.isArray(current)
+      ? /^(0|[1-9]\d*)$/.test(part) && Number.isSafeInteger(Number(part))
+        ? Number(part)
+        : (() => {
+            throw new Error('Invalid array index in property pointer');
+          })()
+      : part;
+    current =
+      current !== null && typeof current === 'object' && Object.hasOwn(current, segment)
+        ? (current as Record<string | number, unknown>)[segment]
+        : undefined;
+    return segment;
+  });
+}
+function validTypedPath(path: unknown): path is JsonPath {
+  try {
+    validateJsonPath(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 export function getJsonPath(
   value: unknown,
   path: readonly (string | number)[] = [],
 ): Json | undefined {
-  if (!isSafePath(path)) return undefined;
-  let current = value;
-  for (const part of path) {
-    if (current === null || typeof current !== 'object' || !Object.hasOwn(current, part))
-      return undefined;
-    if (Array.isArray(current) && !/^(0|[1-9]\d*)$/.test(String(part))) return undefined;
-    current = (current as Record<string | number, unknown>)[part];
+  try {
+    return readJsonPath(value as Json, [...path]);
+  } catch {
+    return undefined;
   }
-  return current as Json | undefined;
 }
 export function setJsonPath<T extends Json>(
   value: T,
@@ -127,6 +146,8 @@ export function setJsonPath<T extends Json>(
   path.forEach((part, index) => {
     if (current === null || typeof current !== 'object')
       throw new Error('JSON path does not exist');
+    if (Array.isArray(current) ? typeof part !== 'number' : typeof part !== 'string')
+      throw new Error('JSON path segment has the wrong type');
     if (
       Array.isArray(current) &&
       (!/^(0|[1-9]\d*)$/.test(String(part)) || Number(part) >= current.length)
@@ -146,7 +167,7 @@ export function setProperty(
   key: string,
   value: Json,
 ): Record<string, Json> {
-  return setJsonPath(props, propertyPath(key), value);
+  return setJsonPath(props, propertyPath(key, props), value);
 }
 export function remapArrayBindings(
   bindings: Widget['bindings'],
@@ -571,6 +592,12 @@ const definitions: Record<
         { editor: 'options', binding: bind('json') },
       ),
       p('placeholder', '占位文字', 'Placeholder', ''),
+      p('legacyOptions', '保留旧选项 JSON 格式', 'Legacy option JSON format', false, {
+        group: 'behavior',
+      }),
+      p('legacyValueFormat', '保留旧选中值格式', 'Legacy selected-value formatting', false, {
+        group: 'behavior',
+      }),
     ],
     events: change('json'),
   },
@@ -597,6 +624,9 @@ const definitions: Record<
         { editor: 'columns', group: 'data' },
       ),
       p('headerVisible', '显示表头', 'Show header', true),
+      p('headerFromFirstRow', '首行作为表头', 'First row supplies headings', false, {
+        group: 'behavior',
+      }),
       p('sortable', '允许排序', 'Sortable', true),
       p('striped', '隔行背景', 'Striped', true),
       n('pageSize', '每页行数', 'Page size', 20, 1, 1000, { integer: true }),
@@ -749,7 +779,7 @@ export function inferBindingPath(
     for (const [key, value] of Object.entries(candidate.value)) {
       const part = Array.isArray(candidate.value) ? Number(key) : key;
       const path = [...candidate.path, part];
-      if (isSafePath(path)) queue.push({ value, path });
+      if (validTypedPath(path)) queue.push({ value, path });
     }
   }
   return undefined;
@@ -832,13 +862,10 @@ export function validatePropertyPatch(
   if (next.type === 'chart' || next.type === 'table' || next.type === 'select') {
     const key = next.type === 'chart' ? 'series' : next.type === 'table' ? 'columns' : 'options';
     const items = array(key, key === 'series' ? 16 : 1000),
-      ids = new Set<string>(),
-      optionValues = new Set<string>();
+      ids = new Set<string>();
     items.forEach((item, index) => {
+      if (key === 'options' && props.legacyOptions === true) return;
       if (key === 'options' && ['string', 'number', 'boolean'].includes(typeof item)) {
-        const value = JSON.stringify(item);
-        if (optionValues.has(value)) issue(`props.${key}.${index}`, 'Option values must be unique');
-        optionValues.add(value);
         return;
       }
       if (!item || typeof item !== 'object' || Array.isArray(item)) {
@@ -866,7 +893,7 @@ export function validatePropertyPatch(
             'History requires an existing numeric variable',
           );
       }
-      if (key === 'columns' && (!Array.isArray(item.path) || !isSafePath(item.path as JsonPath)))
+      if (key === 'columns' && !validTypedPath(item.path))
         issue(`props.${key}.${index}.path`, 'Expected a safe JSON path array');
       if (key === 'columns') {
         if (typeof item.title !== 'string')
@@ -894,10 +921,6 @@ export function validatePropertyPatch(
             `props.${key}.${index}.value`,
             'Option values must be strings, numbers or booleans',
           );
-        const value = JSON.stringify(item.value);
-        if (optionValues.has(value))
-          issue(`props.${key}.${index}.value`, 'Option values must be unique');
-        optionValues.add(value);
       }
     });
     if (next.type === 'table') array('rows', 100000);
@@ -920,7 +943,8 @@ export function validatePropertyPatch(
     if (!entry.binding!.modes.includes(binding.mode))
       issue(`bindings.${key}.mode`, 'Binding mode is not supported');
     const path = (binding as Binding & { path?: JsonPath }).path;
-    if (path !== undefined && !isSafePath(path)) issue(`bindings.${key}.path`, 'Invalid JSON path');
+    if (path !== undefined && !validTypedPath(path))
+      issue(`bindings.${key}.path`, 'Invalid JSON path');
     const variable = project?.variables.find(
       (v) => v.id === binding.variable || v.name === binding.variable,
     );

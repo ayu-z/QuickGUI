@@ -485,7 +485,17 @@ export class RuntimeController {
       this.project.variables.find((v) => v.name === key)
     );
   }
-  runScript = (scriptId: string, input: Json = null): Promise<ScriptResponse> => {
+  runScript = (
+    scriptId: string,
+    input: Json = null,
+    expectedRevision?: number,
+  ): Promise<ScriptResponse> => {
+    if (expectedRevision !== undefined && this.project.revision !== expectedRevision)
+      return Promise.reject(
+        new Error(
+          'The requested project revision was not accepted; script execution was cancelled',
+        ),
+      );
     if (this.queued >= 256)
       return Promise.reject(new Error('Flow queue is full; command was not accepted'));
     const generation = this.generation;

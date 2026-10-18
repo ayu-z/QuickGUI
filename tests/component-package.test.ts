@@ -45,6 +45,52 @@ function component(): ComponentModule {
 }
 
 describe('trusted React component package', () => {
+  it('exports source resources and restores package identity after local remapping', () => {
+    const project = createProject(),
+      module = component();
+    module.packageIdentity = {
+      id: module.id,
+      name: module.name,
+      version: module.version,
+      width: module.width,
+      height: module.height,
+    };
+    module.id = 'local-copy';
+    module.name = 'Local name';
+    project.assets = [
+      { id: 'logo', name: 'Logo', mime: 'image/png', data: 'data:image/png;base64,YQ==' },
+    ];
+    const imported = importComponentPackage(exportComponentPackage(module, project));
+    expect(imported.id).toBe('sample.badge');
+    expect(imported.implementation).toEqual(module.implementation);
+    expect(imported.embeddedResourceScope?.theme).toEqual(project.theme);
+    expect(imported.embeddedResourceScope?.assets).toEqual(project.assets);
+    expect(module.id).toBe('local-copy');
+  });
+  it('keeps embedded asset precedence and materializes aliases without duplicate IDs', () => {
+    const project = createProject(),
+      module = component();
+    const asset = {
+      id: 'asset',
+      name: 'Embedded',
+      mime: 'image/png',
+      data: 'data:image/png;base64,YQ==',
+    };
+    project.assets = [{ ...asset, id: 'mapped', name: 'Global' }];
+    module.embeddedResourceScope = {
+      id: 'source',
+      theme: project.theme,
+      translations: {},
+      locale: 'en',
+      assetAliases: { asset: 'mapped' },
+      assets: [asset],
+    };
+    const imported = importComponentPackage(exportComponentPackage(module, project));
+    expect(imported.embeddedResourceScope?.assets?.filter((entry) => entry.id === 'asset')).toEqual(
+      [asset],
+    );
+    expect(imported.embeddedResourceScope?.assetAliases).toBeUndefined();
+  });
   it('round-trips complete original sources, defaults, event declarations and bundle', () => {
     const original = component();
     expect(importComponentPackage(exportComponentPackage(original))).toEqual(original);

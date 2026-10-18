@@ -57,6 +57,18 @@ import { errorText, validateProject } from './core/validation';
 import { translations } from './core/i18n';
 import type { Json, Project, Widget, ComponentModule, Variable, Connection } from './core/types';
 import { CanvasEditor } from './designer/CanvasEditor';
+import { LayerTree } from './designer/LayerTree';
+import {
+  arrangementPatches,
+  commandForKey,
+  inheritedFlag,
+  isEditingText,
+  reorderedWidgets,
+  selectionRoots,
+  type DesignerCommand,
+  type Point,
+  type WidgetPatch,
+} from './designer/commands';
 import { Inspector } from './designer/Inspector';
 import { Library } from './designer/Library';
 import { WindowInspector } from './designer/WindowInspector';
@@ -76,6 +88,22 @@ import { importComponentPackage, exportComponentPackage } from './core/component
 import { WelcomeScreen } from './panels/WelcomeScreen';
 import { ProjectNameDialog } from './panels/ProjectNameDialog';
 import { WindowManager } from './panels/WindowManager';
+import { PasteReviewDialog } from './panels/PasteReviewDialog';
+import { JsonValueField } from './panels/JsonValueField';
+import {
+  copySelection,
+  writeClipboard,
+  readClipboard,
+  preparePaste,
+  applyPastePlan,
+  type ClipboardBundle,
+  type PastePlan,
+  type EditScope,
+} from './core/clipboard';
+import { upgradeProject, upgradeWidget, migrationSummary } from './core/migration';
+import { assertJsonValue } from './core/jsonValue';
+import { variableReferences } from './core/references';
+import { getWidgetDefinition, getBindableProperties, getJsonPath } from './core/widgetDefinitions';
 
 function PreviewWindow() {
   const windowId = new URLSearchParams(location.search).get('windowId') ?? 'main';
@@ -141,11 +169,31 @@ function DesignerApp() {
 function ProjectWorkspace({
   store,
   state,
+  onCopy,
+  onCut,
+  onPaste,
+  onRequestUpgrade,
 }: {
   store: EditorStore;
   state: EditorState & { project: Project };
+  onCopy?: (
+    project: Project,
+    scope: { kind: 'window' | 'module'; id: string },
+    ids: string[],
+  ) => void | Promise<void>;
+  onCut?: (
+    project: Project,
+    scope: { kind: 'window' | 'module'; id: string },
+    ids: string[],
+  ) => void | Promise<void>;
+  onPaste?: (
+    project: Project,
+    scope: { kind: 'window' | 'module'; id: string },
+    point?: Point,
+  ) => void | Promise<void>;
+  onRequestUpgrade?: (reason: string, pendingCommand?: DesignerCommand | (() => void)) => void;
 }) {
-  const { project, section, selectedId, drafts, activeWindowId } = state;
+  const { project, section, selectedId, selectedIds, drafts, activeWindowId } = state;
   const [engine] = useState(() => createRuntime(project));
   const mounted = useRef(true);
   useEffect(() => {
@@ -161,6 +209,17 @@ function ProjectWorkspace({
     () => localStorage.getItem('quickgui.theme') ?? 'dark',
   );
   const [settings, setSettings] = useState(false);
+  const clipboardSession = useRef(crypto.randomUUID());
+  const [pasteReview, setPasteReview] = useState<{
+    bundle: ClipboardBundle;
+    scope: EditScope;
+    point?: Point;
+  } | null>(null);
+  const [upgradeRequest, setUpgradeRequest] = useState<{
+    reason: string;
+    pending?: DesignerCommand | (() => void);
+    ids: string[];
+  } | null>(null);
   const [nameAction, setNameAction] = useState<'create' | 'rename' | null>(null);
   const [preview, setPreview] = useState(false),
     [exportMenu, setExportMenu] = useState(false),
@@ -207,7 +266,17 @@ function ProjectWorkspace({
     if (moduleId && !activeModule) setModuleId(null);
   }, [moduleId, activeModule]);
   const selected = designProject.widgets.find((w) => w.id === selectedId);
+  const selectedWidgets = designProject.widgets.filter((widget) => selectedIds.includes(widget.id));
+  const editScope: { kind: 'window' | 'module'; id: string } = moduleId
+    ? { kind: 'module', id: moduleId }
+    : { kind: 'window', id: activeWindowId };
+  const scopeKey = `${project.id}/${editScope.kind}/${editScope.id}`;
+  const scopeWidgets = (source: Project) =>
+    moduleId
+      ? (source.modules.find((module) => module.id === moduleId)?.widgets ?? [])
+      : getProjectWindow(source, activeWindowId).widgets;
   const inspectActiveWindow = () => {
+    store.cancelTransaction();
     setModuleId(null);
     store.inspectWindow();
   };
@@ -294,26 +363,12 @@ function ProjectWorkspace({
     }, 500);
     return () => clearInterval(timer);
   }, [simulate, engine, project.variables]);
-  useEffect(() => {
-    const listener = (event: KeyboardEvent) => {
-      const modifier = event.metaKey || event.ctrlKey;
-      const input = (event.target as HTMLElement).closest(
-        'input,textarea,[contenteditable="true"],.monaco-editor',
-      );
-      if (modifier && event.key.toLowerCase() === 's') {
-        event.preventDefault();
-        store.saveRecovery();
-      }
-      if (modifier && !input && event.key.toLowerCase() === 'z') {
-        event.preventDefault();
-        event.shiftKey ? store.redo() : store.undo();
-      }
-    };
-    document.addEventListener('keydown', listener);
-    return () => document.removeEventListener('keydown', listener);
-  }, [store]);
-
   const updateWidget = (id: string, patch: Partial<Widget>) => {
+    const candidate = designProject.widgets.find((widget) => widget.id === id);
+    if (candidate && inheritedFlag(candidate, designProject.widgets, 'locked')) {
+      notify(zh ? '请先解除控件锁定' : 'Unlock this widget before editing', true);
+      return;
+    }
     if (patch.parentId && subtreeIds(designProject.widgets, id).has(patch.parentId)) {
       notify(
         zh
@@ -332,30 +387,275 @@ function ProjectWorkspace({
   };
   const addWidget = (type: Widget['type'], x?: number, y?: number) => {
     if (moduleId) {
-      const widget = createWidget(type, x, y);
+      const widget = createWidget(type, x, y, project.schemaVersion === 3 ? 2 : 1);
       store.update((p) => p.modules.find((m) => m.id === moduleId)!.widgets.push(widget));
       store.select(widget.id);
     } else store.addWidget(type, x, y);
   };
-  const deleteWidget = () => {
-    if (!selectedId) return;
-    const deleted = subtreeIds(designProject.widgets, selectedId);
-    if (moduleId)
-      store.update((p) => {
-        const module = p.modules.find((m) => m.id === moduleId)!;
-        module.widgets = module.widgets.filter((w) => !deleted.has(w.id));
-        module.exposedProps = Object.fromEntries(
-          Object.entries(module.exposedProps).filter(
-            ([, exposed]) => !deleted.has(exposed.widgetId),
-          ),
-        );
+  const updateMany = (patches: WidgetPatch[]) =>
+    store.update((source) => {
+      const widgets = scopeWidgets(source);
+      for (const { id, patch } of patches) {
+        const widget = widgets.find((item) => item.id === id);
+        if (!widget || inheritedFlag(widget, widgets, 'locked')) continue;
+        if (patch.parentId && subtreeIds(widgets, id).has(patch.parentId)) continue;
+        Object.assign(widget, patch, { id });
+      }
+    });
+  const requestUpgrade = (reason: string, pendingCommand?: DesignerCommand | (() => void)) => {
+    if (onRequestUpgrade) onRequestUpgrade(reason, pendingCommand);
+    else
+      setUpgradeRequest({
+        reason,
+        pending: pendingCommand,
+        ids: [...store.getSnapshot().selectedIds],
       });
-    else store.deleteWidget(selectedId);
-    for (const id of deleted) store.setDraft(id, undefined);
-    store.select(null);
+  };
+  const copyCurrent = async (cut = false) => {
+    const current = store.getSnapshot(),
+      source = current.project;
+    if (!source) return;
+    const ids = [...current.selectedIds],
+      widgets = scopeWidgets(source),
+      roots = selectionRoots(widgets, ids);
+    const subtree = new Set(roots.flatMap((widget) => [...subtreeIds(widgets, widget.id)]));
+    if (
+      cut &&
+      widgets.some(
+        (widget) =>
+          subtree.has(widget.id) &&
+          (inheritedFlag(widget, widgets, 'locked') ||
+            store.getDraft(widget.id, scopeKey) !== undefined),
+      )
+    )
+      throw new Error(
+        zh
+          ? '剪切前请解除锁定并处理 CODE 草稿。'
+          : 'Unlock widgets and resolve CODE drafts before cutting.',
+      );
+    const positions: Record<string, Point> = {};
+    const canvas = document.querySelector<HTMLElement>('[data-testid="design-canvas"]');
+    if (canvas) {
+      const bounds = canvas.getBoundingClientRect(),
+        scale = bounds.width / designProject.window.width;
+      for (const root of roots) {
+        const node = canvas
+          .querySelector<HTMLElement>(`[data-widget="${CSS.escape(root.id)}"]`)
+          ?.closest('.qg-design-widget');
+        if (node) {
+          const box = node.getBoundingClientRect();
+          positions[root.id] = {
+            x: (box.left - bounds.left) / scale,
+            y: (box.top - bounds.top) / scale,
+          };
+        }
+      }
+    }
+    const bundle = copySelection(source, editScope, ids, clipboardSession.current, positions);
+    await writeClipboard(bundle);
+    if (cut) {
+      if (
+        store.getSnapshot().project?.revision !== source.revision ||
+        JSON.stringify(store.getSnapshot().selectedIds) !== JSON.stringify(ids)
+      )
+        throw new Error(
+          zh
+            ? '已复制，但工程或选择已变化，未删除源控件。'
+            : 'Copied, but the selection or project changed; source widgets were retained.',
+        );
+      await executeCommand('delete');
+    }
+    notify(cut ? (zh ? '已剪切控件' : 'Widgets cut') : zh ? '已复制控件' : 'Widgets copied');
+  };
+  const commitPaste = (plan: PastePlan) => {
+    const current = store.getSnapshot().project;
+    if (!current) return;
+    const candidate = applyPastePlan(current, plan);
+    store.update((next) => Object.assign(next, candidate));
+    store.setSelection(plan.rootIds, plan.rootIds.at(-1));
+    setPasteReview(null);
+    notify(zh ? '控件及依赖已粘贴' : 'Widgets and dependencies pasted');
+  };
+  const clipboardCopy = () =>
+    onCopy ? onCopy(project, editScope, store.getSnapshot().selectedIds) : copyCurrent();
+  const clipboardCut = () =>
+    onCut ? onCut(project, editScope, store.getSnapshot().selectedIds) : copyCurrent(true);
+  const clipboardPaste = async (point?: Point) => {
+    if (onPaste) {
+      await onPaste(project, editScope, point);
+      return;
+    }
+    const bundle = await readClipboard(),
+      current = store.getSnapshot().project;
+    if (!current) return;
+    if (bundle.source.sessionKey === clipboardSession.current) {
+      commitPaste(
+        preparePaste(current, bundle, editScope, point, {
+          sameDocument: true,
+          sessionKey: clipboardSession.current,
+          currentWindowId: activeWindowId,
+        }),
+      );
+    } else setPasteReview({ bundle, scope: editScope, point });
+  };
+  const executeCommand = async (command: DesignerCommand, point?: Point) => {
+    try {
+      if (command === 'undo') {
+        store.undo();
+        return;
+      }
+      if (command === 'redo') {
+        store.redo();
+        return;
+      }
+      if (command === 'clear-selection') {
+        if (store.getSnapshot().transactionLabel) store.cancelTransaction();
+        else store.setSelection([]);
+        return;
+      }
+      if (command === 'select-all') {
+        store.setSelection(
+          designProject.widgets
+            .filter(
+              (widget) =>
+                !inheritedFlag(widget, designProject.widgets, 'hidden') &&
+                !inheritedFlag(widget, designProject.widgets, 'locked'),
+            )
+            .map((widget) => widget.id),
+        );
+        return;
+      }
+      if (command === 'copy') {
+        await clipboardCopy?.();
+        return;
+      }
+      if (command === 'cut') {
+        await clipboardCut?.();
+        return;
+      }
+      if (command === 'paste') {
+        await clipboardPaste?.(point);
+        return;
+      }
+      const current = store.getSnapshot(),
+        source = current.project;
+      if (!source) return;
+      const widgets = scopeWidgets(source),
+        roots = selectionRoots(widgets, current.selectedIds);
+      if (!roots.length) return;
+      if (['lock', 'unlock', 'hide', 'show'].includes(command)) {
+        if (source.schemaVersion !== 3) {
+          requestUpgrade(command, command);
+          return;
+        }
+        store.update((next) => {
+          const list = scopeWidgets(next),
+            targets = new Set(roots.map((widget) => widget.id));
+          if (command === 'unlock' || command === 'show')
+            for (const root of roots) {
+              let parent = root.parentId;
+              const seen = new Set<string>();
+              while (parent && !seen.has(parent)) {
+                targets.add(parent);
+                seen.add(parent);
+                parent = list.find((widget) => widget.id === parent)?.parentId;
+              }
+            }
+          for (const widget of list)
+            if (targets.has(widget.id))
+              widget.editor = {
+                ...widget.editor,
+                ...(['lock', 'unlock'].includes(command)
+                  ? { locked: command === 'lock' }
+                  : { hidden: command === 'hide' }),
+              };
+        });
+        return;
+      }
+      if (roots.some((widget) => inheritedFlag(widget, widgets, 'locked'))) {
+        notify(zh ? '请先解除控件锁定' : 'Unlock selected widgets first', true);
+        return;
+      }
+      if (command === 'delete') {
+        const deleted = new Set(roots.flatMap((widget) => [...subtreeIds(widgets, widget.id)]));
+        if (widgets.some((widget) => deleted.has(widget.id) && widget.editor?.locked))
+          throw new Error(
+            zh
+              ? '选中容器包含锁定控件，请先解锁。'
+              : 'The selected subtree contains locked widgets. Unlock them first.',
+          );
+        if ([...deleted].some((id) => store.getDraft(id, scopeKey) !== undefined))
+          throw new Error(
+            zh
+              ? '选中控件含未应用 CODE 草稿，请先应用或还原。'
+              : 'Resolve unapplied CODE drafts before deleting these widgets.',
+          );
+        store.update((next) => {
+          const list = scopeWidgets(next);
+          list.splice(0, list.length, ...list.filter((widget) => !deleted.has(widget.id)));
+          if (moduleId) {
+            const module = next.modules.find((item) => item.id === moduleId)!;
+            module.exposedProps = Object.fromEntries(
+              Object.entries(module.exposedProps).filter(
+                ([, value]) => !deleted.has(value.widgetId),
+              ),
+            );
+          }
+        });
+        store.setSelection([]);
+        return;
+      }
+      if (command === 'duplicate') {
+        const copies = roots.flatMap((widget) => cloneSubtree(widgets, widget.id)),
+          originalIds = new Set(widgets.map((widget) => widget.id));
+        const copyRoots = copies.filter(
+          (widget) => !widget.parentId || originalIds.has(widget.parentId),
+        );
+        store.update((next) => scopeWidgets(next).push(...copies));
+        store.setSelection(copyRoots.map((widget) => widget.id));
+        return;
+      }
+      if (['front', 'back', 'raise', 'lower'].includes(command)) {
+        store.update((next) => {
+          const list = scopeWidgets(next),
+            reordered = reorderedWidgets(
+              list,
+              current.selectedIds,
+              command as 'front' | 'back' | 'raise' | 'lower',
+            );
+          list.splice(0, list.length, ...reordered);
+        });
+        return;
+      }
+      const patches = arrangementPatches(widgets, current.selectedIds, command);
+      if (patches.length) updateMany(patches);
+    } catch (error) {
+      notify(errorText(error), true);
+    }
+  };
+  const commandRef = useRef(executeCommand);
+  commandRef.current = executeCommand;
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => {
+      if (isEditingText(event.target) || document.querySelector('[role="dialog"]')) return;
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        store.saveRecovery();
+        return;
+      }
+      const command = commandForKey(event);
+      if (!command || (section !== 'design' && command !== 'undo' && command !== 'redo')) return;
+      event.preventDefault();
+      void commandRef.current(command);
+    };
+    document.addEventListener('keydown', listener);
+    return () => document.removeEventListener('keydown', listener);
+  }, [section, store, onCopy, onCut, onPaste]);
+  const deleteWidget = () => {
+    void executeCommand('delete');
   };
   const createModule = () => {
-    const source = selected ?? createWidget('panel');
+    const source = selected ?? createWidget('panel', 32, 32, project.schemaVersion === 3 ? 2 : 1);
     const children = cloneSubtree(selected ? designProject.widgets : [source], source.id, true);
     const child = children.find((w) => !w.parentId)!;
     const module: ComponentModule = {
@@ -365,9 +665,24 @@ function ProjectWorkspace({
       width: source.layout.width,
       height: source.layout.height,
       widgets: children,
-      exposedProps: {
-        text: { widgetId: child.id, property: 'text', default: child.props.text ?? '' },
-      },
+      exposedProps: Object.fromEntries(
+        getWidgetDefinition(
+          child.type,
+          child.definitionVersion ?? 1,
+          project.modules.find((module) => module.id === child.moduleId),
+        )
+          .properties.filter((definition) =>
+            ['text', 'value', 'enabled', 'visible'].includes(definition.key),
+          )
+          .map((definition) => [
+            definition.key,
+            {
+              widgetId: child.id,
+              property: definition.key,
+              default: child.props[definition.key] ?? definition.fallbackValue,
+            },
+          ]),
+      ),
     };
     store.update((p) => p.modules.push(module));
     setLeftTab('modules');
@@ -378,7 +693,7 @@ function ProjectWorkspace({
     );
   };
   const addModuleInstance = (module: ComponentModule) => {
-    const widget = createWidget('module');
+    const widget = createWidget('module', 32, 32, project.schemaVersion === 3 ? 2 : 1);
     widget.name = module.name;
     widget.moduleId = module.id;
     widget.layout.width = module.width;
@@ -392,11 +707,47 @@ function ProjectWorkspace({
     store.setSection('design');
   };
   const installModule = (module: ComponentModule) => {
-    store.update((p) => {
-      const index = p.modules.findIndex((m) => m.id === module.id);
-      if (index >= 0) p.modules[index] = module;
-      else p.modules.push(module);
-    });
+    const current = store.getSnapshot().project;
+    if (!current) return;
+    const existing = current.modules.find((item) => item.id === module.id);
+    if (existing && JSON.stringify(existing) === JSON.stringify(module)) {
+      setPendingModule(null);
+      setLeftTab('modules');
+      notify(zh ? '组件包已存在' : 'Component package already exists');
+      return;
+    }
+    const needsV3 = Boolean(
+      module.propertyDefinitions ||
+      module.embeddedResourceScope ||
+      module.packageIdentity ||
+      existing,
+    );
+    if (needsV3 && current.schemaVersion < 3) {
+      setPendingModule(null);
+      requestUpgrade('component-package', () => installModule(module));
+      return;
+    }
+    const next = structuredClone(current),
+      installed = structuredClone(module);
+    if (existing) {
+      installed.packageIdentity ??= {
+        id: module.id,
+        name: module.name,
+        version: module.version,
+        width: module.width,
+        height: module.height,
+      };
+      installed.id = uid('module');
+      installed.name = `${module.name} (${current.modules.filter((item) => item.name.startsWith(module.name)).length + 1})`;
+    }
+    next.modules.push(installed);
+    try {
+      validateProject(next);
+    } catch (error) {
+      notify(errorText(error), true);
+      return;
+    }
+    store.update((p) => Object.assign(p, next));
     setPendingModule(null);
     setLeftTab('modules');
     notify(zh ? '组件包已导入' : 'Component package imported');
@@ -762,33 +1113,21 @@ function ProjectWorkspace({
                   <span>{activeModule ? activeModule.name : activeWindow.name}</span>
                   <ChevronDown size={12} />
                 </button>
-                <div className="layer-list">
-                  {designProject.widgets
-                    .filter((w) => !filter || w.name.toLowerCase().includes(filter.toLowerCase()))
-                    .map((widget) => (
-                      <button
-                        className={`layer-row ${selectedId === widget.id ? 'selected' : ''}`}
-                        key={widget.id}
-                        onClick={() => store.select(widget.id)}
-                      >
-                        <span className="layer-indent">
-                          {widget.type === 'panel' ? (
-                            <Box size={13} />
-                          ) : widget.type === 'text' ? (
-                            <span className="text-icon">T</span>
-                          ) : widget.type === 'module' ? (
-                            <Puzzle size={13} />
-                          ) : (
-                            <Square size={12} />
-                          )}
-                        </span>
-                        <span>{widget.name}</span>
-                        {Object.keys(widget.bindings).length > 0 && (
-                          <span className="binding-dot" title="Data binding" />
-                        )}
-                      </button>
-                    ))}
-                </div>
+                <LayerTree
+                  widgets={designProject.widgets}
+                  selectedIds={selectedIds}
+                  filter={filter}
+                  locale={project.locale}
+                  onSelectionChange={store.setSelection}
+                  onCommand={(command) => {
+                    void executeCommand(command);
+                  }}
+                  canUndo={!!state.past.length}
+                  canRedo={!!state.future.length}
+                  onCopy={clipboardCopy}
+                  onCut={clipboardCut}
+                  onPaste={clipboardPaste}
+                />
                 <div className="left-footer">
                   <button onClick={() => setLeftTab('library')}>
                     <Plus size={14} />
@@ -839,7 +1178,7 @@ function ProjectWorkspace({
                             try {
                               download(
                                 `${module.name}.qgcomponent`,
-                                exportComponentPackage(module) as BlobPart,
+                                exportComponentPackage(module, project) as BlobPart,
                               );
                             } catch (error) {
                               notify(errorText(error), true);
@@ -851,6 +1190,7 @@ function ProjectWorkspace({
                       ) : (
                         <button
                           onClick={() => {
+                            store.cancelTransaction();
                             setModuleId(module.id);
                             store.select(module.widgets[0]?.id ?? null);
                           }}
@@ -907,6 +1247,7 @@ function ProjectWorkspace({
                     <button
                       className="module-exit"
                       onClick={() => {
+                        store.cancelTransaction();
                         setModuleId(null);
                         store.select(null);
                       }}
@@ -918,19 +1259,42 @@ function ProjectWorkspace({
               }
               project={designProject}
               selectedId={selectedId}
+              selectedIds={selectedIds}
+              scopeKey={scopeKey}
               onSelect={store.select}
+              onSelectionChange={store.setSelection}
               onUpdate={updateWidget}
+              onUpdateMany={updateMany}
+              onBeginTransaction={store.beginTransaction}
+              onCommitTransaction={store.commitTransaction}
+              onCancelTransaction={store.cancelTransaction}
+              onCommand={(command, point) => {
+                void executeCommand(command, point);
+              }}
+              onCopy={() => {
+                void executeCommand('copy');
+              }}
+              onCut={() => {
+                void executeCommand('cut');
+              }}
+              onPaste={(point) => {
+                void executeCommand('paste', point);
+              }}
+              onRequestUpgrade={(reason) => requestUpgrade(reason, reason as DesignerCommand)}
+              canUndo={!!state.past.length}
+              canRedo={!!state.future.length}
               onAdd={addWidget}
             />
           )}
           {section === 'flows' && (
             <FlowEditor
               project={project}
+              onRequestUpgrade={(apply) => requestUpgrade('json-path', apply)}
               onChange={(flows) =>
                 store.update((p) => {
                   p.flows = flows;
                   if (flows.some((flow) => flow.nodes.some((node) => node.kind === 'window'))) {
-                    p.schemaVersion = 2;
+                    if (p.schemaVersion === 1) p.schemaVersion = 2;
                     p.windows ??= [];
                   }
                   const ids = new Set(flows.map((f) => f.id));
@@ -961,6 +1325,7 @@ function ProjectWorkspace({
               engine={engine}
               onChange={(p) => store.update(p)}
               notify={notify}
+              onRequestUpgrade={(pending) => requestUpgrade('json-variable', pending)}
             />
           )}
           {section === 'connections' && (
@@ -1039,20 +1404,21 @@ function ProjectWorkspace({
               <>
                 <Inspector
                   widget={selected}
+                  selectedWidgets={selectedWidgets}
                   project={designProject}
                   onUpdate={(patch) => updateWidget(selected.id, patch)}
-                  draft={drafts[selected.id]}
-                  onDraft={(text) => store.setDraft(selected.id, text)}
+                  onUpdateMany={updateMany}
+                  onBeginTransaction={store.beginTransaction}
+                  onCommitTransaction={store.commitTransaction}
+                  onCancelTransaction={store.cancelTransaction}
+                  onRequestUpgrade={(reason, callback) =>
+                    requestUpgrade(reason ?? 'widget-definition', callback)
+                  }
+                  draft={store.getDraft(selected.id, scopeKey)}
+                  onDraft={(text) => store.setDraft(selected.id, text, scopeKey)}
                   onDelete={deleteWidget}
                   onDuplicate={() => {
-                    if (!moduleId) store.duplicateWidget(selected.id);
-                    else {
-                      const copies = cloneSubtree(designProject.widgets, selected.id);
-                      store.update((p) =>
-                        p.modules.find((m) => m.id === moduleId)!.widgets.push(...copies),
-                      );
-                      store.select(copies.find((w) => w.parentId === selected.parentId)!.id);
-                    }
+                    void executeCommand('duplicate');
                   }}
                   locale={project.locale}
                 />
@@ -1179,6 +1545,99 @@ function ProjectWorkspace({
                     : zh
                       ? '保留恢复副本并关闭'
                       : 'Keep recovery and close'}
+                </button>
+              </div>
+            </section>
+          </div>
+        </div>
+      )}
+      {pasteReview && (
+        <PasteReviewDialog
+          project={project}
+          bundle={pasteReview.bundle}
+          scope={pasteReview.scope}
+          point={pasteReview.point}
+          sessionKey={clipboardSession.current}
+          currentWindowId={activeWindowId}
+          onConfirm={commitPaste}
+          onCancel={() => setPasteReview(null)}
+        />
+      )}
+      {upgradeRequest && (
+        <div className="modal-backdrop">
+          <div
+            className="settings-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label={zh ? '升级工程与控件' : 'Upgrade project and widgets'}
+            onKeyDown={(event) => {
+              event.stopPropagation();
+              if (event.key === 'Escape') setUpgradeRequest(null);
+            }}
+          >
+            <header>
+              <strong>{zh ? '升级工程与控件' : 'Upgrade project and widgets'}</strong>
+              <button
+                className="icon-button"
+                aria-label={zh ? '取消升级' : 'Cancel upgrade'}
+                onClick={() => setUpgradeRequest(null)}
+              >
+                <X size={18} />
+              </button>
+            </header>
+            <section>
+              {migrationSummary(project).map((line, index) => (
+                <p key={index}>{line}</p>
+              ))}
+              {['widget-properties', 'batch-properties', 'widget-definition'].includes(
+                upgradeRequest.reason,
+              ) && (
+                <p>
+                  {zh
+                    ? '所选控件将启用新版属性；容器可见/禁用继承、输入提交及详细样式会按新版规则生效。未知扩展字段仍保留。'
+                    : 'Selected widgets will use the new property rules, including container inheritance, input submission and detailed styles. Unknown extensions are retained.'}
+                </p>
+              )}
+              <p>
+                {zh
+                  ? '确认后可使用撤销恢复本次操作。'
+                  : 'You can undo this change after confirming.'}
+              </p>
+              <div className="settings-actions">
+                <button className="button" onClick={() => setUpgradeRequest(null)}>
+                  {zh ? '取消' : 'Cancel'}
+                </button>
+                <button
+                  autoFocus
+                  className="button primary"
+                  onClick={async () => {
+                    const request = upgradeRequest;
+                    store.beginTransaction('upgrade-v3');
+                    try {
+                      store.update((next) => {
+                        Object.assign(next, upgradeProject(next));
+                        if (
+                          ['widget-properties', 'batch-properties', 'widget-definition'].includes(
+                            request.reason,
+                          )
+                        )
+                          for (const widget of scopeWidgets(next))
+                            if (request.ids.includes(widget.id))
+                              Object.assign(widget, upgradeWidget(widget, next));
+                      });
+                      if (typeof request.pending === 'function') request.pending();
+                      else if (request.pending) await executeCommand(request.pending);
+                      validateProject(store.getSnapshot().project);
+                      store.commitTransaction();
+                      setUpgradeRequest(null);
+                      notify(zh ? '已升级工作副本' : 'Working copy upgraded');
+                    } catch (error) {
+                      store.cancelTransaction();
+                      notify(errorText(error), true);
+                    }
+                  }}
+                >
+                  {zh ? '升级工作副本' : 'Upgrade working copy'}
                 </button>
               </div>
             </section>
@@ -1513,7 +1972,7 @@ function ScriptPanel({
 }) {
   const [selected, setSelected] = useState(project.scripts[0]?.id ?? '');
   const script = project.scripts.find((s) => s.id === selected);
-  const [input, setInput] = useState(0),
+  const [input, setInput] = useState('0'),
     [busy, setBusy] = useState(false),
     [result, setResult] = useState('');
   const zh = project.locale === 'zh-CN';
@@ -1530,21 +1989,11 @@ function ScriptPanel({
     }
     setBusy(true);
     try {
-      const variables = Object.fromEntries(
-        Object.entries(engine.getSnapshot().values)
-          .filter(([, v]) => typeof v.value === 'number')
-          .map(([key, v]) => [key, v.value as number]),
-      );
-      const r = await native.executeC({
-        source: script.source,
-        input,
-        variables,
-        state: {},
-        timeoutMs: script.timeoutMs,
-      });
+      const value: Json = JSON.parse(input);
+      assertJsonValue(value);
+      engine.applyProject(project);
+      const r = await engine.runScript(script.id, value, project.revision);
       setResult(JSON.stringify(r, null, 2));
-      for (const [key, value] of Object.entries(r.writes)) engine.setVariable(key, value);
-      r.logs.forEach((line) => engine.log(line));
     } catch (error) {
       setResult(String(error));
       notify(String(error), true);
@@ -1617,9 +2066,10 @@ function ScriptPanel({
               <label>
                 {zh ? '输入' : 'Input'}
                 <input
-                  type="number"
+                  type="text"
+                  aria-label={zh ? 'JSON 测试输入' : 'JSON test input'}
                   value={input}
-                  onChange={(e) => setInput(Number(e.target.value))}
+                  onChange={(e) => setInput(e.target.value)}
                 />
               </label>
               <button className="button primary" disabled={busy} onClick={() => void execute()}>
@@ -1662,14 +2112,22 @@ function DataPanel({
   onChange,
   engine,
   notify,
+  onRequestUpgrade,
 }: {
   project: Project;
   onChange: (mutator: (p: Project) => void) => void;
   engine: RuntimeController;
   notify: (text: string, error?: boolean) => void;
+  onRequestUpgrade: (pending: () => void) => void;
 }) {
   const snapshot = useSyncExternalStore(engine.subscribe, engine.getSnapshot);
   const zh = project.locale === 'zh-CN';
+  const runtimePending = snapshot.revision !== project.revision;
+  const writeRuntimeValue = (id: string, value: Json) => {
+    if (engine.getSnapshot().revision !== project.revision)
+      throw new Error(zh ? '运行时正在更新，请稍后重试' : 'Runtime is updating. Please retry.');
+    engine.setVariable(id, value);
+  };
   const update = (id: string, patch: Partial<Variable>) =>
     onChange((p) =>
       Object.assign(
@@ -1731,19 +2189,45 @@ function DataPanel({
                     value={v.type}
                     onChange={(e) => {
                       const type = e.target.value as Variable['type'];
-                      update(v.id, {
-                        type,
-                        initial: type === 'number' ? 0 : type === 'boolean' ? false : '',
-                      });
+                      const references = variableReferences(project, v);
+                      if (type !== v.type && references.length) {
+                        notify(
+                          `${zh ? '请先调整此变量的引用' : 'Update variable references first'}: ${references.join(', ')}`,
+                          true,
+                        );
+                        return;
+                      }
+                      const apply = () =>
+                        update(v.id, {
+                          type,
+                          initial:
+                            type === 'json'
+                              ? {}
+                              : type === 'number'
+                                ? 0
+                                : type === 'boolean'
+                                  ? false
+                                  : '',
+                          ...(type !== 'number' ? { alarm: undefined } : {}),
+                        });
+                      if (type === 'json' && project.schemaVersion < 3) onRequestUpgrade(apply);
+                      else apply();
                     }}
                   >
                     <option>number</option>
                     <option>string</option>
                     <option>boolean</option>
+                    <option>json</option>
                   </select>
                 </td>
                 <td>
-                  {v.type === 'boolean' ? (
+                  {v.type === 'json' ? (
+                    <JsonValueField
+                      label={`initial ${v.name}`}
+                      value={v.initial}
+                      onCommit={(initial) => update(v.id, { initial })}
+                    />
+                  ) : v.type === 'boolean' ? (
                     <input
                       type="checkbox"
                       checked={Boolean(v.initial)}
@@ -1762,13 +2246,21 @@ function DataPanel({
                   )}
                 </td>
                 <td>
-                  {v.type === 'boolean' ? (
+                  {v.type === 'json' ? (
+                    <JsonValueField
+                      label={`runtime ${v.name}`}
+                      value={snapshot.values[v.id]?.value ?? null}
+                      disabled={v.readOnly || runtimePending || !snapshot.values[v.id]}
+                      onCommit={(value) => writeRuntimeValue(v.id, value)}
+                    />
+                  ) : v.type === 'boolean' ? (
                     <input
                       type="checkbox"
                       checked={Boolean(snapshot.values[v.id]?.value)}
+                      disabled={v.readOnly || runtimePending || !snapshot.values[v.id]}
                       onChange={(e) => {
                         try {
-                          engine.setVariable(v.id, e.target.checked);
+                          writeRuntimeValue(v.id, e.target.checked);
                         } catch (error) {
                           notify(String(error), true);
                         }
@@ -1777,11 +2269,12 @@ function DataPanel({
                   ) : (
                     <input
                       aria-label={`runtime ${v.name}`}
+                      disabled={v.readOnly || runtimePending || !snapshot.values[v.id]}
                       type={v.type === 'number' ? 'number' : 'text'}
                       value={String(snapshot.values[v.id]?.value ?? '')}
                       onChange={(e) => {
                         try {
-                          engine.setVariable(
+                          writeRuntimeValue(
                             v.id,
                             v.type === 'number' ? Number(e.target.value) : e.target.value,
                           );
@@ -1806,17 +2299,7 @@ function DataPanel({
                     className="icon-button"
                     title="Delete"
                     onClick={() => {
-                      if (
-                        [
-                          ...listProjectWindows(project).flatMap((window) => window.widgets),
-                          ...project.modules.flatMap((module) => module.widgets),
-                        ].some((w) =>
-                          Object.values(w.bindings).some(
-                            (b) => b.variable === v.id || b.variable === v.name,
-                          ),
-                        ) ||
-                        project.flows.some((f) => f.nodes.some((n) => n.config.variable === v.id))
-                      )
+                      if (variableReferences(project, v).length)
                         return notify(
                           zh
                             ? '请先移除该变量的绑定和节点引用'
