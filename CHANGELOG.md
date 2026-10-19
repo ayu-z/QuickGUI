@@ -1,5 +1,19 @@
 # 变动日志
 
+## 2026-10-20 — 拆分窗口与工程配置并整合顶部导航
+
+- 移除左侧窗口选择栏的settings行，选择栏仅保留窗口切换与新增；当前附加窗口的重命名、删除和启动设置迁入右侧窗口属性，主窗口标记及原有草稿/流程引用删除保护继续生效。提取共用窗口操作对话框，保留名称校验、焦点约束、确认及错误显示。
+- 右侧“窗口与发布”拆为当前窗口属性与C脚本后的独立“项目配置”工作区。应用名称、标识、版本、发布者、应用图标和桌面快捷方式仍写既有工程级publish；窗口标题、图标和行为仍针对当前窗口。项目配置独立滚动，默认隐藏日志并保留其他工作区的显示偏好，构建时可显示输出；文本编辑以草稿校验后提交，无效值不覆盖模型，Escape恢复。
+- 将workspace-tabs并入同一个topbar，整合六个工作区页签、撤销/重做、窗口属性、语言、主题、预览和导出。常规宽度56px单行，1366px及以下压缩间距与工程名，1100px及以下自动分为94px两行；长工程名省略且可悬停看全名，移除独立工作区标题与旧spacer，保留键盘焦点和菜单退出语义。
+- 图标导入/预览/移除提取为共享组件，明确区分窗口、应用及快捷方式输入；资源和目标引用一次工程更新写入，支持单步撤销/重做。维持5MB及扩展名校验，卸载、切换窗口/页面或替换工程取消失效的异步读取，避免写入错误作用域。
+- 新增 `src/designer/IconAssetField.tsx`、`src/panels/WindowPrompt.tsx`、`src/panels/ProjectConfigPanel.tsx`、`src/panels/projectConfig.css`、`tests/e2e/project-config.spec.ts`；修改 `src/App.tsx`、`src/core/store.ts`、`src/core/i18n.ts`、`src/designer/WindowInspector.tsx`、`src/designer/designer.css`、`src/panels/WindowManager.tsx`、`src/styles.css`、`tests/e2e/appearance-colors.spec.ts`、`tests/e2e/designer.spec.ts`、`tests/e2e/multi-window.spec.ts`、`tests/e2e/project-name.spec.ts`、`tests/e2e/translations.spec.ts`、`README.md`、`docs/architecture.md` 和本文件。无源文件删除或重命名，无工程格式、依赖或运行协议变更。
+- 新增5项浏览器回归，覆盖项目配置顺序、全局发布/当前窗口作用域、无效草稿、撤销/恢复/导出、三类独立图标和单步资源撤销、失效FileReader真实完成后的零写入、六页签与常用操作在中英文/亮暗/1100及1440宽度的点击与边界，以及1100×520内部滚轮、固定标题、键盘焦点。迁移原窗口管理、发布身份与导航回归，继续验证CODE草稿和引用保护。
+- `npm run check` 的TypeScript与309项单测、`npx tauri build --debug --bundles app` 前置的生产构建及本机打包通过，更新 `target/debug/bundle/macos/QuickGUI.app`（78.01 MiB）。Prettier和Git差异检查通过；保留既有桥接混合导入与Monaco体积提示。额外浏览器布局矩阵覆盖900–1920px的11种宽度、中英文和亮暗主题，Chromium/WebKit共88组合均无顶栏溢出、页签横滚、重叠或按钮越界；已目视核对常规与紧凑布局截图。
+- 首轮隔离Chromium全量98/99、WebKit专项27/29通过，短窗口回归发现共享上传按钮的隐藏file input定位到文档，将520px页面撑为570px/566px。上传标签增加定位包含块，隐藏输入明确置于标签左上，修复后Chromium项目配置5/5通过；独立两浏览器诊断确认亮暗、滚动和聚焦后文档高度均520px，空格切换仍有效。修复后重新完成生产构建与本机打包；首轮日志保存在忽略的 `artifacts/project-config-first-chromium.log`、`artifacts/project-config-first-webkit.log`。
+- WebKit另有原工程命名焦点用例在Shift+Tab后未聚焦“取消命名”。使用完全独立的 `git archive 6574448` 源码、私有依赖与1427服务，仅执行未修改的该用例，同样在第51行失败，确认是既有问题；本次不改该对话框或放宽测试。基线证据在忽略的 `artifacts/baseline-webkit-6574448/`，最终WebKit专项显式排除此项，不将其记为通过。
+- 最终 `node artifacts/run-isolated-e2e.mjs` 在独立1421服务上通过99/99 Chromium全量；`QG_E2E_PORT=1426 node artifacts/run-isolated-webkit.mjs tests/e2e/project-config.spec.ts tests/e2e/multi-window.spec.ts tests/e2e/project-name.spec.ts tests/e2e/dropdowns.spec.ts tests/e2e/flow-layout.spec.ts --grep-invert 'naming keeps keyboard focus'` 在独立1426服务上通过28/28 WebKit专项，排除项及原因如上，正式配置和超时未改。已目视核对项目配置与内部滚动截图；最终报告位于忽略的 `artifacts/isolated-e2e/`、`artifacts/isolated-e2e-webkit/`，用户1420环境保留。
+- `cargo test --workspace` 仍被未修改的 `crates/quickgui-engine/src/serial_demo_test.rs:154` 既有E0502借用冲突阻断，未记为通过。无C SDK、进程协议或编译路径修改，未重复C/AOT专项；报告、截图、隔离副本与应用包按生成物处理，用户 `QuickGUI_Icons/` 未修改或暂存。
+
 ## 2026-10-20 — 统一窗口与流程下拉选择并合并选择栏
 
 - 界面页将多窗口列表替换为原生下拉框，与多流程复用同一个选择组件、32px控件高度和主题样式；选项以稳定ID为值，主窗口有明确标记，长名称通过悬停提示完整显示，支持键盘选择。选择栏合并原标题行、下拉框与新增按钮，移除旧流程标题/工具栏类及重复样式，流程侧栏改为选择栏与组件库两行网格。

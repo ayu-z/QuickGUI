@@ -181,9 +181,14 @@ test('window metadata, local icon and platform capability note are editable', as
     .getByRole('combobox', { name: '原生窗口圆角偏好', exact: true })
     .selectOption('round');
   await expect(inspector.locator('.qg-info-note')).toContainText('仅在支持的平台生效');
-  await inspector.getByRole('button', { name: '发布', exact: true }).click();
-  await inspector.getByLabel('应用名称', { exact: true }).fill('Workshop HMI');
-  await expect(inspector.getByLabel('应用名称', { exact: true })).toHaveValue('Workshop HMI');
+  await expect(inspector.getByRole('button', { name: '发布', exact: true })).toHaveCount(0);
+  await page
+    .locator('.workspace-tabs nav')
+    .getByRole('button', { name: '项目配置', exact: true })
+    .click();
+  const configuration = page.locator('.project-config-panel');
+  await configuration.getByLabel('应用名称', { exact: true }).fill('Workshop HMI');
+  await expect(configuration.getByLabel('应用名称', { exact: true })).toHaveValue('Workshop HMI');
 });
 
 test('theme and language controls update the whole designer', async ({ page }) => {

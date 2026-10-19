@@ -252,6 +252,8 @@ test('hides the runtime console in resource pages while retaining its preference
   await expect(page.locator('.console-panel')).toHaveCount(0);
   await tab(page, '多语言').click();
   await expect(page.locator('.console-panel')).toHaveCount(0);
+  await tab(page, '项目配置').click();
+  await expect(page.locator('.console-panel')).toHaveCount(0);
   await tab(page, '界面').click();
   await expect(page.locator('.console-panel')).toBeVisible();
   await page.locator('.console-panel > header > button').click();
@@ -265,6 +267,8 @@ test('hides the runtime console in resource pages while retaining its preference
   await tab(page, '应用外观').click();
   await expect(page.locator('.console-panel')).toHaveCount(0);
   await tab(page, '多语言').click();
+  await expect(page.locator('.console-panel')).toHaveCount(0);
+  await tab(page, '项目配置').click();
   await expect(page.locator('.console-panel')).toHaveCount(0);
   await tab(page, '流程').click();
   await expect(page.locator('.console-panel')).toBeVisible();

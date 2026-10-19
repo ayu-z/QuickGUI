@@ -3,7 +3,6 @@ import {
   Box,
   ChevronDown,
   ChevronRight,
-  CircuitBoard,
   Code2,
   Copy,
   Download,
@@ -38,6 +37,7 @@ import {
   Puzzle,
   Search,
   CircleDot,
+  Settings2,
 } from 'lucide-react';
 import { EditorStore, type EditorState, type Section } from './core/store';
 import { manualFlowEntries, reconcileFlowBinding } from './core/flowBindings';
@@ -87,6 +87,7 @@ import { importComponentPackage, exportComponentPackage } from './core/component
 import { WelcomeScreen } from './panels/WelcomeScreen';
 import { ProjectNameDialog } from './panels/ProjectNameDialog';
 import { WindowManager } from './panels/WindowManager';
+import { ProjectConfigPanel } from './panels/ProjectConfigPanel';
 import { PasteReviewDialog } from './panels/PasteReviewDialog';
 import {
   copySelection,
@@ -265,7 +266,8 @@ function ProjectWorkspace({
   const consoleLogs = [...snapshot.logs, ...buildLogs].sort((a, b) => a.time - b.time).slice(-1000);
   const [showConsole, setShowConsole] = useState(true),
     [simulate, setSimulate] = useState(false);
-  const resourceSection = section === 'appearance' || section === 'languages';
+  const resourceSection =
+    section === 'appearance' || section === 'languages' || section === 'project';
   const workspaceConsoleVisible = showConsole && (!resourceSection || buildProgress !== null);
   useEffect(() => {
     if (followConsole.current && consoleContent.current)
@@ -957,6 +959,7 @@ function ProjectWorkspace({
     ['languages', Languages, t.languages],
     ['flows', GitBranch, t.flows],
     ['scripts', Code2, t.scripts],
+    ['project', Settings2, t.projectSettings],
   ];
 
   return (
@@ -981,6 +984,7 @@ function ProjectWorkspace({
         >
           <button
             className="project-switch"
+            title={project.name}
             aria-expanded={projectMenu}
             aria-controls="project-dropdown"
             onClick={() => {
@@ -989,7 +993,7 @@ function ProjectWorkspace({
             }}
           >
             <span className="project-dot" />
-            {project.name}
+            <span className="project-switch-name">{project.name}</span>
             <ChevronDown size={13} />
           </button>
           {projectMenu && (
@@ -1035,129 +1039,127 @@ function ProjectWorkspace({
             </div>
           )}
         </div>
-        <div className="save-indicator">
+        <div className="save-indicator" title={state.dirty ? t.unsaved : t.saved}>
           <span className={state.dirty ? 'saving-dot' : 'saved-dot'} />
           {state.dirty ? t.unsaved : t.saved}
         </div>
-        <div className="topbar-spacer" />
-        <button
-          className="icon-button"
-          title="Language"
-          onClick={() =>
-            store.update((p) => {
-              p.locale = p.locale === 'zh-CN' ? 'en' : 'zh-CN';
-            })
-          }
-        >
-          <Languages size={17} />
-        </button>
-        <button className="icon-button" title="Theme" onClick={onToggleTheme}>
-          {designerTheme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
-        </button>
-        <span className="toolbar-divider" />
-        <button className="button preview-button" onClick={() => void openPreview()}>
-          <Play size={14} fill="currentColor" />
-          {t.preview}
-        </button>
-        <div
-          ref={exportMenuRef}
-          className="export-menu-wrap"
-          onKeyDown={(event) => {
-            if (event.key === 'Escape' && exportMenu) {
-              event.preventDefault();
-              event.stopPropagation();
-              setExportMenu(false);
-              exportMenuRef.current?.querySelector('button')?.focus();
-            }
-          }}
-        >
-          <button
-            className="button primary"
-            aria-expanded={exportMenu}
-            aria-controls="export-dropdown"
-            onClick={() => {
-              setProjectMenu(false);
-              setExportMenu(!exportMenu);
-            }}
-          >
-            <Download size={14} />
-            {t.export}
-            <ChevronDown size={13} />
-          </button>
-          {exportMenu && (
-            <div id="export-dropdown" className="dropdown export-dropdown">
-              <button onClick={exportOriginal}>
-                <Package size={18} />
-                <span>
-                  {t.project}
-                  <small>{t.exportHint}</small>
-                </span>
+        <div className="workspace-tabs">
+          <nav aria-label={zh ? '工作区' : 'Workspace'}>
+            {tabs.map(([id, Icon, label]) => (
+              <button
+                key={id}
+                className={section === id ? 'active' : ''}
+                aria-current={section === id ? 'page' : undefined}
+                onClick={() => store.setSection(id)}
+              >
+                <Icon size={15} />
+                {label}
               </button>
-              <button onClick={() => void exportSource()}>
-                <Code2 size={18} />
-                <span>
-                  {t.source}
-                  <small>{t.sourceHint}</small>
-                </span>
-              </button>
-              <button disabled={buildProgress !== null} onClick={() => void buildRuntime()}>
-                <Monitor size={18} />
-                <span>
-                  {zh ? '独立运行应用' : 'Standalone application'}
-                  <small>
-                    {zh ? '本机平台构建 · C 提前编译' : 'Native build · ahead-of-time C'}
-                  </small>
-                </span>
-              </button>
-            </div>
-          )}
+            ))}
+          </nav>
         </div>
-      </header>
-      <div className="workspace-tabs">
-        <div className="workspace-name">
-          <CircuitBoard size={15} />
-          <span>{zh ? '工作空间' : 'WORKSPACE'}</span>
-        </div>
-        <nav>
-          {tabs.map(([id, Icon, label]) => (
+        <div className="topbar-actions">
+          <div className="workspace-tools">
             <button
-              key={id}
-              className={section === id ? 'active' : ''}
-              aria-current={section === id ? 'page' : undefined}
-              onClick={() => store.setSection(id)}
+              className="icon-button"
+              title={t.undo}
+              onClick={store.undo}
+              disabled={!state.past.length}
             >
-              <Icon size={15} />
-              {label}
+              <RotateCcw size={15} />
             </button>
-          ))}
-        </nav>
-        <div className="workspace-tools">
+            <button
+              className="icon-button"
+              title={t.redo}
+              onClick={store.redo}
+              disabled={!state.future.length}
+            >
+              <RotateCw size={15} />
+            </button>
+            <span className="toolbar-divider" />
+            <button
+              className={`icon-button ${state.inspector === 'window' ? 'selected' : ''}`}
+              title={t.window}
+              onClick={inspectActiveWindow}
+            >
+              <Monitor size={16} />
+            </button>
+          </div>
+
           <button
             className="icon-button"
-            title={t.undo}
-            onClick={store.undo}
-            disabled={!state.past.length}
+            title="Language"
+            onClick={() =>
+              store.update((p) => {
+                p.locale = p.locale === 'zh-CN' ? 'en' : 'zh-CN';
+              })
+            }
           >
-            <RotateCcw size={15} />
+            <Languages size={17} />
           </button>
-          <button
-            className="icon-button"
-            title={t.redo}
-            onClick={store.redo}
-            disabled={!state.future.length}
-          >
-            <RotateCw size={15} />
+          <button className="icon-button" title="Theme" onClick={onToggleTheme}>
+            {designerTheme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
           </button>
           <span className="toolbar-divider" />
-          <button
-            className={`icon-button ${state.inspector === 'window' ? 'selected' : ''}`}
-            title={t.window}
-            onClick={inspectActiveWindow}
-          >
-            <Monitor size={16} />
+          <button className="button preview-button" onClick={() => void openPreview()}>
+            <Play size={14} fill="currentColor" />
+            {t.preview}
           </button>
+          <div
+            ref={exportMenuRef}
+            className="export-menu-wrap"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape' && exportMenu) {
+                event.preventDefault();
+                event.stopPropagation();
+                setExportMenu(false);
+                exportMenuRef.current?.querySelector('button')?.focus();
+              }
+            }}
+          >
+            <button
+              className="button primary"
+              aria-expanded={exportMenu}
+              aria-controls="export-dropdown"
+              onClick={() => {
+                setProjectMenu(false);
+                setExportMenu(!exportMenu);
+              }}
+            >
+              <Download size={14} />
+              {t.export}
+              <ChevronDown size={13} />
+            </button>
+            {exportMenu && (
+              <div id="export-dropdown" className="dropdown export-dropdown">
+                <button onClick={exportOriginal}>
+                  <Package size={18} />
+                  <span>
+                    {t.project}
+                    <small>{t.exportHint}</small>
+                  </span>
+                </button>
+                <button onClick={() => void exportSource()}>
+                  <Code2 size={18} />
+                  <span>
+                    {t.source}
+                    <small>{t.sourceHint}</small>
+                  </span>
+                </button>
+                <button disabled={buildProgress !== null} onClick={() => void buildRuntime()}>
+                  <Monitor size={18} />
+                  <span>
+                    {zh ? '独立运行应用' : 'Standalone application'}
+                    <small>
+                      {zh ? '本机平台构建 · C 提前编译' : 'Native build · ahead-of-time C'}
+                    </small>
+                  </span>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      </header>
       <main
         className={`workspace-body ${section === 'flows' ? `flow-page-layout ${showConsole ? 'flow-console-visible' : ''}` : ''}`}
       >
@@ -1176,9 +1178,6 @@ function ProjectWorkspace({
                 setModuleId(null);
                 store.addWindow(name);
               }}
-              onRename={store.renameWindow}
-              onDelete={store.deleteWindow}
-              onStartup={store.setWindowOpenOnStart}
             />
             <div className="left-tabs">
               {(['layers', 'library', 'modules', 'assets'] as const).map((tab) => (
@@ -1407,6 +1406,9 @@ function ProjectWorkspace({
               notify={notify}
             />
           )}
+          {section === 'project' && (
+            <ProjectConfigPanel key={project.id} project={project} onChange={store.update} />
+          )}
           {workspaceConsoleVisible && (
             <section className="console-panel">
               <header>
@@ -1500,17 +1502,18 @@ function ProjectWorkspace({
           <aside className="right-panel">
             {state.inspector === 'window' || !selected ? (
               <WindowInspector
-                key={activeWindowId}
-                project={windowProject}
+                key={`${project.id}:${activeWindowId}`}
+                project={project}
+                currentWindow={activeWindow}
                 onWindowChange={(patch) => store.updateWindow(activeWindowId, patch)}
-                onPublishChange={(patch) =>
+                onRename={store.renameWindow}
+                onDelete={store.deleteWindow}
+                onStartup={store.setWindowOpenOnStart}
+                onIconImport={(asset) =>
                   store.update((p) => {
-                    Object.assign(p.publish, patch);
-                  })
-                }
-                onAsset={(asset) =>
-                  store.update((p) => {
+                    if (p.id !== project.id) throw new Error('Project changed during icon import');
                     p.assets.push(asset);
+                    getProjectWindow(p, activeWindowId).config.icon = asset.id;
                   })
                 }
                 locale={project.locale}

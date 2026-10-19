@@ -150,6 +150,7 @@ test('separates appearance and translations and changes from two expanded langua
     '多语言',
     '流程',
     'C 脚本',
+    '项目配置',
   ]);
   await expect(
     page.locator('.workspace-tabs nav').getByRole('button', { name: '连接', exact: true }),
@@ -397,6 +398,7 @@ test('keeps long tables and expanded language columns visible in light and dark 
     'Languages',
     'Flows',
     'C scripts',
+    'Project settings',
   ]);
   await expect(
     page.locator('.workspace-tabs nav').getByRole('button', { name: 'Connections', exact: true }),

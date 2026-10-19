@@ -149,8 +149,12 @@ test('renaming updates the project name, export and recovery while preserving in
     .click();
   const windowInspector = page.locator('.qg-window-inspector');
   await windowInspector.getByLabel('窗口标题', { exact: true }).fill('运行窗口标题');
-  await windowInspector.getByRole('button', { name: '发布', exact: true }).click();
-  await windowInspector.getByLabel('应用名称', { exact: true }).fill('Station Application');
+  await page
+    .locator('.workspace-tabs nav')
+    .getByRole('button', { name: '项目配置', exact: true })
+    .click();
+  const projectConfiguration = page.locator('.project-config-panel');
+  await projectConfiguration.getByLabel('应用名称', { exact: true }).fill('Station Application');
   const original = await exportOriginal(page, testInfo, 'before-rename');
 
   await projectMenuAction(page, '重命名工程');
@@ -170,10 +174,14 @@ test('renaming updates the project name, export and recovery while preserving in
   await dialog.getByRole('button', { name: '保存名称', exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await expect(page.locator('.project-switch')).toHaveText('一级泵站工程');
-  await expect(page.locator('.qg-artboard-caption')).toContainText('运行窗口标题');
-  await expect(windowInspector.getByLabel('应用名称', { exact: true })).toHaveValue(
+  await expect(projectConfiguration.getByLabel('应用名称', { exact: true })).toHaveValue(
     'Station Application',
   );
+  await page
+    .locator('.workspace-tabs nav')
+    .getByRole('button', { name: '界面', exact: true })
+    .click();
+  await expect(page.locator('.qg-artboard-caption')).toContainText('运行窗口标题');
   const renamed = await exportOriginal(page, testInfo, 'renamed');
   expect(renamed.filename).toBe('一级泵站工程.qgui');
   expect(renamed.project.name).toBe('一级泵站工程');

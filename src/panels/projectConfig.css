@@ -1,0 +1,128 @@
+.project-config-panel {
+  background: var(--bg);
+}
+.project-config-scroll {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 14px;
+}
+.project-config-scroll:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -3px;
+}
+.project-config-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 14px;
+}
+.project-config-card {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--panel);
+}
+.project-config-card > h3 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 16px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 550;
+}
+.project-config-card > h3 > svg {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.project-config-application {
+  grid-column: 1 / -1;
+}
+.project-config-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.project-config-field.qg-field {
+  margin: 0;
+}
+.project-config-field input {
+  height: 32px;
+}
+.project-config-field input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+.project-config-field .form-error {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.project-config-panel .qg-icon-field {
+  margin: 0;
+}
+.project-config-panel .qg-icon-import {
+  padding: 12px;
+  background: var(--surface);
+}
+.project-config-panel .qg-icon-preview {
+  width: 56px;
+  height: 56px;
+  background: var(--panel);
+}
+.project-config-panel .qg-icon-import-copy strong {
+  font-size: 11px;
+}
+.project-config-panel .qg-icon-field .qg-error {
+  margin: 8px 0 0;
+}
+.project-config-panel .qg-toggle-row {
+  margin-bottom: 14px;
+}
+.project-config-note {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.project-config-footer {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.7;
+}
+.project-config-footer > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+@media (min-width: 1150px) {
+  .project-config-fields {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@media (max-width: 700px) {
+  .project-config-scroll {
+    padding: 10px;
+  }
+  .project-config-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+  .project-config-card {
+    padding: 12px;
+  }
+  .project-config-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .project-config-panel .resource-heading-count {
+    display: none;
+  }
+}

@@ -24,6 +24,14 @@ async function selectWindow(page: Page, id: string) {
   await windowSelector(page).selectOption(id);
   await expect(windowSelector(page)).toHaveValue(id);
 }
+async function showWindowProperties(page: Page) {
+  await page
+    .locator('.workspace-tools')
+    .getByRole('button', { name: '窗口属性', exact: true })
+    .click();
+  await expect(page.locator('.qg-window-inspector')).toBeVisible();
+}
+
 async function addText(page: Page) {
   await page.locator('.left-tabs').getByRole('button', { name: '控件', exact: true }).click();
   await page.locator('.qg-library').getByRole('button', { name: '文本标签', exact: true }).click();
@@ -56,7 +64,10 @@ test('window and flow dropdowns share native controls and current-window actions
   const b = await addWindow(page, 'B · 设备详情');
   const select = windowSelector(page);
   const manager = page.locator('.window-manager');
+  const windowInspector = page.locator('.qg-window-inspector');
   const windowRow = manager.locator('.project-item-select');
+  await expect(manager.getByRole('checkbox')).toHaveCount(0);
+  await expect(manager.getByRole('button', { name: /^(重命名窗口|删除窗口) / })).toHaveCount(0);
   await expect(windowRow.getByRole('combobox', { name: '选择窗口', exact: true })).toBeVisible();
   await expect(windowRow.getByRole('button', { name: '新增窗口', exact: true })).toBeVisible();
   await expect(select).toHaveJSProperty('tagName', 'SELECT');
@@ -64,13 +75,13 @@ test('window and flow dropdowns share native controls and current-window actions
   await expect(windowOption(page, 'main')).toHaveText('泵站控制面板 (主窗口)');
   await expect(select).toHaveValue(b);
   await expect(
-    manager.getByRole('button', { name: '重命名窗口 B · 设备详情', exact: true }),
+    windowInspector.getByRole('button', { name: '重命名窗口 B · 设备详情', exact: true }),
   ).toBeVisible();
   await expect(
-    manager.getByRole('button', { name: '删除窗口 B · 设备详情', exact: true }),
+    windowInspector.getByRole('button', { name: '删除窗口 B · 设备详情', exact: true }),
   ).toBeVisible();
   await expect(
-    manager.getByRole('button', { name: '重命名窗口 A · 设备概览', exact: true }),
+    windowInspector.getByRole('button', { name: '重命名窗口 A · 设备概览', exact: true }),
   ).toHaveCount(0);
   const revision = (await page.locator('.statusbar').textContent())!.match(/rev \d+/)![0];
   await select.focus();
@@ -81,32 +92,34 @@ test('window and flow dropdowns share native controls and current-window actions
     page.locator('.qg-window-inspector').getByLabel('窗口标题', { exact: true }),
   ).toHaveValue('A · 设备概览');
   await expect(
-    manager.getByRole('button', { name: '删除窗口 A · 设备概览', exact: true }),
+    windowInspector.getByRole('button', { name: '删除窗口 A · 设备概览', exact: true }),
   ).toBeVisible();
   await expect(
-    manager.getByRole('button', { name: '删除窗口 B · 设备详情', exact: true }),
+    windowInspector.getByRole('button', { name: '删除窗口 B · 设备详情', exact: true }),
   ).toHaveCount(0);
   await select.selectOption(b);
   await expect(select).toHaveValue(b);
   await expect(page.locator('.statusbar')).toContainText(revision);
-  await manager.getByRole('button', { name: '重命名窗口 B · 设备详情', exact: true }).click();
+  await windowInspector
+    .getByRole('button', { name: '重命名窗口 B · 设备详情', exact: true })
+    .click();
   const rename = page.getByRole('dialog', { name: '重命名窗口', exact: true });
   await rename.getByLabel('窗口名称', { exact: true }).fill('B · 参数详情');
   await rename.getByRole('button', { name: '保存名称', exact: true }).click();
   await expect(select).toHaveValue(b);
   await expect(windowOption(page, b)).toHaveText('B · 参数详情');
   await expect(
-    manager.getByRole('button', { name: '删除窗口 B · 参数详情', exact: true }),
+    windowInspector.getByRole('button', { name: '删除窗口 B · 参数详情', exact: true }),
   ).toBeVisible();
-  await manager.getByLabel('启动时打开此窗口', { exact: true }).check();
+  await windowInspector.getByLabel('启动时打开此窗口', { exact: true }).check();
   await selectWindow(page, a);
-  await expect(manager.getByLabel('启动时打开此窗口', { exact: true })).not.toBeChecked();
+  await expect(windowInspector.getByLabel('启动时打开此窗口', { exact: true })).not.toBeChecked();
   await selectWindow(page, 'main');
-  await expect(manager.getByRole('button', { name: /^重命名窗口 / })).toHaveCount(0);
-  await expect(manager.getByRole('button', { name: /^删除窗口 / })).toHaveCount(0);
-  await expect(manager.getByLabel('启动时打开此窗口', { exact: true })).toHaveCount(0);
+  await expect(windowInspector.getByRole('button', { name: /^重命名窗口 / })).toHaveCount(0);
+  await expect(windowInspector.getByRole('button', { name: /^删除窗口 / })).toHaveCount(0);
+  await expect(windowInspector.getByLabel('启动时打开此窗口', { exact: true })).toHaveCount(0);
   await selectWindow(page, b);
-  await expect(manager.getByLabel('启动时打开此窗口', { exact: true })).toBeChecked();
+  await expect(windowInspector.getByLabel('启动时打开此窗口', { exact: true })).toBeChecked();
   const height = (await select.boundingBox())!.height;
   await page
     .locator('.workspace-tabs nav')
@@ -134,11 +147,13 @@ test('window and flow dropdowns share native controls and current-window actions
   await page.getByRole('button', { name: 'Language', exact: true }).click();
   await expect(page.getByRole('combobox', { name: 'Select window', exact: true })).toHaveValue(b);
   await expect(
-    manager.getByRole('button', { name: 'Delete window B · 参数详情', exact: true }),
+    windowInspector.getByRole('button', { name: 'Delete window B · 参数详情', exact: true }),
   ).toBeVisible();
   await page.setViewportSize({ width: 1100, height: 760 });
   const longWindowName = 'B · Equipment configuration and communication diagnostics';
-  await manager.getByRole('button', { name: 'Rename window B · 参数详情', exact: true }).click();
+  await windowInspector
+    .getByRole('button', { name: 'Rename window B · 参数详情', exact: true })
+    .click();
   const englishRename = page.getByRole('dialog', { name: 'Rename window', exact: true });
   await englishRename.getByLabel('Window name', { exact: true }).fill(longWindowName);
   await englishRename.getByRole('button', { name: 'Save name', exact: true }).click();
@@ -168,9 +183,7 @@ test('window and flow dropdowns share native controls and current-window actions
         await sidebar.evaluate((element) => {
           const bounds = element.getBoundingClientRect();
           return Array.from(
-            element.querySelectorAll(
-              '.project-item-select select, .project-item-select button, .window-manager-settings input, .window-manager-settings button',
-            ),
+            element.querySelectorAll('.project-item-select select, .project-item-select button'),
           )
             .filter((item) => item.getBoundingClientRect().width > 0)
             .every((item) => {
@@ -208,7 +221,11 @@ test('creates, configures, renames and round-trips independent scenes with stabl
     '子窗口专属内容',
   );
   await expect(page.getByTestId('design-canvas')).toHaveCSS('width', '760px');
-  await page.getByRole('button', { name: '重命名窗口 设备详情', exact: true }).click();
+  await showWindowProperties(page);
+  await page
+    .locator('.qg-window-inspector')
+    .getByRole('button', { name: '重命名窗口 设备详情', exact: true })
+    .click();
   const rename = page.getByRole('dialog', { name: '重命名窗口', exact: true });
   await rename.getByLabel('窗口名称', { exact: true }).fill('参数窗口');
   await rename.getByRole('button', { name: '保存名称', exact: true }).click();
@@ -258,13 +275,17 @@ test('retains invalid per-widget drafts during switching and protects deletion b
   inspector = page.locator('.qg-inspector');
   await inspector.getByRole('button', { name: 'CODE', exact: true }).click();
   await expect(inspector.locator('.monaco-editor')).toContainText('unfinished child');
+  await showWindowProperties(page);
   await page.getByRole('button', { name: '删除窗口 草稿窗口', exact: true }).click();
   let deleting = page.getByRole('dialog', { name: '删除窗口', exact: true });
   await deleting.getByRole('button', { name: '删除窗口', exact: true }).click();
   await expect(deleting.getByRole('alert')).toContainText('CODE');
   await expect(windowOption(page, id)).toHaveCount(1);
   await deleting.getByRole('button', { name: '取消', exact: true }).click();
+  await page.locator('.qg-design-widget').first().click();
+  await inspector.getByRole('button', { name: 'CODE', exact: true }).click();
   await inspector.getByRole('button', { name: '还原草稿', exact: true }).click();
+  await showWindowProperties(page);
   await page.getByRole('button', { name: '删除窗口 草稿窗口', exact: true }).click();
   deleting = page.getByRole('dialog', { name: '删除窗口', exact: true });
   await deleting.getByRole('button', { name: '删除窗口', exact: true }).click();
@@ -454,7 +475,11 @@ test('configures real window flow nodes, protects references and opens and close
     .locator('.workspace-tabs nav')
     .getByRole('button', { name: '界面', exact: true })
     .click();
-  await page.getByRole('button', { name: '删除窗口 流程目标窗口', exact: true }).click();
+  await showWindowProperties(page);
+  await page
+    .locator('.qg-window-inspector')
+    .getByRole('button', { name: '删除窗口 流程目标窗口', exact: true })
+    .click();
   const deleting = page.getByRole('dialog', { name: '删除窗口', exact: true });
   await deleting.getByRole('button', { name: '删除窗口', exact: true }).click();
   await expect(deleting.getByRole('alert')).toContainText('启动循环');
