@@ -115,8 +115,7 @@
 .qg-field select,
 .qg-field textarea,
 .qg-binding select,
-.qg-add-binding select,
-.qg-flow-toolbar select {
+.qg-add-binding select {
   width: 100%;
   min-width: 0;
   min-height: 31px;
@@ -873,41 +872,10 @@
 }
 .qg-flow-sidebar.left-panel {
   display: grid;
-  grid-template-rows: 43px auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-}
-.qg-flow-sidebar-heading {
-  height: 43px;
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--border, #2d313a);
-  font-size: 10px;
-  letter-spacing: 0.7px;
-  color: var(--muted, #87909f);
-}
-.qg-flow-sidebar-heading .qg-count {
-  margin-left: auto;
-}
-.qg-flow-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: none;
-  padding: 12px;
-  border-bottom: 1px solid var(--border, #2d313a);
-}
-.qg-flow-toolbar > svg {
-  flex: none;
-  color: var(--muted, #87909f);
-}
-.qg-flow-toolbar select {
-  flex: 1;
-  max-width: 100%;
 }
 .qg-node-palette.qg-library {
   flex: 1;

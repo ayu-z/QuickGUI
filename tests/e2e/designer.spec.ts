@@ -121,7 +121,7 @@ test('flow nodes can be added, configured, connected and removed', async ({ page
   await expect(page.locator('.react-flow__edge')).toHaveCount(initialEdges);
   await page.getByRole('button', { name: '新增流程', exact: true }).click();
   await expect(nodes).toHaveCount(1);
-  await expect(page.locator('.qg-flow-toolbar select')).toHaveValue(/.+/);
+  await expect(page.getByRole('combobox', { name: '选择流程', exact: true })).toHaveValue(/.+/);
   await nodes.first().click();
   await page
     .locator('.qg-flow-settings')

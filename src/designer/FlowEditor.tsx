@@ -35,6 +35,7 @@ import { ParameterInspector } from './ParameterInspector';
 import { Field, NumberInput, Toggle } from './Fields';
 import { listProjectWindows } from '../core/windows';
 import { JsonValueField } from '../panels/JsonValueField';
+import { ProjectItemSelect } from '../panels/ProjectItemSelect';
 import { assertJsonPath } from '../core/jsonValue';
 import type { JsonPath } from '../core/types';
 import { createFlowNodeConfig, flowNodePorts, type SerialAction } from '../core/flowV4';
@@ -782,9 +783,19 @@ function FlowEditor({
         className="left-panel qg-flow-sidebar"
         aria-label={zh ? '流程与节点库' : 'Flows and nodes'}
       >
-        <div className="qg-flow-sidebar-heading">
-          <span>{zh ? '流程' : 'FLOWS'}</span>
-          <span className="qg-count">{project.flows.length}</span>
+        <ProjectItemSelect
+          label={zh ? '选择流程' : 'Select flow'}
+          icon={GitBranch}
+          items={project.flows}
+          value={flow?.id ?? ''}
+          emptyLabel={zh ? '尚无流程' : 'No flows'}
+          onSelect={(id) => {
+            setSelectedFlowId(id);
+            setSelectedNodeId(null);
+            setSelectedEdgeId(null);
+            setSelectedParameterId(null);
+          }}
+        >
           <button
             className="qg-icon-button"
             onClick={newFlow}
@@ -793,28 +804,7 @@ function FlowEditor({
           >
             <Plus size={15} />
           </button>
-        </div>
-        <div className="qg-flow-toolbar">
-          <GitBranch size={15} />
-          <select
-            aria-label={zh ? '选择流程' : 'Select flow'}
-            value={flow?.id ?? ''}
-            disabled={!project.flows.length}
-            onChange={(event) => {
-              setSelectedFlowId(event.target.value);
-              setSelectedNodeId(null);
-              setSelectedEdgeId(null);
-              setSelectedParameterId(null);
-            }}
-          >
-            {!project.flows.length && <option value="">{zh ? '尚无流程' : 'No flows'}</option>}
-            {project.flows.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        </ProjectItemSelect>
         <div className="qg-flow-library">
           <nav
             className="qg-flow-library-tabs"

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AppWindow, Monitor, Pencil, Plus, Trash2, X } from 'lucide-react';
 import type { Locale, Project } from '../core/types';
 import { listProjectWindows } from '../core/windows';
+import { ProjectItemSelect } from './ProjectItemSelect';
 
 type WindowAction = { mode: 'create' } | { mode: 'rename' | 'delete'; id: string };
 
@@ -38,75 +39,57 @@ export function WindowManager({
   }, [project, action]);
   return (
     <section className="window-manager" aria-label={zh ? '工程窗口' : 'Project windows'}>
-      <header>
-        <span>
-          {zh ? '窗口' : 'WINDOWS'} <small>{windows.length}</small>
-        </span>
+      <ProjectItemSelect
+        label={zh ? '选择窗口' : 'Select window'}
+        icon={activeWindowId === 'main' ? Monitor : AppWindow}
+        items={windows.map((window) => ({
+          id: window.id,
+          name:
+            window.id === 'main'
+              ? `${window.name} (${zh ? '主窗口' : 'Main window'})`
+              : window.name,
+        }))}
+        value={activeWindowId}
+        onSelect={onSelect}
+      >
         <button
-          className="icon-button"
+          className="qg-icon-button"
           aria-label={zh ? '新增窗口' : 'Add window'}
           title={zh ? '新增窗口' : 'Add window'}
           onClick={() => setAction({ mode: 'create' })}
         >
-          <Plus size={14} />
+          <Plus size={15} />
         </button>
-      </header>
-      <div className="window-manager-list">
-        {windows.map((window) => (
-          <div
-            key={window.id}
-            data-window-id={window.id}
-            className={`window-manager-row ${window.id === activeWindowId ? 'active' : ''}`}
-          >
-            <button
-              className="window-select"
-              aria-label={`${zh ? '切换窗口' : 'Select window'} ${window.name}`}
-              aria-pressed={window.id === activeWindowId}
-              onClick={() => onSelect(window.id)}
-            >
-              {window.id === 'main' ? <Monitor size={14} /> : <AppWindow size={14} />}
-              <span title={window.name}>{window.name}</span>
-              {window.id === 'main' ? (
-                <small>{zh ? '主' : 'MAIN'}</small>
-              ) : (
-                window.openOnStart && (
-                  <i
-                    className="window-startup-dot"
-                    title={zh ? '启动时打开' : 'Opens on startup'}
-                  />
-                )
-              )}
-            </button>
-            {window.id !== 'main' && (
-              <div className="window-row-actions">
-                <button
-                  className="icon-button"
-                  aria-label={`${zh ? '重命名窗口' : 'Rename window'} ${window.name}`}
-                  onClick={() => setAction({ mode: 'rename', id: window.id })}
-                >
-                  <Pencil size={11} />
-                </button>
-                <button
-                  className="icon-button"
-                  aria-label={`${zh ? '删除窗口' : 'Delete window'} ${window.name}`}
-                  onClick={() => setAction({ mode: 'delete', id: window.id })}
-                >
-                  <Trash2 size={11} />
-                </button>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+      </ProjectItemSelect>
       {current && current.id !== 'main' && (
-        <label className="window-startup-toggle">
-          <input
-            type="checkbox"
-            checked={current.openOnStart}
-            onChange={(event) => onStartup(current.id, event.target.checked)}
-          />
-          <span>{zh ? '启动时打开此窗口' : 'Open this window on startup'}</span>
-        </label>
+        <div className="window-manager-settings">
+          <label className="window-startup-toggle">
+            <input
+              type="checkbox"
+              checked={current.openOnStart}
+              onChange={(event) => onStartup(current.id, event.target.checked)}
+            />
+            <span>{zh ? '启动时打开此窗口' : 'Open this window on startup'}</span>
+          </label>
+          <div className="window-manager-actions">
+            <button
+              className="icon-button"
+              aria-label={`${zh ? '重命名窗口' : 'Rename window'} ${current.name}`}
+              title={zh ? '重命名当前窗口' : 'Rename current window'}
+              onClick={() => setAction({ mode: 'rename', id: current.id })}
+            >
+              <Pencil size={14} />
+            </button>
+            <button
+              className="icon-button danger"
+              aria-label={`${zh ? '删除窗口' : 'Delete window'} ${current.name}`}
+              title={zh ? '删除当前窗口' : 'Delete current window'}
+              onClick={() => setAction({ mode: 'delete', id: current.id })}
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+        </div>
       )}
       {action && (action.mode === 'create' || target) && (
         <WindowPrompt
@@ -251,8 +234,8 @@ function WindowPrompt({
               <div className="project-name-meta">
                 <span>
                   {zh
-                    ? '窗口名称用于设计器列表；原生标题可在窗口属性中单独设置。'
-                    : 'Used in the window list. Set the native title separately in window properties.'}
+                    ? '窗口名称用于设计器下拉框；原生标题可在窗口属性中单独设置。'
+                    : 'Used in the window selector. Set the native title separately in window properties.'}
                 </span>
                 <span>{name.length}/200</span>
               </div>

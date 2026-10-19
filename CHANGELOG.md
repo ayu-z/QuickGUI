@@ -1,5 +1,16 @@
 # 变动日志
 
+## 2026-10-20 — 统一窗口与流程下拉选择并合并选择栏
+
+- 界面页将多窗口列表替换为原生下拉框，与多流程复用同一个选择组件、32px控件高度和主题样式；选项以稳定ID为值，主窗口有明确标记，长名称通过悬停提示完整显示，支持键盘选择。选择栏合并原标题行、下拉框与新增按钮，移除旧流程标题/工具栏类及重复样式，流程侧栏改为选择栏与组件库两行网格。
+- 附加窗口的重命名、删除和启动设置集中到当前窗口的设置行；切换不修改工程修订，新增自动选中、撤销/重做、恢复、工程导出及跨页选择保留原语义。主窗口保护、无效CODE草稿保留、删除草稿/流程引用校验沿用已有模型与store，不更改工程格式、运行时、依赖或C执行路径。
+- 新增 `src/panels/ProjectItemSelect.tsx`；修改 `src/panels/WindowManager.tsx`、`src/designer/FlowEditor.tsx`、`src/designer/designer.css`、`src/styles.css`、`README.md`、`tests/e2e/multi-window.spec.ts`、`tests/e2e/project-theme.spec.ts`、`tests/e2e/selection-inspector.spec.ts`、`tests/e2e/designer.spec.ts`、`tests/e2e/function-blocks.spec.ts` 和本文件。无源文件删除或重命名，旧窗口列表与流程工具栏相关选择器改用下拉框语义。
+- 新增统一选择浏览器回归，覆盖键盘切换、当前窗口操作与启动设置作用域、主窗口标记/保护、稳定ID重命名、窗口/流程选择尺寸与新增按钮同行、跨页与中英文切换；在1100px窗口/190px侧栏验证英文长名称、亮暗主题、32px控件与按钮横向边界，并保存四张布局截图。原多窗口布局/草稿/引用/撤销/导出测试全部保留。
+- 已通过 `npm run check` 的TypeScript与309项单测、`npx tauri build --debug --bundles app` 前置的 `npm run build` 和本机应用打包，更新 `target/debug/bundle/macos/QuickGUI.app`（78.01 MiB）。Prettier与Git差异检查通过；保留既有Monaco体积与桥接混合导入提示。
+- 用例迁移中的HTMLElement.value类型错误改为getAttribute后，TypeScript通过。首轮隔离Chromium全量92/94通过，测试迁移发现程序化selectOption不模拟原点击带来的输入失焦提交，以及窄屏边界断言混入既有页签按钮。窗口切换测试先聚焦下拉框再选择，保留并增加画布内容/导出断言；边界检查精确覆盖本次选择栏和窗口设置区，不放宽尺寸、边界或超时。首轮记录保留在忽略的 `artifacts/unified-selector-first-run.log`。
+- 最终 `node artifacts/run-isolated-e2e.mjs` 在独立1421服务上通过94/94 Chromium全量用例；`QG_E2E_PORT=1426 node artifacts/run-isolated-webkit.mjs tests/e2e/multi-window.spec.ts tests/e2e/project-theme.spec.ts tests/e2e/selection-inspector.spec.ts tests/e2e/flow-layout.spec.ts` 通过21/21 WebKit专项，沿用正式配置和标准超时，保留用户原1420环境。目视核对WebKit亮色界面与暗色流程截图，选择框和新增入口同行、窄侧栏内窗口设置完整；报告在忽略的 `artifacts/isolated-e2e/` 与 `artifacts/isolated-e2e-webkit/`。
+- `cargo test --workspace` 仍因未改动的 `crates/quickgui-engine/src/serial_demo_test.rs:154` 既有E0502借用冲突失败，未记为通过。无C SDK、进程协议或编译路径变更，未重复C/AOT专项；浏览器报告、截图、隔离副本及应用包按生成物处理，用户 `QuickGUI_Icons/` 未修改或暂存。
+
 ## 2026-10-20 — 删除数据页并引入流程参数组件
 
 - 移除独立数据页、导航、工作区类型与翻译键，将数据定义和运行状态迁入流程中的数值、文本、布尔、JSON参数组件。点击或拖入画布会原子创建变量定义及带类型输出的既有read FB；无流程时创建带手动入口的普通流程，不引入自动触发。新增“节点／参数”库页签，已有参数可直接编辑或拖入复用引用，删除节点不删除共享定义。

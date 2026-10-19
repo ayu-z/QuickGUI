@@ -143,12 +143,12 @@ test('updates matching child window backgrounds while preserving custom colors a
     'rgb(244, 245, 248)',
   );
   await expect(page.locator('[data-widget="fixed-color"]')).toHaveCSS('color', 'rgb(190, 18, 60)');
-  await page.locator('.window-manager-row[data-window-id="following"] .window-select').click();
+  await page.getByRole('combobox', { name: '选择窗口', exact: true }).selectOption('following');
   await expect(page.getByTestId('design-canvas')).toHaveCSS(
     'background-color',
     'rgb(244, 245, 248)',
   );
-  await page.locator('.window-manager-row[data-window-id="custom"] .window-select').click();
+  await page.getByRole('combobox', { name: '选择窗口', exact: true }).selectOption('custom');
   await expect(page.getByTestId('design-canvas')).toHaveCSS('background-color', 'rgb(52, 86, 120)');
   await page.getByRole('button', { name: '预览', exact: true }).click();
   const preview = page.locator('.preview-modal');
@@ -176,7 +176,7 @@ test('updates matching child window backgrounds while preserving custom colors a
   await expect(page.locator('.save-indicator')).toContainText('已自动保存');
   await page.reload();
   await expect(page.locator('.project-switch')).toHaveText('多窗口主题');
-  await page.locator('.window-manager-row[data-window-id="main"] .window-select').click();
+  await page.getByRole('combobox', { name: '选择窗口', exact: true }).selectOption('main');
   await expect(page.getByTestId('design-canvas')).toHaveCSS(
     'background-color',
     'rgb(244, 245, 248)',

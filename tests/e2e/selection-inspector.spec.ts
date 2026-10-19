@@ -131,6 +131,6 @@ test('empty projects and empty auxiliary windows open directly on their own wind
   ];
   await open(page, project);
   await expect(windowTitle(page)).toHaveValue(project.window.title);
-  await page.getByRole('button', { name: '切换窗口 Child inspector', exact: true }).click();
+  await page.getByRole('combobox', { name: '选择窗口', exact: true }).selectOption('child');
   await expect(windowTitle(page)).toHaveValue('Child title');
 });

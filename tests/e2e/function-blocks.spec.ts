@@ -127,7 +127,9 @@ test('pump demo exposes a wired two-input/two-output FB and calculates current U
   page,
 }, info) => {
   await flows(page);
-  await page.locator('.qg-flow-toolbar select').selectOption('calculate-speed');
+  await page
+    .getByRole('combobox', { name: '选择流程', exact: true })
+    .selectOption('calculate-speed');
   const result = page.locator('.react-flow__node[data-id="speed-results"]');
   await expect(result.locator('[data-handleid^="data-in:"]')).toHaveCount(2);
   await expect(result.locator('[data-handleid^="data-out:"]')).toHaveCount(2);
