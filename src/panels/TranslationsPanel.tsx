@@ -21,6 +21,7 @@ export function TranslationsPanel({
   const [expanded, setExpanded] = useState<string | null>(() =>
     owns(dictionaries, project.locale) ? project.locale : (locales[0] ?? null),
   );
+  const allExpanded = locales.length <= 2;
   const expandedLocale = expanded !== null && owns(dictionaries, expanded) ? expanded : null;
   const [localeDraft, setLocaleDraft] = useState('');
   const [keyDraft, setKeyDraft] = useState('');
@@ -28,11 +29,13 @@ export function TranslationsPanel({
   const [error, setError] = useState('');
   const [invalidKey, setInvalidKey] = useState<string | null>(null);
   const expandedHeader = useRef<HTMLTableCellElement>(null);
+  const tableScroll = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
-    if (expandedLocale)
+    if (allExpanded && tableScroll.current) tableScroll.current.scrollLeft = 0;
+    else if (expandedLocale)
       expandedHeader.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-  }, [expandedLocale]);
+  }, [allExpanded, expandedLocale]);
 
   const addLocale = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -68,6 +71,14 @@ export function TranslationsPanel({
       setError(zh ? '索引不能为空。' : 'Enter an index.');
       return;
     }
+    if (key === '__proto__') {
+      setError(
+        zh
+          ? '索引 __proto__ 为保留名称，请使用其他索引。'
+          : 'Index __proto__ is reserved. Choose another index.',
+      );
+      return;
+    }
     if (keys.includes(key)) {
       setError(zh ? `索引 ${key} 已存在。` : `Index ${key} already exists.`);
       return;
@@ -91,6 +102,15 @@ export function TranslationsPanel({
 
   const renameKey = (key: string, value: string) => {
     const next = value.trim();
+    if (next === '__proto__' && next !== key) {
+      setInvalidKey(key);
+      setError(
+        zh
+          ? '索引 __proto__ 为保留名称，请使用其他索引。'
+          : 'Index __proto__ is reserved. Choose another index.',
+      );
+      return;
+    }
     if (!next || (next !== key && keys.includes(next))) {
       setInvalidKey(key);
       setError(
@@ -148,7 +168,6 @@ export function TranslationsPanel({
         Object.entries(p.translations ?? {}).filter(([existing]) => existing !== locale),
       );
     });
-    if (expanded === locale) setExpanded(null);
     setError('');
   };
 
@@ -162,8 +181,8 @@ export function TranslationsPanel({
           </h2>
           <p>
             {zh
-              ? '以索引组织翻译文本；同一时刻只展开一种语言，也可收起全部语言列。'
-              : 'Organize translations by index. Expand one language at a time, or collapse all language columns.'}
+              ? '两种及以内语言并排显示；三种及以上同一时刻展开一列，也可全部收起。'
+              : 'Up to two languages appear side by side. With three or more, expand one language at a time or collapse all columns.'}
           </p>
         </div>
         <span className="translations-count">
@@ -233,17 +252,21 @@ export function TranslationsPanel({
 
       <div
         className="translations-table-scroll"
+        ref={tableScroll}
         tabIndex={0}
         aria-label={zh ? '翻译表格滚动区域' : 'Translation table scroll area'}
       >
-        <table aria-label={zh ? '翻译资源' : 'Translations'} className="translations-table">
+        <table
+          aria-label={zh ? '翻译资源' : 'Translations'}
+          className={`translations-table${allExpanded ? ' all-expanded' : ''}`}
+        >
           <colgroup>
             <col className="translations-index-column" />
             {locales.map((locale) => (
               <col
                 key={locale}
                 className={
-                  locale === expandedLocale
+                  allExpanded || locale === expandedLocale
                     ? 'translations-language-column expanded'
                     : 'translations-language-column collapsed'
                 }
@@ -257,28 +280,34 @@ export function TranslationsPanel({
                 <code>@key</code>
               </th>
               {locales.map((locale) => {
-                const open = locale === expandedLocale;
+                const open = allExpanded || locale === expandedLocale;
                 return (
                   <th
                     scope="col"
                     key={locale}
                     className={open ? 'expanded' : 'collapsed'}
-                    ref={open ? expandedHeader : undefined}
+                    ref={!allExpanded && open ? expandedHeader : undefined}
                   >
                     <div className="translations-language-heading">
-                      <button
-                        className="translations-column-toggle"
-                        aria-label={
-                          zh
-                            ? `${open ? '收起' : '展开'}语言 ${locale}`
-                            : `${open ? 'Collapse' : 'Expand'} language ${locale}`
-                        }
-                        aria-expanded={open}
-                        onClick={() => setExpanded(open ? null : locale)}
-                      >
-                        {open ? <ChevronLeft size={15} /> : <ChevronRight size={15} />}
-                        <span title={locale}>{locale}</span>
-                      </button>
+                      {allExpanded ? (
+                        <span className="translations-language-title" title={locale}>
+                          {locale}
+                        </span>
+                      ) : (
+                        <button
+                          className="translations-column-toggle"
+                          aria-label={
+                            zh
+                              ? `${open ? '收起' : '展开'}语言 ${locale}`
+                              : `${open ? 'Collapse' : 'Expand'} language ${locale}`
+                          }
+                          aria-expanded={open}
+                          onClick={() => setExpanded(open ? null : locale)}
+                        >
+                          {open ? <ChevronLeft size={15} /> : <ChevronRight size={15} />}
+                          <span title={locale}>{locale}</span>
+                        </button>
+                      )}
                       <button
                         className="translations-delete"
                         aria-label={zh ? `删除语言 ${locale}` : `Delete language ${locale}`}
@@ -335,65 +364,50 @@ export function TranslationsPanel({
                   const dictionary = dictionaries[locale];
                   const present = owns(dictionary, key);
                   const text = present ? dictionary[key] : '';
+                  const displayedText = text.replace(/[\r\n]/g, '');
+                  const open = allExpanded || locale === expandedLocale;
                   return (
-                    <td
-                      key={locale}
-                      className={locale === expandedLocale ? 'expanded' : 'collapsed'}
-                    >
-                      {locale === expandedLocale ? (
-                        <>
-                          <textarea
-                            aria-label={`${locale} · ${key}`}
-                            value={text}
-                            rows={2}
-                            placeholder={
-                              present
-                                ? zh
-                                  ? '空文本'
-                                  : 'Empty text'
-                                : zh
-                                  ? '未设置，使用回退文本'
-                                  : 'Not set; use fallback text'
-                            }
-                            onChange={(event) => {
-                              const value = event.target.value;
-                              onChange((p) => {
-                                const translations = p.translations ?? {};
-                                p.translations = {
-                                  ...translations,
-                                  [locale]: {
-                                    ...(owns(translations, locale) ? translations[locale] : {}),
-                                    [key]: value,
-                                  },
-                                };
+                    <td key={locale} className={open ? 'expanded' : 'collapsed'}>
+                      {open ? (
+                        <input
+                          type="text"
+                          className="translations-text-input"
+                          aria-label={`${locale} · ${key}`}
+                          value={displayedText}
+                          title={text}
+                          onFocus={() => {
+                            if (!allExpanded)
+                              expandedHeader.current?.scrollIntoView({
+                                block: 'nearest',
+                                inline: 'nearest',
                               });
-                            }}
-                          />
-                          <button
-                            type="button"
-                            className="translations-fallback"
-                            aria-label={
-                              zh ? `恢复回退 ${locale} · ${key}` : `Use fallback ${locale} · ${key}`
-                            }
-                            disabled={!present}
-                            onClick={() => {
-                              onChange((p) => {
-                                const translations = p.translations ?? {};
-                                if (!owns(translations, locale)) return;
-                                p.translations = {
-                                  ...translations,
-                                  [locale]: Object.fromEntries(
-                                    Object.entries(translations[locale]).filter(
-                                      ([existing]) => existing !== key,
-                                    ),
-                                  ),
-                                };
-                              });
-                            }}
-                          >
-                            {zh ? '恢复回退' : 'Use fallback'}
-                          </button>
-                        </>
+                          }}
+                          placeholder={
+                            present
+                              ? zh
+                                ? '空文本'
+                                : 'Empty text'
+                              : zh
+                                ? '未设置，使用回退文本'
+                                : 'Not set; use fallback text'
+                          }
+                          onChange={(event) => {
+                            const value = event.target.value;
+                            // A single-line input strips CR/LF for display. Preserve the original
+                            // imported text unless the user actually changes the displayed value.
+                            if (value === displayedText) return;
+                            onChange((p) => {
+                              const translations = p.translations ?? {};
+                              p.translations = {
+                                ...translations,
+                                [locale]: {
+                                  ...(owns(translations, locale) ? translations[locale] : {}),
+                                  [key]: value,
+                                },
+                              };
+                            });
+                          }}
+                        />
                       ) : (
                         <span
                           className={`translations-collapsed-text${present ? '' : ' missing'}`}

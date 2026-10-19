@@ -90,7 +90,6 @@
   min-height: 130px;
   min-width: 0;
   overflow: auto;
-  scroll-padding-left: 260px;
   border: 1px solid var(--border);
   border-radius: 7px;
   background: var(--panel);
@@ -107,7 +106,7 @@
   table-layout: fixed;
 }
 .translations-index-column {
-  width: 260px;
+  width: 240px;
 }
 .translations-language-column.expanded {
   width: 400px;
@@ -117,7 +116,7 @@
 }
 .translations-table th,
 .translations-table td {
-  padding: 10px;
+  padding: 6px 10px;
   text-align: left;
   vertical-align: middle;
   border-right: 1px solid var(--border);
@@ -137,13 +136,16 @@
   font-weight: 500;
   background: var(--surface);
 }
+.translations-table thead th.expanded {
+  scroll-margin-left: 240px;
+}
 .translations-table .translations-index-cell {
   position: sticky;
   left: 0;
   z-index: 1;
-  width: 260px;
-  min-width: 260px;
-  max-width: 260px;
+  width: 240px;
+  min-width: 240px;
+  max-width: 240px;
   background: var(--panel);
   box-shadow: 2px 0 3px #00000008;
 }
@@ -181,6 +183,12 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.translations-language-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .translations-delete {
   display: inline-flex;
   align-items: center;
@@ -198,7 +206,7 @@
 .translations-key-editor input {
   width: 100%;
   min-width: 0;
-  height: var(--control-height);
+  height: 32px;
   padding: 6px 8px;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 11px;
@@ -219,23 +227,22 @@
   min-width: 130px;
   max-width: 130px;
 }
-.translations-table textarea {
+.translations-table.all-expanded {
+  width: 100%;
+}
+.translations-table.all-expanded .translations-language-column,
+.translations-table.all-expanded td.expanded,
+.translations-table.all-expanded th.expanded {
+  width: auto;
+  min-width: 0;
+  max-width: none;
+}
+.translations-text-input {
   display: block;
   width: 100%;
-  min-height: 58px;
-  padding: 7px 9px;
-  line-height: 1.6;
-  resize: vertical;
-}
-.translations-fallback {
-  display: block;
-  margin: 5px 0 0 auto;
-  padding: 2px 0;
-  color: var(--muted);
-  font-size: 11px;
-}
-.translations-fallback:hover:not(:disabled) {
-  color: var(--accent);
+  min-width: 0;
+  height: 32px;
+  padding: 6px 9px;
 }
 .translations-collapsed-text {
   display: block;

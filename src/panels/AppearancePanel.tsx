@@ -1,6 +1,8 @@
-import { Moon, Palette, Sun } from 'lucide-react';
+import { useState } from 'react';
+import { Moon, Palette, Plus, Sun } from 'lucide-react';
 import type { Project } from '../core/types';
 import { applyProjectThemePreset } from '../core/themePresets';
+import './appearance.css';
 
 export function AppearancePanel({
   project,
@@ -10,6 +12,54 @@ export function AppearancePanel({
   onChange: (change: (p: Project) => void) => void;
 }) {
   const zh = project.locale === 'zh-CN';
+  const [newKey, setNewKey] = useState('');
+  const [newColor, setNewColor] = useState('#8b5cf6');
+  const [colorError, setColorError] = useState<'empty' | 'invalid' | 'duplicate' | 'value' | null>(
+    null,
+  );
+  const errorMessage =
+    colorError === 'empty'
+      ? zh
+        ? '请输入新颜色索引。'
+        : 'Enter an index for the new color.'
+      : colorError === 'invalid'
+        ? zh
+          ? '颜色索引须以字母或下划线开头，仅支持字母、数字、下划线、连字符和点分层。'
+          : 'Use letters, numbers, underscores or hyphens, with optional dot-separated segments starting with a letter or underscore.'
+        : colorError === 'duplicate'
+          ? zh
+            ? '该颜色索引已存在，请使用其他索引。现有颜色未被修改。'
+            : 'This color index already exists. Choose another index; the existing color is unchanged.'
+          : colorError === 'value'
+            ? zh
+              ? '请选择有效的颜色值。'
+              : 'Choose a valid color value.'
+            : '';
+  const addColor = () => {
+    const draft = newKey.trim().replace(/^\$/, '');
+    if (!draft) {
+      setColorError('empty');
+      return;
+    }
+    if (!/^[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*)*$/.test(draft)) {
+      setColorError('invalid');
+      return;
+    }
+    const key = draft.startsWith('color.') ? draft : `color.${draft}`;
+    if (Object.hasOwn(project.theme.tokens, key)) {
+      setColorError('duplicate');
+      return;
+    }
+    if (!/^#[0-9a-f]{6}$/i.test(newColor)) {
+      setColorError('value');
+      return;
+    }
+    onChange((p) => {
+      if (!Object.hasOwn(p.theme.tokens, key)) p.theme.tokens[key] = newColor;
+    });
+    setNewKey('');
+    setColorError(null);
+  };
   return (
     <div className="appearance-panel project-settings-page">
       <header className="project-settings-heading">
@@ -74,31 +124,113 @@ export function AppearancePanel({
               ? '组件通过 $color.primary 等令牌引用样式。修改会同步到画布和预览。'
               : 'Components reference tokens such as $color.primary. Changes update canvas and preview.'}
           </p>
-          <div className="theme-token-list">
-            {Object.entries(project.theme.tokens).map(([key, value]) => (
-              <div className="theme-token-row" key={key}>
-                <code>${key}</code>
-                <input
-                  type="color"
-                  aria-label={zh ? `颜色：${key}` : `Color: ${key}`}
-                  value={/^#[0-9a-f]{6}$/i.test(value) ? value : '#000000'}
-                  onChange={(e) =>
-                    onChange((p) => {
-                      p.theme.tokens[key] = e.target.value;
-                    })
-                  }
-                />
-                <input
-                  aria-label={zh ? `令牌值：${key}` : `Token value: ${key}`}
-                  value={value}
-                  onChange={(e) =>
-                    onChange((p) => {
-                      p.theme.tokens[key] = e.target.value;
-                    })
-                  }
-                />
-              </div>
-            ))}
+          <form
+            className="appearance-colors-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              addColor();
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && event.nativeEvent.isComposing) event.preventDefault();
+            }}
+          >
+            <label>
+              {zh ? '新颜色索引' : 'New color index'}
+              <input
+                aria-label={zh ? '新颜色索引' : 'New color index'}
+                aria-invalid={
+                  colorError === 'empty' || colorError === 'invalid' || colorError === 'duplicate'
+                }
+                aria-describedby={colorError ? 'appearance-color-error' : 'appearance-color-hint'}
+                placeholder="brand / color.brand"
+                value={newKey}
+                onChange={(event) => {
+                  setNewKey(event.target.value);
+                  setColorError(null);
+                }}
+              />
+            </label>
+            <label>
+              {zh ? '新颜色值' : 'New color value'}
+              <input
+                type="color"
+                aria-label={zh ? '新颜色值' : 'New color value'}
+                value={newColor}
+                onChange={(event) => {
+                  setNewColor(event.target.value);
+                  setColorError(null);
+                }}
+              />
+            </label>
+            <button type="submit" className="button">
+              <Plus size={14} />
+              {zh ? '添加颜色' : 'Add color'}
+            </button>
+          </form>
+          <p className="appearance-colors-hint" id="appearance-color-hint">
+            {zh
+              ? '输入 brand 或 color.brand 创建 $color.brand。自定义颜色会在切换亮暗预设时保留。'
+              : 'Enter brand or color.brand to create $color.brand. Custom colors are preserved when applying light or dark presets.'}
+          </p>
+          {errorMessage && (
+            <p className="appearance-colors-error" id="appearance-color-error" role="alert">
+              {errorMessage}
+            </p>
+          )}
+          <div
+            className="appearance-colors-scroll"
+            tabIndex={0}
+            aria-label={zh ? '主题颜色表格滚动区域' : 'Theme colors table scroll area'}
+          >
+            <table
+              className="appearance-colors-table"
+              aria-label={zh ? '主题颜色' : 'Theme colors'}
+            >
+              <colgroup>
+                <col />
+                <col />
+                <col />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th scope="col">{zh ? '索引' : 'Index'}</th>
+                  <th scope="col">{zh ? '颜色' : 'Color'}</th>
+                  <th scope="col">{zh ? '颜色值' : 'Value'}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(project.theme.tokens).map(([key, value]) => (
+                  <tr key={key}>
+                    <th scope="row">
+                      <code title={`$${key}`}>${key}</code>
+                    </th>
+                    <td>
+                      <input
+                        type="color"
+                        aria-label={zh ? `颜色：${key}` : `Color: ${key}`}
+                        value={/^#[0-9a-f]{6}$/i.test(value) ? value : '#000000'}
+                        onChange={(e) =>
+                          onChange((p) => {
+                            p.theme.tokens[key] = e.target.value;
+                          })
+                        }
+                      />
+                    </td>
+                    <td>
+                      <input
+                        aria-label={zh ? `令牌值：${key}` : `Token value: ${key}`}
+                        value={value}
+                        onChange={(e) =>
+                          onChange((p) => {
+                            p.theme.tokens[key] = e.target.value;
+                          })
+                        }
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </section>
         <section className="appearance-section">
