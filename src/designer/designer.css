@@ -860,7 +860,6 @@
   font-size: 12px;
 }
 .qg-flow-editor {
-  display: contents;
   --xy-background-color: var(--bg, #14161b);
   --xy-node-background-color: var(--panel, #1a1d23);
   --xy-node-color: var(--text, #e4e6eb);
@@ -872,8 +871,11 @@
   --xy-minimap-background-color: var(--panel, #1a1d23);
   --xy-minimap-mask-background-color: #0003;
 }
-.qg-flow-sidebar {
+.qg-flow-sidebar.left-panel {
+  display: grid;
+  grid-template-rows: 43px auto minmax(0, 1fr);
   min-width: 0;
+  min-height: 0;
   overflow: hidden;
 }
 .qg-flow-sidebar-heading {
@@ -910,7 +912,9 @@
 .qg-node-palette.qg-library {
   height: auto;
   min-height: 0;
-  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
   padding: 16px 12px;
 }
 .qg-node-palette .qg-library-item {
@@ -947,11 +951,15 @@
   color: var(--muted, #87909f);
 }
 .qg-flow-workspace,
-.qg-flow-canvas,
+.qg-flow-canvas {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+}
 .qg-flow-stage {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
+  display: grid;
+  grid-template-rows: 43px minmax(0, 1fr) 29px;
   min-width: 0;
   min-height: 0;
 }
@@ -961,9 +969,16 @@
   background: var(--bg, #14161b);
 }
 .qg-flow-viewport {
-  flex: 1;
+  min-width: 0;
   min-height: 0;
   position: relative;
+  overflow: hidden;
+}
+.qg-flow-viewport > .react-flow {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
 .qg-flow-empty {
   flex: 1;
@@ -973,9 +988,9 @@
 .qg-flow-stage > .canvas-heading {
   height: 43px;
 }
-.qg-flow-settings {
-  display: flex;
-  flex-direction: column;
+.qg-flow-settings.right-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   overflow: hidden;

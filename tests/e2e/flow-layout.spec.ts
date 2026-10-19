@@ -218,3 +218,176 @@ test('flow heading tools control zoom, fit, grid and snapping without changing t
   expect(await recoveredFlow()).toEqual(initialFlow);
   await expect(page.locator('.react-flow__controls')).toHaveCount(0);
 });
+
+async function expectVisibleFlow(page: Page, expectedNodes: number) {
+  const viewport = page.locator('.qg-flow-viewport');
+  await expect.poll(async () => (await viewport.boundingBox())?.height ?? 0).toBeGreaterThan(180);
+  const canvas = await bounds(viewport);
+  expect(canvas.width).toBeGreaterThan(300);
+  const nodes = page.locator('.react-flow__node');
+  await expect(nodes).toHaveCount(expectedNodes);
+  for (const node of await nodes.all()) {
+    await expect
+      .poll(async () => {
+        const box = await node.boundingBox();
+        return (
+          !!box &&
+          box.width > 0 &&
+          box.height > 0 &&
+          box.x >= canvas.x - 1 &&
+          box.y >= canvas.y - 1 &&
+          box.x + box.width <= canvas.x + canvas.width + 1 &&
+          box.y + box.height <= canvas.y + canvas.height + 1
+        );
+      })
+      .toBe(true);
+    expect(
+      await node.evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        return element.contains(
+          document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2),
+        );
+      }),
+    ).toBe(true);
+  }
+}
+
+for (const size of [
+  { width: 1440, height: 920 },
+  { width: 1100, height: 700 },
+]) {
+  test(`native-size flow layout ${size.width}x${size.height} renders graph and wheel-scrolls the complete node library`, async ({
+    page,
+  }, info) => {
+    await page.setViewportSize(size);
+    await openFixture(page);
+    await openFlows(page);
+    const selectors = [
+      '.workspace-body',
+      '.center-panel',
+      '.qg-flow-editor',
+      '.qg-flow-sidebar',
+      '.qg-node-palette',
+      '.qg-flow-workspace',
+      '.qg-flow-stage',
+      '.qg-flow-viewport',
+      '.react-flow',
+      '.react-flow__node',
+      '.console-panel',
+    ];
+    const measurements = await page.evaluate(
+      (selectors) =>
+        Object.fromEntries(
+          selectors.map((selector) => [
+            selector,
+            [...document.querySelectorAll(selector)].map((element) => {
+              const rect = element.getBoundingClientRect();
+              const style = getComputedStyle(element);
+              return {
+                x: rect.x,
+                y: rect.y,
+                width: rect.width,
+                height: rect.height,
+                display: style.display,
+                overflowY: style.overflowY,
+                clientHeight: element.clientHeight,
+                scrollHeight: element.scrollHeight,
+              };
+            }),
+          ]),
+        ),
+      selectors,
+    );
+    await info.attach('initial-layout.json', {
+      body: JSON.stringify(measurements, null, 2),
+      contentType: 'application/json',
+    });
+    await page.screenshot({ path: info.outputPath('native-size-initial.png') });
+    await expectVisibleFlow(page, 2);
+
+    const palette = page.locator('.qg-node-palette');
+    const lastCard = palette.locator('.qg-library-item').last();
+    await palette.hover();
+    await page.mouse.wheel(0, 3000);
+    await expect.poll(() => palette.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    await expect
+      .poll(async () => {
+        const container = await bounds(palette);
+        const card = await bounds(lastCard);
+        return card.y >= container.y && card.y + card.height <= container.y + container.height;
+      })
+      .toBe(true);
+    const lastCardBounds = await bounds(lastCard);
+    // A real pointer click must reach the scrolled card; Locator.click() would scroll it for us.
+    await page.mouse.click(
+      lastCardBounds.x + lastCardBounds.width / 2,
+      lastCardBounds.y + lastCardBounds.height / 2,
+    );
+    await expect(page.locator('.react-flow__node')).toHaveCount(3);
+    await expect(page.getByLabel('节点名称', { exact: true })).toHaveValue('USB 通信');
+    await page
+      .getByRole('toolbar', { name: '流程画布工具', exact: true })
+      .getByRole('button', { name: '适应画布', exact: true })
+      .click();
+    await expectVisibleFlow(page, 3);
+
+    const consoleToggle = page
+      .locator('.statusbar')
+      .getByRole('button', { name: '运行日志', exact: true });
+    await consoleToggle.click();
+    await expect(page.locator('.console-panel')).toHaveCount(0);
+    await expectVisibleFlow(page, 3);
+    await consoleToggle.click();
+    await expect(page.locator('.console-panel')).toBeVisible();
+    await expectVisibleFlow(page, 3);
+    await page
+      .locator('.workspace-tabs nav')
+      .getByRole('button', { name: '界面', exact: true })
+      .click();
+    await expect(page.getByTestId('design-canvas')).toBeVisible();
+    await page
+      .locator('.workspace-tabs nav')
+      .getByRole('button', { name: '流程', exact: true })
+      .click();
+    await expectVisibleFlow(page, 3);
+    await page.getByLabel('选择流程', { exact: true }).selectOption('layout-alarm');
+    await expectVisibleFlow(page, 1);
+    await page.getByLabel('选择流程', { exact: true }).selectOption('layout-main');
+    await expectVisibleFlow(page, 3);
+    await page.screenshot({ path: info.outputPath('native-size-complete.png') });
+  });
+}
+
+test('a flow first mounted in a hidden viewport fits after showing and preserves manual zoom on resize', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1100, height: 700 });
+  await openFixture(page);
+  const hidden = await page.addStyleTag({
+    content: '.qg-flow-viewport { display: none !important; }',
+  });
+  await openFlows(page);
+  await expect(page.locator('.qg-flow-viewport')).toBeHidden();
+  await hidden.evaluate((element) => element.parentNode?.removeChild(element));
+  await expectVisibleFlow(page, 2);
+
+  const viewport = page.locator('.react-flow__viewport');
+  const zoom = () =>
+    viewport.evaluate((element) => new DOMMatrixReadOnly(getComputedStyle(element).transform).a);
+  const initialZoom = await zoom();
+  await page
+    .getByRole('toolbar', { name: '流程画布工具', exact: true })
+    .getByRole('button', { name: '放大', exact: true })
+    .click();
+  await expect.poll(zoom).toBeGreaterThan(initialZoom);
+  const manualZoom = await zoom();
+  await page.setViewportSize({ width: 1440, height: 920 });
+  await expect
+    .poll(async () => (await page.locator('.qg-flow-viewport').boundingBox())?.width ?? 0)
+    .toBe(912);
+  await page.evaluate(async () => {
+    await new Promise(requestAnimationFrame);
+    await new Promise(requestAnimationFrame);
+  });
+  expect(await zoom()).toBeCloseTo(manualZoom, 5);
+});

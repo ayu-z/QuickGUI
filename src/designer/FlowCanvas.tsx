@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type RefObject,
 } from 'react';
 import {
   Background,
@@ -16,6 +17,8 @@ import {
   ReactFlowProvider,
   useReactFlow,
   useViewport,
+  useNodesInitialized,
+  useStore,
   type Connection,
   type Edge,
   type EdgeChange,
@@ -60,6 +63,46 @@ const fitViewOptions = { padding: 0.3, maxZoom: 1 };
 const proOptions = { hideAttribution: true };
 const deleteKeys = ['Backspace', 'Delete'];
 const minimapStyle = { width: 135, height: 85 };
+
+function FlowInitialFit({ viewport }: { viewport: RefObject<HTMLDivElement | null> }) {
+  const nodesReady = useNodesInitialized();
+  const width = useStore((state) => state.width);
+  const height = useStore((state) => state.height);
+  const { fitView } = useReactFlow<QuickFlowNode>();
+  const fitted = useRef(false);
+  useLayoutEffect(() => {
+    const element = viewport.current;
+    if (!element || !nodesReady || fitted.current || width <= 0 || height <= 0) return;
+    let frame: number | null = null;
+    let cancelled = false;
+    const hasRealSize = () =>
+      element.clientWidth > 0 &&
+      element.clientHeight > 0 &&
+      Math.abs(element.clientWidth - width) <= 1 &&
+      Math.abs(element.clientHeight - height) <= 1;
+    const schedule = () => {
+      // Ignore React Flow's fallback size while the real container is still hidden or resizing.
+      if (fitted.current || frame !== null || !hasRealSize()) return;
+      frame = requestAnimationFrame(() => {
+        frame = null;
+        if (cancelled || !hasRealSize()) return;
+        fitted.current = true;
+        void fitView(fitViewOptions).then((success) => {
+          if (!cancelled && !success) fitted.current = false;
+        });
+      });
+    };
+    const observer = new ResizeObserver(schedule);
+    observer.observe(element);
+    schedule();
+    return () => {
+      cancelled = true;
+      observer.disconnect();
+      if (frame !== null) cancelAnimationFrame(frame);
+    };
+  }, [viewport, nodesReady, width, height, fitView]);
+  return null;
+}
 
 const FlowCanvasHeading = memo(function FlowCanvasHeading({
   flow,
@@ -171,6 +214,7 @@ export const FlowCanvas = memo(function FlowCanvas({
   nodeColor,
 }: FlowCanvasProps) {
   const [draft, setDraft] = useState<PositionDraft | null>(null);
+  const viewport = useRef<HTMLDivElement | null>(null);
   const [grid, setGrid] = useState(true);
   const [snap, setSnap] = useState(true);
   const toggleGrid = useCallback(() => setGrid((value) => !value), []);
@@ -298,8 +342,6 @@ export const FlowCanvas = memo(function FlowCanvas({
       initialEdges={edges}
       initialMinZoom={0.1}
       initialMaxZoom={1.5}
-      fitView
-      initialFitViewOptions={fitViewOptions}
     >
       <div className="qg-flow-stage">
         <FlowCanvasHeading
@@ -310,7 +352,7 @@ export const FlowCanvas = memo(function FlowCanvas({
           onToggleGrid={toggleGrid}
           onToggleSnap={toggleSnap}
         />
-        <div className="qg-flow-viewport">
+        <div className="qg-flow-viewport" ref={viewport}>
           <ReactFlow<QuickFlowNode>
             key={flow.id}
             onInit={onInit}
@@ -324,8 +366,6 @@ export const FlowCanvas = memo(function FlowCanvas({
             onNodeClick={selectNode}
             onEdgeClick={selectEdge}
             onPaneClick={onClearSelection}
-            fitView
-            fitViewOptions={fitViewOptions}
             minZoom={0.1}
             maxZoom={1.5}
             connectionRadius={28}
@@ -335,6 +375,7 @@ export const FlowCanvas = memo(function FlowCanvas({
             deleteKeyCode={deleteKeys}
             proOptions={proOptions}
           >
+            <FlowInitialFit viewport={viewport} />
             {grid && (
               <Background
                 variant={BackgroundVariant.Dots}

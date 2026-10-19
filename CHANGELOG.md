@@ -1,5 +1,16 @@
 # 变动日志
 
+## 2026-10-19 — 修复流程页滚动与画布尺寸初始化
+
+- 针对左侧无法滚动、中央流程不可见的反馈，移除中心面板和流程宿主两层 display:contents，改用真实定位容器中的三栏 Grid。保留224/304与190/280侧栏宽度，日志仍只占中央底部，通过共享CSS变量预留148px或0px，开关不触发父属性表单重绘。
+- 左侧明确设置43px/auto/minmax(0,1fr)行与纵向滚动、禁止横向溢出；右侧属性正文也使用明确的可收缩滚动行。中央使用43px/minmax(0,1fr)/29px行，React Flow绝对填满实际视口，消除多层flex百分比高度与透明宿主的尺寸依赖。
+- 首次适应改为等待节点测量和真实视口正尺寸，核对内部尺寸一致后执行一次，忽略隐藏期间的500px回退尺寸；后续窗口大小变化保持用户手动缩放，不反复重置视图。
+- 修改 `src/App.tsx`、`src/designer/FlowCanvas.tsx`、`src/designer/designer.css`、`src/styles.css`、`tests/e2e/flow-layout.spec.ts`、`docs/architecture.md` 和本文件；无新增、删除、重命名、依赖或工程格式变更，无原生业务、通信、C SDK/协议/编译路径变更。用户QuickGUI_Icons/不纳入提交，隔离依赖、脚本、报告和应用包按生成物处理。
+- 新增1440×920、1100×700两档实际滚轮滚到底并鼠标点击末尾节点的回归，断言节点进入真实画布且可命中，覆盖日志开关、页签/流程切换；增加隐藏→显示首fit及手动缩放后resize保持回归。现用Chromium/WebKit基线未复现用户完整症状，但核实旧透明宿主无自身尺寸、首次零尺寸存在提前适应风险；本次按兼容性风险修正，不把未复现描述成已复现。
+- 验证：`npm run check` 的TypeScript与262项单测、生产构建通过；隔离Chromium全量70/70、WebKit布局专项9/9通过，包含拖动性能与真实滚动/可见性检查。新增补测初期修正了“运行日志”按钮定位和Node.remove类型错误，之后检查与构建通过；测试超时和正式配置未放宽。报告分别在忽略的 artifacts/isolated-e2e 与 artifacts/isolated-e2e-webkit。
+- `npx tauri build --debug --bundles app` 通过，更新 `target/debug/bundle/macos/QuickGUI.app`（78.00 MiB）。实际重开该包，确认原生WKWebView中的流程节点可见、适应画布可用，节点库能滚动到USB通信并往返；验证期间工程仍为rev0、未新增节点或执行设备通信。该原生目视/交互检查仅覆盖本机窗口，不扩展为Windows/其他macOS或设备性能验收。
+- Prettier与Git差异检查通过。Rust全量及C/AOT专项未重复：Rust测试仍有先前记录的 serial_demo_test.rs:154 E0502基线阻碍，本次未修改Rust或C执行路径；保留既有Monaco大包和桥接混合导入提示。
+
 ## 2026-10-19 — 流程页统一界面编辑布局
 
 - 流程页采用与界面页一致的三栏工作区：224px 流程选择/节点库、中间画布、304px 属性栏；1200px 及以下统一为 190px/280px。两侧跨越日志区，控制台仅在画布中央列；取消原全宽横向节点条，画布获得更多垂直空间。

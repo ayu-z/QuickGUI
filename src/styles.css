@@ -350,29 +350,47 @@ a {
   min-height: 0;
 }
 .workspace-body.flow-page-layout {
-  display: grid;
-  grid-template-columns: 224px minmax(0, 1fr) 304px;
-  grid-template-rows: minmax(0, 1fr) auto;
+  --flow-left-width: 224px;
+  --flow-right-width: 304px;
+  --flow-console-height: 0px;
+}
+.flow-page-layout.flow-console-visible {
+  --flow-console-height: 148px;
 }
 .flow-page-layout > .center-panel {
-  display: contents;
+  position: relative;
+}
+.flow-page-layout .qg-flow-editor {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: var(--flow-left-width) minmax(0, 1fr) var(--flow-right-width);
+  grid-template-rows: minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 .flow-page-layout .qg-flow-sidebar {
   grid-column: 1;
-  grid-row: 1 / -1;
+  grid-row: 1;
 }
 .flow-page-layout .qg-flow-workspace {
   grid-column: 2;
   grid-row: 1;
+  padding-bottom: var(--flow-console-height);
 }
 .flow-page-layout .qg-flow-settings {
   grid-column: 3;
-  grid-row: 1 / -1;
+  grid-row: 1;
 }
 .flow-page-layout .console-panel {
-  grid-column: 2;
-  grid-row: 2;
+  position: absolute;
+  left: var(--flow-left-width);
+  right: var(--flow-right-width);
+  bottom: 0;
+  height: var(--flow-console-height);
   min-width: 0;
+  min-height: 0;
 }
 .left-panel {
   width: 224px;
@@ -1199,7 +1217,8 @@ a {
 }
 @media (max-width: 1200px) {
   .workspace-body.flow-page-layout {
-    grid-template-columns: 190px minmax(0, 1fr) 280px;
+    --flow-left-width: 190px;
+    --flow-right-width: 280px;
   }
   .left-panel,
   .workspace-name {

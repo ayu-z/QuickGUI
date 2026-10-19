@@ -1173,7 +1173,9 @@ function ProjectWorkspace({
           </button>
         </div>
       </div>
-      <main className={`workspace-body ${section === 'flows' ? 'flow-page-layout' : ''}`}>
+      <main
+        className={`workspace-body ${section === 'flows' ? `flow-page-layout ${showConsole ? 'flow-console-visible' : ''}` : ''}`}
+      >
         {section === 'design' && (
           <aside className="left-panel">
             <WindowManager
