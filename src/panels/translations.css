@@ -7,35 +7,11 @@
   overflow: hidden;
   background: var(--bg);
 }
-.translations-heading {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  height: 44px;
-  padding: 0 14px;
-  border-bottom: 1px solid var(--border);
-  background: var(--panel);
-}
-.translations-heading h2 {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin: 0;
-  font-size: 13px;
-  font-weight: 550;
-}
 .translations-help p {
   margin: 0;
   color: var(--muted);
   line-height: 1.7;
   font-size: 11px;
-}
-.translations-count {
-  flex-shrink: 0;
-  color: var(--muted);
-  font-size: 10px;
 }
 .translations-toolbar {
   display: flex;

@@ -1,34 +1,5 @@
 .appearance-panel.project-settings-page {
-  gap: 10px;
-  padding: 12px 16px;
-  overflow: auto;
-}
-.appearance-heading,
-.appearance-title,
-.appearance-title h2 {
-  display: flex;
-  align-items: center;
-}
-.appearance-heading {
-  flex-shrink: 0;
-  justify-content: space-between;
-  gap: 16px;
-  min-height: 34px;
-}
-.appearance-title {
-  gap: 12px;
-}
-.appearance-title h2 {
-  gap: 8px;
-  margin: 0;
-  font-size: 15px;
-  font-weight: 550;
-  white-space: nowrap;
-}
-.appearance-title > span {
-  color: var(--muted);
-  font-size: 11px;
-  white-space: nowrap;
+  background: var(--bg);
 }
 .appearance-panel .project-theme-presets {
   margin: 0;
@@ -42,7 +13,7 @@
   display: flex;
   flex-shrink: 0;
   align-items: flex-end;
-  gap: 16px;
+  padding: 10px 14px;
 }
 .appearance-colors-form {
   display: flex;
@@ -52,8 +23,7 @@
   gap: 10px;
   min-width: 0;
 }
-.appearance-colors-form > label,
-.appearance-window-background {
+.appearance-colors-form > label {
   display: flex;
   flex-direction: column;
   gap: 5px;
@@ -78,10 +48,6 @@
 .appearance-colors-form > button {
   min-height: 32px;
 }
-.appearance-window-background {
-  padding-left: 16px;
-  border-left: 1px solid var(--border);
-}
 .appearance-panel input[type='color'] {
   display: block;
   flex-shrink: 0;
@@ -99,7 +65,7 @@
 }
 .appearance-colors-error {
   flex-shrink: 0;
-  margin: 0;
+  margin: 0 14px 8px;
   color: var(--danger);
   font-size: 11px;
   line-height: 1.5;
@@ -107,7 +73,8 @@
 .appearance-colors-scroll {
   flex: 1;
   min-width: 0;
-  min-height: 280px;
+  min-height: 0;
+  margin: 0 12px;
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -187,6 +154,9 @@
 }
 .appearance-help {
   flex-shrink: 0;
+  max-height: 160px;
+  overflow: auto;
+  padding: 6px 14px 10px;
   color: var(--muted);
   font-size: 11px;
 }
@@ -203,20 +173,4 @@
 .appearance-help p {
   margin: 4px 0;
   line-height: 1.7;
-}
-@media (max-width: 900px) {
-  .appearance-panel.project-settings-page {
-    padding: 10px 12px;
-  }
-  .appearance-heading {
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .appearance-toolbar {
-    align-items: flex-start;
-    gap: 10px;
-  }
-  .appearance-window-background {
-    padding-left: 10px;
-  }
 }

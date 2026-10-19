@@ -1,5 +1,14 @@
 # 变动日志
 
+## 2026-10-20 — 精简外观设置并统一资源页标题栏
+
+- 移除应用外观工具栏的“内容背景”设置和相关说明；主题按钮改为“亮色／暗色”，英文对应“Light／Dark”。双色方案保存与切换、窗口属性中的背景配置以及主题背景跟随语义保持。
+- 新增 `src/panels/ResourceHeading.tsx`，两页共用同一标题栏结构与样式：44px高度、左右14px内边距、13px标题和16px图标，标题居左、计数及可选操作居右。移除独立的 `translations-heading`、`appearance-heading` 规则，外观标题栏贴齐工作区边界，正文保留紧凑工具栏与满宽表格。
+- 修改 `src/panels/AppearancePanel.tsx`、`src/panels/TranslationsPanel.tsx`、`src/panels/appearance.css`、`src/panels/translations.css`、`src/styles.css`、`tests/e2e/appearance-colors.spec.ts`、`tests/e2e/project-theme.spec.ts`、`tests/e2e/translations.spec.ts`、`README.md` 和本文件；新增文件仅为上述共享标题栏组件，无源文件删除或重命名，无依赖、配置或工程格式变更。
+- 在原有端到端用例中补充中英文新按钮的实际切换、内容背景入口移除、1100×700/1440×920与亮暗主题下两页标题栏尺寸/边界/内边距/背景/边框/字号/图标严格一致的断言，并继续核验表格面积和可见行数；未添加镜像实现的单元测试，未放宽用例或超时。
+- 最终 `npm run check` 的TypeScript及285项单测、隔离Chromium全量89/89和WebKit专项15/15通过，已目视核对统一后的标题栏和外观工具栏；`npx tauri build --debug --bundles app` 的前置生产构建和本机打包成功，更新 `target/debug/bundle/macos/QuickGUI.app`（78.01 MiB）。Prettier及Git差异检查通过，保留既有Monaco体积与桥接混合导入提示；报告、截图、应用包均按生成物处理。
+- `cargo test --workspace` 仍因未改动的 `crates/quickgui-engine/src/serial_demo_test.rs:154` 既有E0502借用冲突失败，未记为通过。无Rust业务、C SDK、进程协议或编译路径变更，未重复C/AOT专项，不将浏览器回归视为原生多平台验收。用户 `QuickGUI_Icons/` 未修改或暂存。
+
 ## 2026-10-20 — 独立亮暗配色与资源页空间优化
 
 - 应用外观按明确需求改为“索引／亮色／暗色”三列，每个方案单元格包含色块与颜色值，支持分别编辑和原子新增双色令牌。两套颜色分别保存，编辑非当前列不改变有效颜色或窗口，切换选择已保存方案，不重置已编辑值；主题匹配的主/附窗口背景跟随切换，字面颜色、自定义背景和独立组件资源保留。

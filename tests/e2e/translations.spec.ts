@@ -106,6 +106,39 @@ async function expectExpandedColumnsVisible(page: Page) {
 async function expectNoFallbackButtons(page: Page) {
   await expect(panel(page).getByRole('button', { name: /恢复回退|Use fallback/ })).toHaveCount(0);
 }
+async function resourceHeadingSnapshot(page: Page) {
+  return page.locator('header.resource-heading').evaluate((element) => {
+    const bounds = element.getBoundingClientRect();
+    const workspace = element.closest('.center-panel')!.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    const titleStyle = getComputedStyle(element.querySelector('h2')!);
+    const icon = element.querySelector('.resource-heading-title > svg')!.getBoundingClientRect();
+    return {
+      geometry: {
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
+        leftGap: bounds.left - workspace.left,
+        rightGap: workspace.right - bounds.right,
+        topGap: bounds.top - workspace.top,
+      },
+      style: {
+        display: style.display,
+        alignItems: style.alignItems,
+        paddingLeft: style.paddingLeft,
+        paddingRight: style.paddingRight,
+        background: style.backgroundColor,
+        borderBottomWidth: style.borderBottomWidth,
+        borderBottomStyle: style.borderBottomStyle,
+        borderBottomColor: style.borderBottomColor,
+        titleFontSize: titleStyle.fontSize,
+        titleFontWeight: titleStyle.fontWeight,
+      },
+      icon: { width: icon.width, height: icon.height },
+    };
+  });
+}
 
 test('separates appearance and translations and changes from two expanded languages to exclusive columns at three', async ({
   page,
@@ -167,7 +200,7 @@ test('separates appearance and translations and changes from two expanded langua
   await expect(page.locator('.appearance-panel')).toBeVisible();
   await expect(page.locator('.translations-panel')).toHaveCount(0);
   await expect(
-    page.locator('.appearance-panel').getByRole('button', { name: '一键亮色', exact: true }),
+    page.locator('.appearance-panel').getByRole('button', { name: '亮色', exact: true }),
   ).toBeVisible();
   const screenshot = info.outputPath('appearance-workspace.png');
   await page.screenshot({ path: screenshot, fullPage: true });
@@ -484,6 +517,41 @@ for (const viewport of [
     for (const theme of ['dark', 'light']) {
       if (theme === 'light') await page.getByRole('button', { name: 'Theme', exact: true }).click();
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+      const translationHeading = await resourceHeadingSnapshot(page);
+      expect(translationHeading.geometry).toMatchObject({
+        height: 44,
+        leftGap: 0,
+        rightGap: 0,
+        topGap: 0,
+      });
+      expect(translationHeading.style).toMatchObject({
+        paddingLeft: '14px',
+        paddingRight: '14px',
+        titleFontSize: '13px',
+      });
+      expect(translationHeading.icon).toEqual({ width: 16, height: 16 });
+      await page
+        .locator('.workspace-tabs nav')
+        .getByRole('button', { name: '应用外观', exact: true })
+        .click();
+      await expect(page.locator('.appearance-panel')).toBeVisible();
+      expect(await resourceHeadingSnapshot(page)).toEqual(translationHeading);
+      const actions = await page.locator('header.resource-heading').evaluate((element) => {
+        const count = element.querySelector('.resource-heading-count')!.getBoundingClientRect();
+        const buttons = Array.from(element.querySelectorAll('button'));
+        return {
+          countBeforeButtons: count.right <= buttons[0].getBoundingClientRect().left,
+          buttonsRightGap:
+            element.getBoundingClientRect().right - buttons.at(-1)!.getBoundingClientRect().right,
+        };
+      });
+      expect(actions.countBeforeButtons).toBe(true);
+      expect(actions.buttonsRightGap).toBe(14);
+      await page
+        .locator('.workspace-tabs nav')
+        .getByRole('button', { name: '多语言', exact: true })
+        .click();
+      await expect(panel(page)).toBeVisible();
       await expectExpandedColumnsVisible(page);
       const dimensions = await scroll.evaluate((element) => {
         const bounds = element.getBoundingClientRect();

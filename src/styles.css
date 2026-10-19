@@ -1290,6 +1290,46 @@ a {
   min-height: 0;
   overflow: hidden;
 }
+.resource-heading {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 44px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+.resource-heading-title,
+.resource-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.resource-heading-title {
+  min-width: 0;
+  gap: 7px;
+}
+.resource-heading-title > svg {
+  flex-shrink: 0;
+}
+.resource-heading h2 {
+  overflow: hidden;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 550;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.resource-heading-actions {
+  flex-shrink: 0;
+}
+.resource-heading-count {
+  color: var(--muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
 .project-theme-presets > div {
   display: flex;
   flex-wrap: wrap;

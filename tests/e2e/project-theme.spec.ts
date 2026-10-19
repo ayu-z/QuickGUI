@@ -9,7 +9,7 @@ async function applyTheme(page: Page, mode: 'light' | 'dark') {
   await tabs.getByRole('button', { name: '应用外观', exact: true }).click();
   const settings = page.locator('.appearance-panel');
   const button = settings.getByRole('button', {
-    name: mode === 'light' ? '一键亮色' : '一键暗色',
+    name: mode === 'light' ? '亮色' : '暗色',
     exact: true,
   });
   await button.click();

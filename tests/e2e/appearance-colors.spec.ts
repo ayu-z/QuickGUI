@@ -42,7 +42,7 @@ async function addColor(page: Page, name: string, light = '#1267ab', dark = '#68
 }
 async function selectTheme(page: Page, mode: Mode) {
   const button = appearance(page).getByRole('button', {
-    name: mode === 'light' ? '一键亮色' : '一键暗色',
+    name: mode === 'light' ? '亮色' : '暗色',
     exact: true,
   });
   await button.click();
@@ -170,6 +170,20 @@ test('keeps inactive palette edits independent and applies saved colors to canva
   await expect(value(page, 'light', 'color.brand')).toHaveValue('#11aa77');
   await expect(value(page, 'dark', 'color.brand')).toHaveValue('#442266');
   await expect(value(page, 'light', 'color.background')).toHaveValue('#e9f0e7');
+  await page.getByRole('button', { name: 'Language', exact: true }).click();
+  const lightButton = appearance(page).getByRole('button', { name: 'Light', exact: true });
+  const darkButton = appearance(page).getByRole('button', { name: 'Dark', exact: true });
+  await lightButton.click();
+  await expect(lightButton).toHaveAttribute('aria-pressed', 'true');
+  await expect(
+    appearance(page).getByLabel('Light value: color.brand', { exact: true }),
+  ).toHaveValue('#11aa77');
+  await darkButton.click();
+  await expect(darkButton).toHaveAttribute('aria-pressed', 'true');
+  await expect(appearance(page).getByLabel('Dark value: color.brand', { exact: true })).toHaveValue(
+    '#442266',
+  );
+  await expect(appearance(page).getByLabel('Content background', { exact: true })).toHaveCount(0);
 });
 
 for (const viewport of [
@@ -187,6 +201,9 @@ for (const viewport of [
     const scroll = appearance(page).locator('.appearance-colors-scroll');
     await expect(appearance(page).locator('details')).toHaveJSProperty('open', false);
     await expect(page.locator('.console-panel')).toHaveCount(0);
+    await expect(appearance(page).getByLabel('内容背景', { exact: true })).toHaveCount(0);
+    await expect(appearance(page).getByRole('button', { name: '亮色', exact: true })).toBeVisible();
+    await expect(appearance(page).getByRole('button', { name: '暗色', exact: true })).toBeVisible();
     for (const theme of ['dark', 'light']) {
       if (theme === 'light') await page.getByRole('button', { name: 'Theme', exact: true }).click();
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme);

@@ -9,6 +9,7 @@ import {
   setProjectThemeColor,
 } from '../core/themePresets';
 import './appearance.css';
+import { ResourceHeading } from './ResourceHeading';
 
 export function AppearancePanel({
   project,
@@ -72,14 +73,11 @@ export function AppearancePanel({
   };
   return (
     <div className="appearance-panel project-settings-page">
-      <header className="appearance-heading">
-        <div className="appearance-title">
-          <h2>
-            <Palette size={18} />
-            {zh ? '应用外观' : 'Appearance'}
-          </h2>
-          <span>{zh ? `${keys.length} 个颜色` : `${keys.length} colors`}</span>
-        </div>
+      <ResourceHeading
+        icon={<Palette size={16} aria-hidden="true" />}
+        title={zh ? '应用外观' : 'Appearance'}
+        summary={zh ? `${keys.length} 个颜色` : `${keys.length} colors`}
+      >
         <div
           className="project-theme-presets appearance-theme-switch"
           role="group"
@@ -92,7 +90,7 @@ export function AppearancePanel({
               onClick={() => onChange((p) => applyProjectThemePreset(p, 'light'))}
             >
               <Sun size={15} />
-              {zh ? '一键亮色' : 'Apply light theme'}
+              {zh ? '亮色' : 'Light'}
             </button>
             <button
               type="button"
@@ -100,11 +98,11 @@ export function AppearancePanel({
               onClick={() => onChange((p) => applyProjectThemePreset(p, 'dark'))}
             >
               <Moon size={15} />
-              {zh ? '一键暗色' : 'Apply dark theme'}
+              {zh ? '暗色' : 'Dark'}
             </button>
           </div>
         </div>
-      </header>
+      </ResourceHeading>
       <div className="appearance-toolbar">
         <form
           className="appearance-colors-form"
@@ -161,18 +159,6 @@ export function AppearancePanel({
             {zh ? '添加颜色' : 'Add color'}
           </button>
         </form>
-        <label className="appearance-window-background">
-          {zh ? '内容背景' : 'Content background'}
-          <input
-            type="color"
-            value={project.window.background}
-            onChange={(event) =>
-              onChange((p) => {
-                p.window.background = event.target.value;
-              })
-            }
-          />
-        </label>
       </div>
       {errorMessage && (
         <p className="appearance-colors-error" id="appearance-color-error" role="alert">
@@ -246,13 +232,13 @@ export function AppearancePanel({
         <div>
           <p>
             {zh
-              ? '亮色与暗色方案分别保存。编辑当前方案会同步到画布和预览，编辑另一方案不会改变当前界面；一键亮色 / 一键暗色切换已保存方案，不会覆盖编辑值，设计器主题不受影响。'
-              : 'Light and dark palettes are saved separately. Editing the active palette updates the canvas and preview; editing the other palette leaves the current UI unchanged. Apply light / dark theme selects the saved palette and preserves edits. The designer theme is independent.'}
+              ? '亮色与暗色方案分别保存。编辑当前方案会同步到画布和预览，编辑另一方案不会改变当前界面；亮色 / 暗色切换已保存方案，不会覆盖编辑值，设计器主题不受影响。'
+              : 'Light and dark palettes are saved separately. Editing the active palette updates the canvas and preview; editing the other palette leaves the current UI unchanged. Light / Dark selects the saved palette and preserves edits. The designer theme is independent.'}
           </p>
           <p id="appearance-color-hint">
             {zh
-              ? '输入 brand 或 color.brand 创建 $color.brand，并设置两套颜色。控件通过 $color.primary 等令牌引用配色；固定颜色、独立组件资源和自定义窗口背景会保留。内容背景设置作用于主窗口。'
-              : 'Enter brand or color.brand to create $color.brand with both colors. Widgets reference tokens such as $color.primary. Fixed widget colors, isolated component resources and custom window backgrounds are preserved. Content background applies to the main window.'}
+              ? '输入 brand 或 color.brand 创建 $color.brand，并设置两套颜色。控件通过 $color.primary 等令牌引用配色；固定颜色、独立组件资源和自定义窗口背景会保留。'
+              : 'Enter brand or color.brand to create $color.brand with both colors. Widgets reference tokens such as $color.primary. Fixed widget colors, isolated component resources and custom window backgrounds are preserved.'}
           </p>
         </div>
       </details>

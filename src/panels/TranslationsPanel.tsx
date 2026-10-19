@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { ChevronLeft, ChevronRight, Languages, Plus, Trash2 } from 'lucide-react';
 import type { Project } from '../core/types';
 import './translations.css';
+import { ResourceHeading } from './ResourceHeading';
 
 const owns = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
 
@@ -173,19 +174,15 @@ export function TranslationsPanel({
 
   return (
     <section className="translations-panel project-settings-page">
-      <header className="translations-heading">
-        <div>
-          <h2>
-            <Languages size={16} aria-hidden="true" />
-            {zh ? '多语言' : 'Languages'}
-          </h2>
-        </div>
-        <span className="translations-count">
-          {zh
+      <ResourceHeading
+        icon={<Languages size={16} aria-hidden="true" />}
+        title={zh ? '多语言' : 'Languages'}
+        summary={
+          zh
             ? `${keys.length} 个索引 · ${locales.length} 种语言`
-            : `${keys.length} indices · ${locales.length} languages`}
-        </span>
-      </header>
+            : `${keys.length} indices · ${locales.length} languages`
+        }
+      />
 
       <div className="translations-toolbar">
         <form onSubmit={addKey}>
