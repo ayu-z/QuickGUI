@@ -1151,52 +1151,6 @@ a {
   padding: 3px 6px;
   border-radius: 3px;
 }
-.connections-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 18px;
-}
-.connection-card {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 18px;
-}
-.connection-card header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 18px;
-}
-.connection-card header > svg {
-  color: var(--accent);
-}
-.connection-card header input {
-  border: 0;
-  background: transparent;
-  flex: 1;
-  min-width: 0;
-}
-.connection-card label {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 11px;
-  color: var(--muted);
-  gap: 15px;
-  margin: 12px 0;
-}
-.connection-card input,
-.connection-card select {
-  padding: 6px;
-  width: 70%;
-}
-.connection-card pre {
-  font-size: 10px;
-  white-space: pre-wrap;
-  max-height: 180px;
-  overflow: auto;
-}
 .empty-state {
   grid-column: 1/-1;
   text-align: center;

@@ -1592,8 +1592,8 @@ function FlowEditor({
                     </Field>
                     <p className="qg-field-hint">
                       {zh
-                        ? '连接配置在“连接”工作区维护。HTTP、WebSocket、MQTT、串口和 TCP 请求由运行时驱动执行。'
-                        : 'Manage connection settings in Connections. Runtime drivers execute HTTP, WebSocket, MQTT, serial and TCP requests.'}
+                        ? '选择工程内的设备或服务连接，由运行时执行请求。'
+                        : 'Select a device or service connection from this project. The runtime executes the request.'}
                     </p>
                   </>
                 )}

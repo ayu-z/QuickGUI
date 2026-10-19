@@ -21,7 +21,6 @@ import {
   PanelLeftClose,
   Play,
   Plus,
-  Radio,
   RotateCcw,
   RotateCw,
   Save,
@@ -64,7 +63,6 @@ import type {
   Widget,
   ComponentModule,
   Variable,
-  Connection,
   RuntimeLog,
 } from './core/types';
 import { CanvasEditor } from './designer/CanvasEditor';
@@ -92,7 +90,6 @@ import { RuntimeWindows } from './runtime/RuntimeWindows';
 import { getProjectWindow, listProjectWindows, projectForWindow } from './core/windows';
 import * as native from './native/bridge';
 import './designer/designer.css';
-import { ConnectionsPanel } from './panels/ConnectionsPanel';
 import { AppearancePanel } from './panels/AppearancePanel';
 import { TranslationsPanel } from './panels/TranslationsPanel';
 import { HistoryPanel } from './panels/HistoryPanel';
@@ -969,7 +966,6 @@ function ProjectWorkspace({
     ['flows', GitBranch, t.flows],
     ['scripts', Code2, t.scripts],
     ['data', SlidersHorizontal, t.data],
-    ['connections', Radio, t.connections],
   ];
 
   return (
@@ -1424,9 +1420,6 @@ function ProjectWorkspace({
               onChange={(p) => store.update(p)}
               notify={notify}
             />
-          )}
-          {section === 'connections' && (
-            <ConnectionsPanel project={project} onChange={(p) => store.update(p)} notify={notify} />
           )}
           {workspaceConsoleVisible && (
             <section className="console-panel">

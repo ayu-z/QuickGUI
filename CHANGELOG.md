@@ -1,5 +1,14 @@
 # 变动日志
 
+## 2026-10-20 — 删除独立连接页
+
+- 按要求删除独立“连接”页及中英文导航入口，清理页面对应的工作区类型、翻译键、图标/类型导入和专属卡片样式；流程属性中的说明不再指向已移除的页面。工作区页签保留界面、应用外观、多语言、流程、C脚本和数据。
+- 删除 `src/panels/ConnectionsPanel.tsx`，原因是移除独立连接配置/诊断页面；修改 `src/App.tsx`、`src/core/store.ts`、`src/core/i18n.ts`、`src/designer/FlowEditor.tsx`、`src/styles.css`、`README.md`、`tests/e2e/dropdowns.spec.ts`、`tests/e2e/serial-assistant.spec.ts`、`tests/e2e/translations.spec.ts` 和本文件。无新增或重命名源文件，无依赖、配置或工程格式变更。
+- 工程内已有 `connections` 数据、稳定引用、串口/设备请求流程、原生通信驱动、保存与导出保留；不因删除页面清空已有工程。工作区Section不持久化，无需恢复迁移。保留仍用于模块空态的通用样式，README不再描述已删除的“连接并测试”按钮。
+- 回归改为验证中英文均无连接页入口；原连接页下拉框高度检查迁到流程中的实际设备请求选择框，继续断言编辑器32px及运行控件58px。串口用例继续检查端口和VID来源，并在新增串口通信/设备请求节点中引用原配置，核对自动保存及qgui导出的连接数组、原节点配置与新增引用完整保留。
+- 最终 `npm run check` 的TypeScript与285项单测、隔离Chromium全量89/89和WebKit专项17/17通过，正式用例配置与超时不变；`npx tauri build --debug --bundles app` 的前置生产构建和本机打包成功，更新 `target/debug/bundle/macos/QuickGUI.app`（78.00 MiB）。Prettier及Git差异检查通过，保留既有Monaco体积与桥接混合导入提示；报告、截图和应用包按生成物处理。
+- `cargo test --workspace` 仍被未改动的 `crates/quickgui-engine/src/serial_demo_test.rs:154` 既有E0502借用冲突阻断，未记为通过。无Rust业务、C SDK、进程协议或编译路径变更，未重复C/AOT专项，未进行实体设备通信或原生多平台验收。用户 `QuickGUI_Icons/` 未修改或暂存。
+
 ## 2026-10-20 — 精简外观设置并统一资源页标题栏
 
 - 移除应用外观工具栏的“内容背景”设置和相关说明；主题按钮改为“亮色／暗色”，英文对应“Light／Dark”。双色方案保存与切换、窗口属性中的背景配置以及主题背景跟随语义保持。

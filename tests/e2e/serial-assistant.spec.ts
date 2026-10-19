@@ -119,7 +119,7 @@ test('browser preview never fabricates ports or traffic and shows the native cap
   });
 });
 
-test('serial flow ports, value sources and connection profiles are editable and preserve references', async ({
+test('serial flow ports and value sources remain editable and existing connection profiles remain referenceable', async ({
   page,
 }, info) => {
   await openExample(page);
@@ -145,20 +145,51 @@ test('serial flow ports, value sources and connection profiles are editable and 
     variable: 'serial_filters',
     path: ['vid'],
   });
-  await section(page, '连接');
-  const card = page.locator('.connection-card');
-  await expect(card.getByRole('combobox', { name: '数据位', exact: true })).toHaveValue('8');
-  await expect(card.getByRole('combobox', { name: '停止位', exact: true })).toHaveValue('1');
-  await card.getByRole('combobox', { name: '校验', exact: true }).selectOption('odd');
-  await expect(
-    card.getByRole('button', { name: '单次诊断（8N1 / 无流控）', exact: true }),
-  ).toBeDisabled();
-  await card.getByRole('combobox', { name: '校验', exact: true }).selectOption('none');
-  await card.getByRole('button', { name: 'Delete connection', exact: true }).click();
-  await expect(page.getByRole('status')).toContainText('被流程引用');
-  await expect(card).toHaveCount(1);
-  await card.getByRole('button', { name: '扫描串口', exact: true }).click();
-  await expect(card.locator('pre')).toContainText(/desktop|原生|桌面/i);
+  await page
+    .locator('.qg-node-palette')
+    .getByRole('button', { name: '串口 通信', exact: true })
+    .click();
+  const communicationId = await page.locator('.react-flow__node.selected').getAttribute('data-id');
+  const serialConnection = settings.getByRole('combobox', { name: '串口连接', exact: true });
+  await expect(serialConnection.locator('option[value="serial_port"]')).toHaveText('助手串口');
+  await serialConnection.selectOption('serial_port');
+  await expect(serialConnection).toHaveValue('serial_port');
+  await page
+    .locator('.qg-node-palette')
+    .getByRole('button', { name: '设备请求', exact: true })
+    .click();
+  const requestId = await page.locator('.react-flow__node.selected').getAttribute('data-id');
+  const requestConnection = settings.getByRole('combobox', { name: '设备或服务连接', exact: true });
+  await expect(requestConnection.locator('option[value="serial_port"]')).toHaveText(
+    '助手串口 · SERIAL',
+  );
+  await requestConnection.selectOption('serial_port');
+  await expect(requestConnection).toHaveValue('serial_port');
+  await expect(page.locator('.save-indicator')).toContainText('已自动保存');
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => JSON.parse(localStorage.getItem('quickgui.project.v1')!).project.connections,
+      ),
+    )
+    .toEqual(project.connections);
+  const saved = await exported(page, info, 'serial-profile-references');
+  expect(saved.connections).toEqual(project.connections);
+  const nodes = saved.flows.flatMap((flow) => flow.nodes);
+  expect(nodes.find((node) => node.id === communicationId)?.config).toMatchObject({
+    action: 'communicate',
+    connectionId: 'serial_port',
+  });
+  expect(nodes.find((node) => node.id === requestId)?.config.connectionId).toBe('serial_port');
+  expect(nodes.find((node) => node.id === selectedId)?.config.vid).toEqual({
+    source: 'variable',
+    variable: 'serial_filters',
+    path: ['vid'],
+  });
+  for (const original of project.flows
+    .flatMap((flow) => flow.nodes)
+    .filter((node) => node.config.connectionId))
+    expect(nodes.find((node) => node.id === original.id)?.config).toEqual(original.config);
   await page.screenshot({ path: 'artifacts/serial-connection-profile.png', fullPage: true });
 });
 

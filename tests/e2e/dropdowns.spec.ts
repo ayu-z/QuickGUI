@@ -89,7 +89,16 @@ for (const theme of ['dark', 'light']) {
     await page.getByRole('button', { name: '流程', exact: true }).click();
     await page.locator('.qg-flow-card').first().click();
     await consistentSelects(page);
-    await page.getByRole('button', { name: '连接', exact: true }).click();
+    await page
+      .locator('.qg-node-palette')
+      .getByRole('button', { name: '设备请求', exact: true })
+      .click();
+    const connection = page.locator('.qg-flow-settings').getByRole('combobox', {
+      name: '设备或服务连接',
+      exact: true,
+    });
+    await expect(connection).toHaveValue('service');
+    await connection.selectOption('service');
     await consistentSelects(page);
     await page.getByRole('button', { name: '界面', exact: true }).click();
     await page.getByRole('button', { name: '预览', exact: true }).click();
