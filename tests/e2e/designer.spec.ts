@@ -94,6 +94,7 @@ test('flow nodes can be added, configured, connected and removed', async ({ page
     .click();
   const nodes = page.locator('.react-flow__node');
   await expect(nodes).toHaveCount(5);
+  const initialEdges = await page.locator('.react-flow__edge').count();
   await page
     .locator('.qg-node-palette')
     .getByRole('button', { name: '条件判断', exact: true })
@@ -105,19 +106,19 @@ test('flow nodes can be added, configured, connected and removed', async ({ page
     .selectOption('gte');
   await page.locator('.qg-flow-settings').getByLabel('比较值', { exact: true }).fill('10');
   await expect(page.locator('.qg-flow-card.selected')).toContainText('gte 10');
-  const source = page.locator('.react-flow__node[data-id="log-cycle"] .react-flow__handle.source');
+  const source = page.locator('.react-flow__node[data-id="log-cycle"] [data-handleid="output"]');
   const target = page
     .locator('.react-flow__node')
     .filter({ hasText: '条件判断' })
-    .locator('.react-flow__handle.target');
+    .locator('[data-handleid="input"]');
   await source.dragTo(target);
-  await expect(page.locator('.react-flow__edge')).toHaveCount(5);
+  await expect(page.locator('.react-flow__edge')).toHaveCount(initialEdges + 1);
   await page
     .locator('.qg-flow-settings')
     .getByRole('button', { name: '删除节点', exact: true })
     .click();
   await expect(nodes).toHaveCount(5);
-  await expect(page.locator('.react-flow__edge')).toHaveCount(4);
+  await expect(page.locator('.react-flow__edge')).toHaveCount(initialEdges);
   await page.getByRole('button', { name: '新增流程', exact: true }).click();
   await expect(nodes).toHaveCount(1);
   await expect(page.locator('.qg-flow-toolbar select')).toHaveValue(/.+/);

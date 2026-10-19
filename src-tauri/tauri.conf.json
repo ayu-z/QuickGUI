@@ -10,7 +10,17 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [{ "label": "main", "title": "QuickGUI", "width": 1440, "height": 920, "minWidth": 1100, "minHeight": 700, "decorations": true }],
+    "windows": [
+      {
+        "label": "main",
+        "title": "QuickGUI",
+        "width": 1440,
+        "height": 920,
+        "minWidth": 1100,
+        "minHeight": 700,
+        "decorations": true
+      }
+    ],
     "security": {
       "csp": "default-src 'self' ipc: http://ipc.localhost; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data: blob:; font-src 'self' data:; connect-src ipc: http://ipc.localhost http: https: ws: wss:; worker-src 'self' blob:"
     }
@@ -18,9 +28,18 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
     "resources": { "resources/c-runner/": "c-runner/" },
     "macOS": { "minimumSystemVersion": "11.0" },
-    "windows": { "webviewInstallMode": { "type": "offlineInstaller", "silent": true }, "nsis": { "installMode": "currentUser", "displayLanguageSelector": true } }
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper", "silent": true },
+      "nsis": { "installMode": "currentUser", "displayLanguageSelector": true }
+    }
   }
 }

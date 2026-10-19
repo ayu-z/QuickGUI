@@ -42,6 +42,8 @@ import {
   CircleDot,
 } from 'lucide-react';
 import { EditorStore, type EditorState, type Section } from './core/store';
+import { manualFlowEntries, reconcileFlowBinding } from './core/flowBindings';
+import { FlowBindingSelect } from './designer/FlowBindingSelect';
 import {
   cloneSubtree,
   createEmptyProject,
@@ -55,7 +57,15 @@ import {
 import { download, exportProject, importProject, projectFilename } from './core/archive';
 import { errorText, validateProject } from './core/validation';
 import { translations } from './core/i18n';
-import type { Json, Project, Widget, ComponentModule, Variable, Connection } from './core/types';
+import type {
+  Json,
+  Project,
+  Widget,
+  ComponentModule,
+  Variable,
+  Connection,
+  RuntimeLog,
+} from './core/types';
 import { CanvasEditor } from './designer/CanvasEditor';
 import { LayerTree } from './designer/LayerTree';
 import {
@@ -100,7 +110,6 @@ import {
   type PastePlan,
   type EditScope,
 } from './core/clipboard';
-import { upgradeProject, upgradeWidget, migrationSummary } from './core/migration';
 import { assertJsonValue } from './core/jsonValue';
 import { variableReferences } from './core/references';
 import { getWidgetDefinition, getBindableProperties, getJsonPath } from './core/widgetDefinitions';
@@ -155,13 +164,26 @@ export default function App() {
 
 function DesignerApp() {
   const [store] = useState(() => new EditorStore());
+  const [designerTheme, setDesignerTheme] = useState<'light' | 'dark'>(() =>
+    localStorage.getItem('quickgui.theme') === 'light' ? 'light' : 'dark',
+  );
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
   useEffect(() => () => store.dispose(), [store]);
+  useEffect(() => {
+    document.documentElement.dataset.theme = designerTheme;
+    localStorage.setItem('quickgui.theme', designerTheme);
+    if (native.isDesktop())
+      void native.setDesignerTheme(designerTheme).catch((error) => {
+        console.error('Failed to synchronize the native title bar theme:', error);
+      });
+  }, [designerTheme]);
   return state.project ? (
     <ProjectWorkspace
       key={state.sessionId}
       store={store}
       state={{ ...state, project: state.project }}
+      designerTheme={designerTheme}
+      onToggleTheme={() => setDesignerTheme((theme) => (theme === 'dark' ? 'light' : 'dark'))}
     />
   ) : (
     <WelcomeScreen store={store} state={state} />
@@ -171,13 +193,16 @@ function DesignerApp() {
 function ProjectWorkspace({
   store,
   state,
+  designerTheme,
+  onToggleTheme,
   onCopy,
   onCut,
   onPaste,
-  onRequestUpgrade,
 }: {
   store: EditorStore;
   state: EditorState & { project: Project };
+  designerTheme: 'light' | 'dark';
+  onToggleTheme: () => void;
   onCopy?: (
     project: Project,
     scope: { kind: 'window' | 'module'; id: string },
@@ -193,11 +218,6 @@ function ProjectWorkspace({
     scope: { kind: 'window' | 'module'; id: string },
     point?: Point,
   ) => void | Promise<void>;
-  onRequestUpgrade?: (
-    reason: string,
-    pendingCommand?: DesignerCommand | (() => void),
-    minimumVersion?: 3 | 4,
-  ) => void;
 }) {
   const { project, section, selectedId, selectedIds, drafts, activeWindowId } = state;
   const [engine] = useState(() => createRuntime(project));
@@ -211,21 +231,12 @@ function ProjectWorkspace({
   }, [engine]);
   const snapshot = useSyncExternalStore(engine.subscribe, engine.getSnapshot);
   const [leftTab, setLeftTab] = useState<'layers' | 'library' | 'modules' | 'assets'>('layers');
-  const [designerTheme, setDesignerTheme] = useState(
-    () => localStorage.getItem('quickgui.theme') ?? 'dark',
-  );
   const [settings, setSettings] = useState(false);
   const clipboardSession = useRef(crypto.randomUUID());
   const [pasteReview, setPasteReview] = useState<{
     bundle: ClipboardBundle;
     scope: EditScope;
     point?: Point;
-  } | null>(null);
-  const [upgradeRequest, setUpgradeRequest] = useState<{
-    reason: string;
-    pending?: DesignerCommand | (() => void);
-    ids: string[];
-    minimumVersion: 3 | 4;
   } | null>(null);
   const [nameAction, setNameAction] = useState<'create' | 'rename' | null>(null);
   const [preview, setPreview] = useState(false),
@@ -238,8 +249,18 @@ function ProjectWorkspace({
   const previewQueue = useRef<Promise<void>>(Promise.resolve());
   const previewGeneration = useRef(0);
   const [buildProgress, setBuildProgress] = useState<string | null>(null);
+  const [buildLogs, setBuildLogs] = useState<RuntimeLog[]>([]);
+  const buildInProgress = useRef(false);
+  const consoleContent = useRef<HTMLDivElement>(null);
+  const [runEntryKey, setRunEntryKey] = useState('');
+  const followConsole = useRef(true);
+  const consoleLogs = [...snapshot.logs, ...buildLogs].sort((a, b) => a.time - b.time).slice(-1000);
   const [showConsole, setShowConsole] = useState(true),
     [simulate, setSimulate] = useState(false);
+  useEffect(() => {
+    if (followConsole.current && consoleContent.current)
+      consoleContent.current.scrollTop = consoleContent.current.scrollHeight;
+  }, [snapshot.logs, buildLogs, showConsole]);
   const [toast, setToast] = useState<{ text: string; error?: boolean }>();
   const [moduleId, setModuleId] = useState<string | null>(null);
   const [pendingModule, setPendingModule] = useState<ComponentModule | null>(null);
@@ -333,10 +354,6 @@ function ProjectWorkspace({
   }, []);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = designerTheme;
-    localStorage.setItem('quickgui.theme', designerTheme);
-  }, [designerTheme]);
-  useEffect(() => {
     document.documentElement.lang = project.locale;
     localStorage.setItem('quickgui.locale', project.locale);
   }, [project.locale]);
@@ -408,7 +425,7 @@ function ProjectWorkspace({
   };
   const addWidget = (type: Widget['type'], x?: number, y?: number) => {
     if (moduleId) {
-      const widget = createWidget(type, x, y, project.schemaVersion >= 3 ? 2 : 1);
+      const widget = createWidget(type, x, y, 2);
       store.update((p) => p.modules.find((m) => m.id === moduleId)!.widgets.push(widget));
       store.select(widget.id);
     } else store.addWidget(type, x, y);
@@ -423,20 +440,6 @@ function ProjectWorkspace({
         Object.assign(widget, patch, { id });
       }
     });
-  const requestUpgrade = (
-    reason: string,
-    pendingCommand?: DesignerCommand | (() => void),
-    minimumVersion: 3 | 4 = 3,
-  ) => {
-    if (onRequestUpgrade) onRequestUpgrade(reason, pendingCommand, minimumVersion);
-    else
-      setUpgradeRequest({
-        reason,
-        pending: pendingCommand,
-        ids: [...store.getSnapshot().selectedIds],
-        minimumVersion,
-      });
-  };
   const copyCurrent = async (cut = false) => {
     const current = store.getSnapshot(),
       source = current.project;
@@ -570,10 +573,6 @@ function ProjectWorkspace({
         roots = selectionRoots(widgets, current.selectedIds);
       if (!roots.length) return;
       if (['lock', 'unlock', 'hide', 'show'].includes(command)) {
-        if (source.schemaVersion < 3) {
-          requestUpgrade(command, command);
-          return;
-        }
         store.update((next) => {
           const list = scopeWidgets(next),
             targets = new Set(roots.map((widget) => widget.id));
@@ -681,7 +680,7 @@ function ProjectWorkspace({
     void executeCommand('delete');
   };
   const createModule = () => {
-    const source = selected ?? createWidget('panel', 32, 32, project.schemaVersion >= 3 ? 2 : 1);
+    const source = selected ?? createWidget('panel', 32, 32, 2);
     const children = cloneSubtree(selected ? designProject.widgets : [source], source.id, true);
     const child = children.find((w) => !w.parentId)!;
     const module: ComponentModule = {
@@ -719,7 +718,7 @@ function ProjectWorkspace({
     );
   };
   const addModuleInstance = (module: ComponentModule) => {
-    const widget = createWidget('module', 32, 32, project.schemaVersion >= 3 ? 2 : 1);
+    const widget = createWidget('module', 32, 32, 2);
     widget.name = module.name;
     widget.moduleId = module.id;
     widget.layout.width = module.width;
@@ -740,17 +739,6 @@ function ProjectWorkspace({
       setPendingModule(null);
       setLeftTab('modules');
       notify(zh ? '组件包已存在' : 'Component package already exists');
-      return;
-    }
-    const needsV3 = Boolean(
-      module.propertyDefinitions ||
-      module.embeddedResourceScope ||
-      module.packageIdentity ||
-      existing,
-    );
-    if (needsV3 && current.schemaVersion < 3) {
-      setPendingModule(null);
-      requestUpgrade('component-package', () => installModule(module));
       return;
     }
     const next = structuredClone(current),
@@ -849,8 +837,28 @@ function ProjectWorkspace({
     }
   };
   const buildRuntime = async () => {
+    if (buildInProgress.current) return;
+    buildInProgress.current = true;
     setExportMenu(false);
     let unlisten: (() => void) | undefined;
+    const recordProgress = ({ stage, message }: native.BuildProgress) => {
+      if (!mounted.current) return;
+      const text = `[build:${stage}] ${message}`;
+      setBuildLogs((logs) =>
+        stage === 'error' && logs.at(-1)?.message === text
+          ? logs
+          : [
+              ...logs.slice(-999),
+              {
+                id: uid('build-log'),
+                time: Date.now(),
+                level: stage === 'error' ? 'error' : 'info',
+                message: text,
+              },
+            ],
+      );
+      setBuildProgress(`${stage}: ${message}`);
+    };
     try {
       exportProject(project, drafts);
       if (!native.isDesktop())
@@ -859,18 +867,30 @@ function ProjectWorkspace({
             ? '独立应用构建请使用桌面版。'
             : 'Use the desktop app to build a standalone application.',
         );
-      setBuildProgress(zh ? '准备构建…' : 'Preparing build…');
-      unlisten = await native.onBuildProgress((p) => setBuildProgress(`${p.stage}: ${p.message}`));
+      setBuildLogs([]);
+      followConsole.current = true;
+      setShowConsole(true);
+      recordProgress({ stage: 'prepare', message: zh ? '准备构建…' : 'Preparing build…' });
+      unlisten = await native.onBuildProgress(recordProgress);
       const result = await native.buildRuntime(project);
       if (result)
         notify(
           `${zh ? '构建完成' : 'Build complete'}: ${result.artifactDir} (${result.signingStatus})`,
         );
+      else
+        recordProgress({
+          stage: 'cancelled',
+          message: zh
+            ? '未选择输出目录，构建已取消。'
+            : 'No output directory selected; build cancelled.',
+        });
     } catch (e) {
+      recordProgress({ stage: 'error', message: errorText(e) });
       notify(errorText(e), true);
     } finally {
       unlisten?.();
-      setBuildProgress(null);
+      buildInProgress.current = false;
+      if (mounted.current) setBuildProgress(null);
     }
   };
   const openProject = async () => {
@@ -900,10 +920,22 @@ function ProjectWorkspace({
       notify(errorText(e), true);
     }
   };
+  const runEntries = project.flows
+    .filter((flow) => flow.enabled)
+    .flatMap((flow) =>
+      manualFlowEntries(flow).map((node) => ({
+        flow,
+        node,
+        key: JSON.stringify([flow.id, node.id]),
+      })),
+    );
+  const runEntry = runEntries.find((entry) => entry.key === runEntryKey) ?? runEntries[0];
   const run = () => {
     if (!snapshot.running) engine.start();
-    const flow = project.flows[0];
-    if (flow) void engine.runFlow(flow.id).catch((e) => notify(errorText(e), true));
+    if (runEntry)
+      void engine
+        .runFlow(runEntry.flow.id, null, runEntry.node.id)
+        .catch((e) => notify(errorText(e), true));
   };
   const tabs: [Section, typeof LayoutDashboard, string][] = [
     ['design', LayoutDashboard, t.design],
@@ -1012,11 +1044,7 @@ function ProjectWorkspace({
         >
           <Languages size={17} />
         </button>
-        <button
-          className="icon-button"
-          title="Theme"
-          onClick={() => setDesignerTheme(designerTheme === 'dark' ? 'light' : 'dark')}
-        >
+        <button className="icon-button" title="Theme" onClick={onToggleTheme}>
           {designerTheme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
         </button>
         <span className="toolbar-divider" />
@@ -1065,7 +1093,7 @@ function ProjectWorkspace({
                   <small>{t.sourceHint}</small>
                 </span>
               </button>
-              <button onClick={() => void buildRuntime()}>
+              <button disabled={buildProgress !== null} onClick={() => void buildRuntime()}>
                 <Monitor size={18} />
                 <span>
                   {zh ? '独立运行应用' : 'Standalone application'}
@@ -1338,7 +1366,6 @@ function ProjectWorkspace({
               onPaste={(point) => {
                 void executeCommand('paste', point);
               }}
-              onRequestUpgrade={(reason) => requestUpgrade(reason, reason as DesignerCommand)}
               canUndo={!!state.past.length}
               canRedo={!!state.future.length}
               onAdd={addWidget}
@@ -1347,22 +1374,22 @@ function ProjectWorkspace({
           {section === 'flows' && (
             <FlowEditor
               project={project}
-              onRequestUpgrade={(apply) => requestUpgrade('json-path', apply)}
-              onRequestV4={(apply) => requestUpgrade('serial-flow', apply, 4)}
               onChange={(flows) =>
                 store.update((p) => {
+                  const previous = p.flows;
                   p.flows = flows;
                   if (flows.some((flow) => flow.nodes.some((node) => node.kind === 'window'))) {
-                    if (p.schemaVersion === 1) p.schemaVersion = 2;
                     p.windows ??= [];
                   }
-                  const ids = new Set(flows.map((f) => f.id));
                   for (const w of [
                     ...listProjectWindows(p).flatMap((window) => window.widgets),
                     ...p.modules.flatMap((m) => m.widgets),
                   ])
                     w.events = Object.fromEntries(
-                      Object.entries(w.events).filter(([, id]) => ids.has(id)),
+                      Object.entries(w.events).flatMap(([event, binding]) => {
+                        const next = reconcileFlowBinding(binding, previous, flows);
+                        return next === undefined ? [] : [[event, next]];
+                      }),
                     );
                 })
               }
@@ -1384,16 +1411,10 @@ function ProjectWorkspace({
               engine={engine}
               onChange={(p) => store.update(p)}
               notify={notify}
-              onRequestUpgrade={(pending) => requestUpgrade('json-variable', pending)}
             />
           )}
           {section === 'connections' && (
-            <ConnectionsPanel
-              project={project}
-              onChange={(p) => store.update(p)}
-              notify={notify}
-              onRequestV4={(apply) => requestUpgrade('serial-profile', apply, 4)}
-            />
+            <ConnectionsPanel project={project} onChange={(p) => store.update(p)} notify={notify} />
           )}
           {showConsole && (
             <section className="console-panel">
@@ -1401,7 +1422,7 @@ function ProjectWorkspace({
                 <button onClick={() => setShowConsole(false)}>
                   <Terminal size={14} />
                   <span>{t.console}</span>
-                  <span className="count-pill">{snapshot.logs.length}</span>
+                  <span className="count-pill">{consoleLogs.length}</span>
                 </button>
                 <div>
                   {simulationAvailable && (
@@ -1415,10 +1436,36 @@ function ProjectWorkspace({
                       <span className="simulated-label">SIM</span>
                     </label>
                   )}
-                  <button className="icon-button" title={t.clear} onClick={engine.clearLogs}>
+                  <button
+                    className="icon-button"
+                    title={t.clear}
+                    onClick={() => {
+                      engine.clearLogs();
+                      setBuildLogs([]);
+                    }}
+                  >
                     <Trash2 size={13} />
                   </button>
-                  <button className="icon-button" title={t.run} onClick={run}>
+                  {runEntries.length > 1 && (
+                    <select
+                      className="console-entry"
+                      aria-label={zh ? '运行入口' : 'Run entry'}
+                      value={runEntry?.key ?? ''}
+                      onChange={(event) => setRunEntryKey(event.target.value)}
+                    >
+                      {runEntries.map((entry) => (
+                        <option key={entry.key} value={entry.key}>
+                          {entry.flow.name} · {entry.node.label}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <button
+                    className="icon-button"
+                    title={t.run}
+                    onClick={run}
+                    disabled={!runEntry && snapshot.running}
+                  >
                     <Play size={13} />
                   </button>
                   <button className="icon-button" title={t.stop} onClick={engine.stop}>
@@ -1426,9 +1473,17 @@ function ProjectWorkspace({
                   </button>
                 </div>
               </header>
-              <div className="console-content">
-                {snapshot.logs.length ? (
-                  snapshot.logs.slice(-100).map((log) => (
+              <div
+                className="console-content"
+                ref={consoleContent}
+                onScroll={(event) => {
+                  const element = event.currentTarget;
+                  followConsole.current =
+                    element.scrollHeight - element.scrollTop - element.clientHeight < 24;
+                }}
+              >
+                {consoleLogs.length ? (
+                  consoleLogs.map((log) => (
                     <div className={`log-row ${log.level}`} key={log.id}>
                       <time>
                         {new Date(log.time).toLocaleTimeString('en-GB', { hour12: false })}
@@ -1477,9 +1532,6 @@ function ProjectWorkspace({
                   onBeginTransaction={store.beginTransaction}
                   onCommitTransaction={store.commitTransaction}
                   onCancelTransaction={store.cancelTransaction}
-                  onRequestUpgrade={(reason, callback) =>
-                    requestUpgrade(reason ?? 'widget-definition', callback)
-                  }
                   draft={store.getDraft(selected.id, scopeKey)}
                   onDraft={(text) => store.setDraft(selected.id, text, scopeKey)}
                   onDelete={deleteWidget}
@@ -1629,87 +1681,6 @@ function ProjectWorkspace({
           onCancel={() => setPasteReview(null)}
         />
       )}
-      {upgradeRequest && (
-        <div className="modal-backdrop">
-          <div
-            className="settings-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-label={zh ? '升级工程与控件' : 'Upgrade project and widgets'}
-            onKeyDown={(event) => {
-              event.stopPropagation();
-              if (event.key === 'Escape') setUpgradeRequest(null);
-            }}
-          >
-            <header>
-              <strong>{zh ? '升级工程与控件' : 'Upgrade project and widgets'}</strong>
-              <button
-                className="icon-button"
-                aria-label={zh ? '取消升级' : 'Cancel upgrade'}
-                onClick={() => setUpgradeRequest(null)}
-              >
-                <X size={18} />
-              </button>
-            </header>
-            <section>
-              {migrationSummary(project, upgradeRequest.minimumVersion).map((line, index) => (
-                <p key={index}>{line}</p>
-              ))}
-              {['widget-properties', 'batch-properties', 'widget-definition'].includes(
-                upgradeRequest.reason,
-              ) && (
-                <p>
-                  {zh
-                    ? '所选控件将启用新版属性；容器可见/禁用继承、输入提交及详细样式会按新版规则生效。未知扩展字段仍保留。'
-                    : 'Selected widgets will use the new property rules, including container inheritance, input submission and detailed styles. Unknown extensions are retained.'}
-                </p>
-              )}
-              <p>
-                {zh
-                  ? '确认后可使用撤销恢复本次操作。'
-                  : 'You can undo this change after confirming.'}
-              </p>
-              <div className="settings-actions">
-                <button className="button" onClick={() => setUpgradeRequest(null)}>
-                  {zh ? '取消' : 'Cancel'}
-                </button>
-                <button
-                  autoFocus
-                  className="button primary"
-                  onClick={async () => {
-                    const request = upgradeRequest;
-                    store.beginTransaction(`upgrade-v${request.minimumVersion}`);
-                    try {
-                      store.update((next) => {
-                        Object.assign(next, upgradeProject(next, request.minimumVersion));
-                        if (
-                          ['widget-properties', 'batch-properties', 'widget-definition'].includes(
-                            request.reason,
-                          )
-                        )
-                          for (const widget of scopeWidgets(next))
-                            if (request.ids.includes(widget.id))
-                              Object.assign(widget, upgradeWidget(widget, next));
-                      });
-                      if (typeof request.pending === 'function') request.pending();
-                      else if (request.pending) await executeCommand(request.pending);
-                      validateProject(store.getSnapshot().project);
-                      store.commitTransaction();
-                      setUpgradeRequest(null);
-                      notify(zh ? '已升级工作副本' : 'Working copy upgraded');
-                    } catch (error) {
-                      store.cancelTransaction();
-                      notify(errorText(error), true);
-                    }
-                  }}
-                >
-                  {zh ? '升级工作副本' : 'Upgrade working copy'}
-                </button>
-              </div>
-            </section>
-          </div>
-        </div>
-      )}
       {nameAction && (
         <ProjectNameDialog
           mode={nameAction}
@@ -1846,7 +1817,7 @@ function ProjectWorkspace({
         </div>
       )}
       {buildProgress !== null && (
-        <div className="build-progress">
+        <div className={`build-progress${showConsole ? ' console-open' : ''}`}>
           <Activity size={16} />
           <span>{buildProgress.slice(-300)}</span>
           <button className="button" onClick={() => void native.cancelBuild()}>
@@ -2003,23 +1974,19 @@ function BindingsPanel({
       )}
       <label>
         {widget.type === 'button' ? 'onClick' : 'onChange'}
-        <select
-          value={widget.events[widget.type === 'button' ? 'click' : 'change'] ?? ''}
-          onChange={(e) => {
+        <FlowBindingSelect
+          binding={widget.events[widget.type === 'button' ? 'click' : 'change']}
+          flows={project.flows}
+          zh={zh}
+          label={widget.type === 'button' ? 'onClick' : 'onChange'}
+          onChange={(binding) => {
             const events = { ...widget.events };
             const key = widget.type === 'button' ? 'click' : 'change';
-            if (e.target.value) events[key] = e.target.value;
+            if (binding) events[key] = binding;
             else delete events[key];
             onChange({ events });
           }}
-        >
-          <option value="">{zh ? '未关联流程' : 'No flow'}</option>
-          {project.flows.map((f) => (
-            <option key={f.id} value={f.id}>
-              {f.name}
-            </option>
-          ))}
-        </select>
+        />
       </label>
     </div>
   );
@@ -2178,13 +2145,11 @@ function DataPanel({
   onChange,
   engine,
   notify,
-  onRequestUpgrade,
 }: {
   project: Project;
   onChange: (mutator: (p: Project) => void) => void;
   engine: RuntimeController;
   notify: (text: string, error?: boolean) => void;
-  onRequestUpgrade: (pending: () => void) => void;
 }) {
   const snapshot = useSyncExternalStore(engine.subscribe, engine.getSnapshot);
   const zh = project.locale === 'zh-CN';
@@ -2276,8 +2241,7 @@ function DataPanel({
                                   : '',
                           ...(type !== 'number' ? { alarm: undefined } : {}),
                         });
-                      if (type === 'json' && project.schemaVersion < 3) onRequestUpgrade(apply);
-                      else apply();
+                      apply();
                     }}
                   >
                     <option>number</option>

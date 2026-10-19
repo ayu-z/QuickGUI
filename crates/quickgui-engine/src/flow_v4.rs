@@ -4,8 +4,8 @@
 mod tests;
 use crate::serial::{self, SerialError, SerialFilter, SerialService, SerialSettings};
 use crate::{
-    now_ms, read_path, replace_path, validate_flow, validate_json, validate_path,
-    CancellationToken, Engine, FlowNode, Project, RuntimeSnapshot, ScriptHost, ScriptRequest,
+    now_ms, read_path, replace_path, validate_json, validate_path, CancellationToken, Engine,
+    FlowNode, Project, RuntimeSnapshot, ScriptHost, ScriptRequest,
 };
 use serde_json::{json, Value};
 use std::{
@@ -15,9 +15,34 @@ use std::{
 };
 use tokio::sync::Mutex;
 
+pub fn manual_entry_id<'a>(flow: &'a crate::Flow, entry: Option<&str>) -> Result<&'a str, String> {
+    let mut entries = flow.nodes.iter().filter(|node| {
+        node.kind == "event"
+            && node
+                .config
+                .get("trigger")
+                .and_then(Value::as_str)
+                .unwrap_or("manual")
+                == "manual"
+    });
+    if let Some(id) = entry {
+        return entries
+            .find(|node| node.id == id)
+            .map(|node| node.id.as_str())
+            .ok_or_else(|| "Unknown manual event entry".into());
+    }
+    let first = entries
+        .next()
+        .ok_or("This flow has no manual event entry")?;
+    if entries.next().is_some() {
+        return Err("Choose a manual event entry for this flow".into());
+    }
+    Ok(first.id.as_str())
+}
+
 pub fn execution_key(project: &Project) -> String {
     use sha2::{Digest, Sha256};
-    let flows:Vec<_>=project.flows.iter().map(|flow|json!({"id":flow.id,"enabled":flow.enabled,"nodes":flow.nodes.iter().map(|n|json!({"id":n.id,"kind":n.kind,"config":n.config})).collect::<Vec<_>>(),"edges":flow.edges})).collect();
+    let flows:Vec<_>=project.flows.iter().map(|flow|json!({"id":flow.id,"enabled":flow.enabled,"nodes":flow.nodes.iter().map(|n|json!({"id":n.id,"kind":n.kind,"config":n.config,"block":n.block})).collect::<Vec<_>>(),"edges":flow.edges})).collect();
     let connections: Vec<_> = project
         .connections
         .iter()
@@ -228,7 +253,7 @@ fn integer(node: &FlowNode, key: &str, default: u64, min: u64, max: u64) -> Resu
         Ok(value)
     }
 }
-fn filter_id(value: &Value) -> Result<Option<u16>, String> {
+pub fn filter_id(value: &Value) -> Result<Option<u16>, String> {
     match value {
         Value::String(s) => {
             let s = s.trim_matches(|c| matches!(c, '\u{0009}'..='\u{000d}' | '\u{0020}' | '\u{00a0}' | '\u{1680}' | '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}' | '\u{205f}' | '\u{3000}' | '\u{feff}'));
@@ -451,11 +476,8 @@ pub fn validate_project(project: &Project) -> Result<(), String> {
                 .get("trigger")
                 .and_then(Value::as_str)
                 .unwrap_or("");
-            let modern = ["serial", "map", "append"].contains(&node.kind.as_str())
+            let modern = ["serial", "usb", "map", "append"].contains(&node.kind.as_str())
                 || ["serial", "controlledInterval"].contains(&trigger);
-            if modern && project.schema_version < 4 {
-                return Err("Serial and data nodes require schemaVersion 4".into());
-            }
             if !modern {
                 continue;
             }
@@ -465,7 +487,32 @@ pub fn validate_project(project: &Project) -> Result<(), String> {
                 .and_then(Value::as_str)
                 .unwrap_or("");
             let allowed: &[&str] = match node.kind.as_str() {
+                "usb" => match action {
+                    "discover" => &["action", "filter"],
+                    "communicate" => &[
+                        "action",
+                        "sessionId",
+                        "device",
+                        "options",
+                        "data",
+                        "encoding",
+                        "reportId",
+                        "length",
+                    ],
+                    _ => return Err("Unknown USB FB".into()),
+                },
                 "serial" => match action {
+                    "discover" => &["action", "ports", "vid", "pid"],
+                    "communicate" => &[
+                        "action",
+                        "connectionId",
+                        "settings",
+                        "data",
+                        "encoding",
+                        "lineEnding",
+                        "timeoutMs",
+                        "enabled",
+                    ],
                     "scan" => &["action"],
                     "filter" => &["action", "ports", "vid", "pid"],
                     "open" => &["action", "connectionId", "settings"],
@@ -567,6 +614,107 @@ pub fn validate_project(project: &Project) -> Result<(), String> {
                     })
                     .and_then(|reference| reference.get("value"))
             };
+            if node.kind == "usb"
+                || (node.kind == "serial" && ["discover", "communicate"].contains(&action))
+            {
+                let keys: &[&str] = match (node.kind.as_str(), action) {
+                    ("usb", "discover") => &["filter"],
+                    ("usb", "communicate") => &[
+                        "device", "options", "data", "encoding", "reportId", "length",
+                    ],
+                    ("serial", "discover") => &["ports", "vid", "pid"],
+                    _ => &[
+                        "settings",
+                        "data",
+                        "encoding",
+                        "lineEnding",
+                        "timeoutMs",
+                        "enabled",
+                    ],
+                };
+                for key in keys {
+                    check_ref(
+                        node.config
+                            .get(*key)
+                            .ok_or_else(|| format!("Missing FB parameter {key}"))?,
+                    )?;
+                }
+                if node.kind == "usb" {
+                    if action == "communicate"
+                        && !node
+                            .config
+                            .get("sessionId")
+                            .and_then(Value::as_str)
+                            .is_some_and(|v| !v.trim().is_empty() && v.len() <= 128)
+                    {
+                        return Err("Invalid USB session ID".into());
+                    }
+                    if let Some(v) = literal_value("filter") {
+                        serde_json::from_value::<crate::usb::Filter>(v.clone())
+                            .map_err(|e| e.to_string())?
+                            .native()?;
+                    }
+                    if let Some(v) = literal_value("options") {
+                        serde_json::from_value::<crate::usb::Options>(v.clone())
+                            .map_err(|e| e.to_string())?
+                            .validate()?;
+                    }
+                    if literal_value("reportId")
+                        .is_some_and(|v| !v.as_u64().is_some_and(|n| n <= 255))
+                        || literal_value("length")
+                            .is_some_and(|v| !v.as_u64().is_some_and(|n| (1..=65535).contains(&n)))
+                    {
+                        return Err("Invalid HID report ID or feature length".into());
+                    }
+                    if literal_value("device").is_some_and(|v| {
+                        !v.is_null() && !v.is_string() && !v.get("id").is_some_and(Value::is_string)
+                    }) {
+                        return Err("USB device must be an exact discovered identity".into());
+                    }
+                } else {
+                    if action == "communicate"
+                        && !project.connections.iter().any(|c| {
+                            c["protocol"] == "serial"
+                                && c.get("id") == node.config.get("connectionId")
+                        })
+                    {
+                        return Err("Missing serial connection reference".into());
+                    }
+                    for key in ["vid", "pid"] {
+                        if let Some(v) = literal_value(key) {
+                            filter_id(v)?;
+                        }
+                    }
+                    if let Some(v) = literal_value("settings") {
+                        let mut c = json!({"portName":"validation-only"});
+                        c.as_object_mut().unwrap().extend(
+                            v.as_object()
+                                .ok_or("Serial settings must be an object")?
+                                .clone(),
+                        );
+                        serde_json::from_value::<SerialSettings>(c)
+                            .map_err(|e| e.to_string())?
+                            .validate()
+                            .map_err(|e| e.to_string())?;
+                    }
+                    if literal_value("enabled").is_some_and(|v| !v.is_boolean())
+                        || literal_value("lineEnding").is_some_and(|v| {
+                            ![Some("none"), Some("lf"), Some("crlf")].contains(&v.as_str())
+                        })
+                        || literal_value("timeoutMs")
+                            .is_some_and(|v| !v.as_u64().is_some_and(|n| (1..=15000).contains(&n)))
+                    {
+                        return Err("Invalid serial communication parameters".into());
+                    }
+                }
+                if literal_value("data").is_some_and(|v| !v.is_string())
+                    || literal_value("encoding")
+                        .is_some_and(|v| ![Some("utf8"), Some("hex")].contains(&v.as_str()))
+                {
+                    return Err("Invalid communication data or encoding".into());
+                }
+                continue;
+            }
             match node.kind.as_str() {
                 "serial" => {
                     let action = node
@@ -779,7 +927,7 @@ pub fn validate_project(project: &Project) -> Result<(), String> {
                 && flow
                     .edges
                     .iter()
-                    .filter(|edge| edge.source == node.id)
+                    .filter(|edge| edge.source == node.id && !crate::function_blocks::is_data(edge))
                     .any(|edge| {
                         edge.source_handle
                             .as_deref()
@@ -802,6 +950,40 @@ pub async fn run_shared(
     cancel: CancellationToken,
     host: Option<&ScriptHost>,
 ) -> Result<RuntimeSnapshot, String> {
+    run_activation_shared(engine, serial, flow_id, entry, input, cancel, host, None).await
+}
+pub async fn run_output_shared(
+    engine: Arc<Mutex<Engine>>,
+    serial: Option<SerialService>,
+    flow_id: &str,
+    node: &str,
+    port: &str,
+    input: Value,
+    cancel: CancellationToken,
+    host: Option<&ScriptHost>,
+) -> Result<RuntimeSnapshot, String> {
+    run_activation_shared(
+        engine,
+        serial,
+        flow_id,
+        Some(node),
+        input,
+        cancel,
+        host,
+        Some(port),
+    )
+    .await
+}
+async fn run_activation_shared(
+    engine: Arc<Mutex<Engine>>,
+    serial: Option<SerialService>,
+    flow_id: &str,
+    entry: Option<&str>,
+    input: Value,
+    cancel: CancellationToken,
+    host: Option<&ScriptHost>,
+    output: Option<&str>,
+) -> Result<RuntimeSnapshot, String> {
     let cancel = cancel.child_token();
     let _cancel_on_return = cancel.clone().drop_guard();
     let (flow, epoch, order, run_id) = {
@@ -809,15 +991,16 @@ pub async fn run_shared(
         if !e.snapshot.running {
             return Err("Runtime stopped".into());
         }
-        let flow = e
-            .project
-            .flows
-            .iter()
-            .find(|f| f.id == flow_id)
-            .cloned()
-            .ok_or("Unknown flow")?;
-        let order = validate_flow(&flow)?;
-        if entry.is_some_and(|id| !flow.nodes.iter().any(|n| n.id == id && n.kind == "event")) {
+        let (flow, order) = e.flow_plans.get(flow_id).cloned().ok_or("Unknown flow")?;
+        if entry.is_some_and(|id| {
+            !flow.nodes.iter().any(|n| {
+                n.id == id
+                    && (n.kind == "event"
+                        || output.is_some_and(|p| {
+                            crate::function_blocks::execution_outputs(n).contains(&p)
+                        }))
+            })
+        }) {
             return Err("Unknown event entry".into());
         }
         if !flow.enabled {
@@ -830,14 +1013,12 @@ pub async fn run_shared(
         e.notify();
         (flow, e.execution_epoch, order, run_id)
     };
-    let current =
-        |e: &Engine| !cancel.is_cancelled() && e.snapshot.running && e.execution_epoch == epoch;
     let operation = async {
-        let mut pending: BTreeMap<String, VecDeque<Value>> = flow
+        let pending: BTreeMap<String, VecDeque<crate::function_blocks::Activation>> = flow
             .nodes
             .iter()
             .filter(|n| {
-                n.kind == "event"
+                (n.kind == "event" || output.is_some())
                     && match entry {
                         Some(id) => n.id == id,
                         None => {
@@ -849,165 +1030,32 @@ pub async fn run_shared(
                         }
                     }
             })
-            .map(|n| (n.id.clone(), VecDeque::from([input.clone()])))
+            .map(|n| {
+                (
+                    n.id.clone(),
+                    VecDeque::from([crate::function_blocks::Activation {
+                        value: input.clone(),
+                        port: "input".into(),
+                        output: output.map(str::to_owned),
+                    }]),
+                )
+            })
             .collect();
-        let mut activations = 0;
-        for index in order {
-            let node = &flow.nodes[index];
-            for input in pending.remove(&node.id).unwrap_or_default() {
-                activations += 1;
-                if activations > 10000 {
-                    return Err("Flow activation limit exceeded".into());
-                }
-                {
-                    let mut e = engine.lock().await;
-                    if !current(&e) {
-                        return Err("Execution cancelled by project revision".into());
-                    }
-                    e.v4_runs.insert(run_id, node.id.clone());
-                    e.snapshot.active_nodes = e
-                        .v4_runs
-                        .values()
-                        .filter(|id| !id.is_empty())
-                        .cloned()
-                        .collect();
-                    e.notify();
-                }
-                let result: Result<Value, Value> = match node.kind.as_str() {
-                    "serial" => {
-                        let prepared = {
-                            let e = engine.lock().await;
-                            prepare_serial(&e, node, &input)
-                        };
-                        match prepared {
-                            Ok(action) => match serial.as_ref() {
-                                Some(service) => {
-                                    serial_action(service, action, cancel.child_token())
-                                        .await
-                                        .map_err(|err| json!(err))
-                                }
-                                None => Err(
-                                    json!({"code":"NATIVE_REQUIRED","message":"Serial requires the desktop runtime"}),
-                                ),
-                            },
-                            Err(error) => Err(json!({"code":"INVALID_CONFIG","message":error})),
-                        }
-                    }
-                    "map" => {
-                        let e = engine.lock().await;
-                        map_value(&e, node, &input)
-                            .map_err(|e| json!({"code":"MAP_ERROR","message":e}))
-                    }
-                    "append" => {
-                        let mut e = engine.lock().await;
-                        if !current(&e) {
-                            return Err("Stale append".into());
-                        }
-                        append_value(&mut e, node, &input)
-                            .map_err(|e| json!({"code":"APPEND_ERROR","message":e}))
-                    }
-                    "delay" => {
-                        let ms = node
-                            .config
-                            .get("ms")
-                            .and_then(Value::as_u64)
-                            .ok_or("Invalid delay")?
-                            .min(60000);
-                        tokio::time::sleep(Duration::from_millis(ms)).await;
-                        Ok(input.clone())
-                    }
-                    "script" => {
-                        let id = node
-                            .config
-                            .get("scriptId")
-                            .and_then(Value::as_str)
-                            .ok_or("Missing script")?;
-                        let response = script_shared_context(
-                            engine.clone(),
-                            id,
-                            input.clone(),
-                            cancel.child_token(),
-                            host.ok_or("Native C worker required")?,
-                            Some((flow_id, &node.id)),
-                        )
-                        .await?;
-                        Ok(response.output)
-                    }
-                    "http" | "connection" => {
-                        let connections = { engine.lock().await.project.connections.clone() };
-                        crate::external_request(&connections, node)
-                            .await
-                            .map_err(|e| json!({"code":"IO_ERROR","message":e}))
-                    }
-                    _ => {
-                        let mut e = engine.lock().await;
-                        if !current(&e) {
-                            return Err("Stale node".into());
-                        }
-                        e.execute_node(&flow, node, input.clone(), cancel.child_token(), host)
-                            .await
-                            .map_err(|e| json!({"code":"NODE_ERROR","message":e}))
-                    }
-                };
-                {
-                    let e = engine.lock().await;
-                    if !current(&e) {
-                        return Err("Stale IO continuation".into());
-                    }
-                }
-                let action = ["serial", "map", "append"].contains(&node.kind.as_str());
-                let (value, port) = match result {
-                    Ok(value) => {
-                        if node.kind == "condition" {
-                            let port = if value.as_bool().unwrap_or(false) {
-                                "true"
-                            } else {
-                                "false"
-                            };
-                            (input.clone(), Some(port))
-                        } else {
-                            (value, action.then_some("success"))
-                        }
-                    }
-                    Err(mut error) => {
-                        error["operation"] = json!(node
-                            .config
-                            .get("action")
-                            .and_then(Value::as_str)
-                            .unwrap_or(node.kind.as_str()));
-                        if let Some(id) = node.config.get("connectionId") {
-                            error["connectionId"] = id.clone();
-                        }
-                        if !action
-                            || !flow.edges.iter().any(|edge| {
-                                edge.source == node.id
-                                    && edge.source_handle.as_deref() == Some("error")
-                            })
-                        {
-                            return Err(error.to_string());
-                        }
-                        (error, Some("error"))
-                    }
-                };
-                for edge in flow.edges.iter().filter(|e| e.source == node.id) {
-                    if let Some(port) = port {
-                        if edge.source_handle.as_deref().unwrap_or(if action {
-                            "success"
-                        } else {
-                            "true"
-                        }) != port
-                        {
-                            continue;
-                        }
-                    }
-                    pending
-                        .entry(edge.target.clone())
-                        .or_default()
-                        .push_back(value.clone());
-                }
-            }
+        if pending.is_empty() {
+            return Err("This flow has no manual event entry; external events require their real runtime source".into());
         }
-        Ok(())
+        crate::function_blocks::run_graph(
+            engine.clone(),
+            serial.as_ref(),
+            &flow,
+            &order,
+            pending,
+            epoch,
+            run_id,
+            &cancel,
+            host,
+        )
+        .await
     };
     let result = tokio::select! {_=cancel.cancelled()=>Err("Flow cancelled".into()),result=tokio::time::timeout(Duration::from_secs(60),operation)=>result.map_err(|_|"Flow exceeded deadline".to_owned()).and_then(|r|r)};
     let mut e = engine.lock().await;
@@ -1026,6 +1074,307 @@ pub async fn run_shared(
     }
     result?;
     Ok(e.snapshot())
+}
+
+pub(crate) async fn execute_shared_node(
+    engine: &Arc<Mutex<Engine>>,
+    serial: Option<&SerialService>,
+    flow: &crate::Flow,
+    node: &FlowNode,
+    port: &str,
+    input: Value,
+    epoch: u64,
+    cancel: &CancellationToken,
+    host: Option<&ScriptHost>,
+) -> Result<(Value, Option<String>), String> {
+    let result: Result<Value, Value> = match node.kind.as_str() {
+        "usb" => {
+            let action = node
+                .config
+                .get("action")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let command = if port == "input" {
+                if action == "discover" {
+                    "scan"
+                } else {
+                    "send"
+                }
+            } else {
+                port
+            };
+            let keys: &[&str] = match (action, command) {
+                ("discover", "unwatch") => &[],
+                ("discover", _) => &["filter"],
+                (_, "open") => &["device", "options"],
+                (_, "send" | "featureSend") => &["data", "encoding", "reportId"],
+                (_, "featureGet") => &["reportId", "length"],
+                _ => &[],
+            };
+            let resolved = {
+                let e = engine.lock().await;
+                node.config
+                    .iter()
+                    .filter(|(k, _)| keys.contains(&k.as_str()))
+                    .map(|(k, v)| resolve_ref(&e, &input, v).map(|v| (k.clone(), v)))
+                    .collect::<Result<BTreeMap<_, _>, _>>()
+            };
+            match (serial, resolved) {
+                (Some(service), Ok(c)) => {
+                    let action = node
+                        .config
+                        .get("action")
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
+                    if action == "discover" {
+                        let filter = serde_json::from_value::<crate::usb::Filter>(
+                            c.get("filter").cloned().unwrap_or(json!({})),
+                        )
+                        .map_err(crate::usb::diagnostic);
+                        match filter {
+                            Ok(filter) => service
+                                .usb()
+                                .discover(
+                                    &flow.id,
+                                    &node.id,
+                                    if port == "input" { "scan" } else { port },
+                                    filter,
+                                )
+                                .await
+                                .map(|v| crate::usb::envelope(v, "success")),
+                            Err(e) => Err(e),
+                        }
+                    } else {
+                        let command = if port == "input" { "send" } else { port };
+                        let id = node
+                            .config
+                            .get("sessionId")
+                            .and_then(Value::as_str)
+                            .unwrap_or("");
+                        let prepared = (|| -> Result<_, String> {
+                            let options = serde_json::from_value::<crate::usb::Options>(
+                                c.get("options").cloned().unwrap_or(json!({})),
+                            )
+                            .map_err(|e| e.to_string())?;
+                            let bytes = if ["send", "featureSend"].contains(&command) {
+                                serial::encode_serial(
+                                    c.get("data")
+                                        .and_then(Value::as_str)
+                                        .ok_or("USB send data must be a string")?,
+                                    c.get("encoding").and_then(Value::as_str).unwrap_or("hex"),
+                                    "none",
+                                )
+                                .map_err(|e| e.to_string())?
+                            } else {
+                                Vec::new()
+                            };
+                            let report_id = c
+                                .get("reportId")
+                                .unwrap_or(&json!(0))
+                                .as_u64()
+                                .filter(|v| *v <= 255)
+                                .ok_or("Report ID must be 0..255")?
+                                as u8;
+                            let length = c
+                                .get("length")
+                                .unwrap_or(&json!(64))
+                                .as_u64()
+                                .filter(|v| (1..=65535).contains(v))
+                                .ok_or("Feature length must be 1..65535")?
+                                as usize;
+                            Ok((options, bytes, report_id, length))
+                        })();
+                        match prepared {
+                            Ok((options, bytes, report_id, length)) => service
+                                .usb()
+                                .command(
+                                    id,
+                                    command,
+                                    c.get("device").cloned().unwrap_or(Value::Null),
+                                    options,
+                                    bytes,
+                                    report_id,
+                                    length,
+                                    cancel.child_token(),
+                                )
+                                .await
+                                .map(|(v, _)| crate::usb::envelope(v, "success")),
+                            Err(e) => Err(crate::usb::diagnostic(e)),
+                        }
+                    }
+                }
+                (None, _) => Err(
+                    json!({"code":"NATIVE_USB_REQUIRED","message":"USB requires the desktop runtime"}),
+                ),
+                (_, Err(e)) => Err(crate::usb::diagnostic(e)),
+            }
+        }
+        "serial" => {
+            let action = node
+                .config
+                .get("action")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let mut operation = node.clone();
+            if action == "communicate" {
+                let command = if port == "input" { "send" } else { port };
+                operation.config.insert("action".into(), json!(command));
+            }
+            if action == "discover" {
+                operation.config.insert(
+                    "action".into(),
+                    json!(if port == "filter" { "filter" } else { "scan" }),
+                );
+            }
+            let (prepared, discovery_filter) = {
+                let e = engine.lock().await;
+                let filter = (|| -> Result<SerialFilter, String> {
+                    if action != "discover" || ["filter", "unwatch"].contains(&port) {
+                        return Ok(SerialFilter::default());
+                    }
+                    Ok(SerialFilter {
+                        vid: filter_id(&resolve_ref(&e, &input, &node.config["vid"])?)?,
+                        pid: filter_id(&resolve_ref(&e, &input, &node.config["pid"])?)?,
+                    })
+                })();
+                (prepare_serial(&e, &operation, &input), filter)
+            };
+            match prepared {
+                Ok(operation) => match serial {
+                    Some(service) => {
+                        if action == "discover" && ["watch", "unwatch"].contains(&port) {
+                            service.watch_discovery(&flow.id, &node.id, port == "watch");
+                        }
+                        if action == "discover" && port == "unwatch" {
+                            Ok(crate::usb::envelope(
+                                json!({"kind":"stopped","ports":[]}),
+                                "success",
+                            ))
+                        } else {
+                            serial_action(service, operation, cancel.child_token())
+                                .await
+                                .map_err(|e| json!(e))
+                                .and_then(|mut value| {
+                                    if action == "discover" && port != "filter" {
+                                        let filter =
+                                            discovery_filter.map_err(crate::usb::diagnostic)?;
+                                        let ports =
+                                            serde_json::from_value::<Vec<serial::SerialPortInfo>>(
+                                                value["ports"].clone(),
+                                            )
+                                            .map_err(crate::usb::diagnostic)?;
+                                        value["ports"] = json!(ports
+                                            .into_iter()
+                                            .filter(|p| filter.matches(p))
+                                            .collect::<Vec<_>>());
+                                    }
+                                    Ok(if ["discover", "communicate"].contains(&action) {
+                                        crate::usb::envelope(value, "success")
+                                    } else {
+                                        value
+                                    })
+                                })
+                        }
+                    }
+                    None => Err(
+                        json!({"code":"NATIVE_REQUIRED","message":"Serial requires the desktop runtime"}),
+                    ),
+                },
+                Err(error) => Err(json!({"code":"INVALID_CONFIG","message":error})),
+            }
+        }
+        "map" => {
+            let e = engine.lock().await;
+            map_value(&e, node, &input).map_err(|e| json!({"code":"MAP_ERROR","message":e}))
+        }
+        "append" => {
+            let mut e = engine.lock().await;
+            if !(!cancel.is_cancelled() && e.snapshot.running && e.execution_epoch == epoch) {
+                return Err("Stale append".into());
+            }
+            append_value(&mut e, node, &input)
+                .map_err(|e| json!({"code":"APPEND_ERROR","message":e}))
+        }
+        "delay" => {
+            let ms = node
+                .config
+                .get("ms")
+                .and_then(Value::as_u64)
+                .ok_or("Invalid delay")?
+                .min(60000);
+            tokio::time::sleep(Duration::from_millis(ms)).await;
+            Ok(input.clone())
+        }
+        "script" => {
+            let id = node
+                .config
+                .get("scriptId")
+                .and_then(Value::as_str)
+                .ok_or("Missing script")?;
+            let response = script_shared_context(
+                engine.clone(),
+                id,
+                input.clone(),
+                cancel.child_token(),
+                host.ok_or("Native C worker required")?,
+                Some((&flow.id, &node.id)),
+            )
+            .await?;
+            Ok(response.output)
+        }
+        "http" | "connection" => {
+            let connections = { engine.lock().await.project.connections.clone() };
+            crate::external_request(&connections, node)
+                .await
+                .map_err(|e| json!({"code":"IO_ERROR","message":e}))
+        }
+        _ => {
+            let mut e = engine.lock().await;
+            if !(!cancel.is_cancelled() && e.snapshot.running && e.execution_epoch == epoch) {
+                return Err("Stale node".into());
+            }
+            e.execute_node(&flow, node, input.clone(), cancel.child_token(), host)
+                .await
+                .map_err(|e| json!({"code":"NODE_ERROR","message":e}))
+        }
+    };
+    {
+        let e = engine.lock().await;
+        if !(!cancel.is_cancelled() && e.snapshot.running && e.execution_epoch == epoch) {
+            return Err("Stale IO continuation".into());
+        }
+    }
+
+    let action = ["serial", "usb", "map", "append"].contains(&node.kind.as_str());
+    match result {
+        Ok(value) if node.kind == "condition" => Ok((
+            input,
+            Some(
+                if value.as_bool().unwrap_or(false) {
+                    "true"
+                } else {
+                    "false"
+                }
+                .into(),
+            ),
+        )),
+        Ok(value) => Ok((value, action.then(|| "success".into()))),
+        Err(mut error) => {
+            error["operation"] = json!(node
+                .config
+                .get("action")
+                .and_then(Value::as_str)
+                .unwrap_or(node.kind.as_str()));
+            if let Some(id) = node.config.get("connectionId") {
+                error["connectionId"] = id.clone();
+            }
+            if action {
+                Ok((error, Some("error".into())))
+            } else {
+                Err(error.to_string())
+            }
+        }
+    }
 }
 
 pub async fn script_shared(
@@ -1073,7 +1422,11 @@ async fn script_shared_context(
             source: script.source.clone(),
             input,
             variables: e.script_variables(),
-            state: e.script_state.get(script_id).cloned().unwrap_or_default(),
+            state: e
+                .script_state
+                .get(&e.script_state_key(script_id, context.map(|c| c.0), context.map(|c| c.1)))
+                .cloned()
+                .unwrap_or_default(),
             timeout_ms: script.timeout_ms,
             variable_aliases: script.variable_aliases.clone(),
         }

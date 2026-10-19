@@ -2,6 +2,26 @@ import { mkdir, readFile, writeFile, cp, readdir, access } from 'node:fs/promise
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { unzipSync, strFromU8 } from 'fflate';
+import { build } from 'esbuild';
+
+let validator;
+async function currentProject(project) {
+  validator ??= build({
+    entryPoints: [path.join(sourceRoot, 'src/core/validation.ts')],
+    bundle: true,
+    write: false,
+    platform: 'node',
+    format: 'esm',
+  }).then(
+    async ({ outputFiles }) =>
+      (
+        await import(
+          `data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString('base64')}`
+        )
+      ).validateProject,
+  );
+  return (await validator)(project);
+}
 
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const paths = [
@@ -51,22 +71,17 @@ export function decodeProject(bytes) {
 
 function checkWindowFormat(project) {
   if (
-    ![1, 2, 3, 4].includes(project?.schemaVersion) ||
+    project?.schemaVersion !== 5 ||
     !project.publish ||
     !project.window ||
     !Array.isArray(project.widgets)
   )
     throw new Error(
-      'Invalid project: expected schemaVersion 1, 2, 3 or 4, window, widgets and publish settings',
+      'Invalid project: expected current schemaVersion 5, window, widgets and publish settings',
     );
-  if (project.schemaVersion === 1 && Object.hasOwn(project, 'windows'))
-    throw new Error('schemaVersion 1 cannot contain windows; use schemaVersion 2');
-  if (
-    project.schemaVersion >= 2 &&
-    (!Array.isArray(project.windows) || project.windows.length > 31)
-  )
+  if (!Array.isArray(project.windows) || project.windows.length > 31)
     throw new Error(
-      'schemaVersion 2 requires a windows array containing at most 31 additional windows',
+      'schemaVersion 5 requires a windows array containing at most 31 additional windows',
     );
   const windows = [
     { id: 'main', config: project.window, widgets: project.widgets },
@@ -109,8 +124,10 @@ function checkWindowFormat(project) {
       for (const binding of Object.values(widget.bindings ?? {}))
         if (!variables.has(binding.variable))
           throw new Error(`Missing variable: ${binding.variable}`);
-      for (const flow of Object.values(widget.events ?? {}))
+      for (const binding of Object.values(widget.events ?? {})) {
+        const flow = typeof binding === 'string' ? binding : binding.flowId;
         if (!flows.has(flow)) throw new Error(`Missing flow: ${flow}`);
+      }
       if (widget.type === 'module' && !modules.has(widget.moduleId))
         throw new Error(`Missing module: ${widget.moduleId}`);
     }
@@ -175,7 +192,6 @@ function checkWindowFormat(project) {
   for (const flow of project.flows ?? [])
     for (const node of flow.nodes ?? []) {
       if (node.kind !== 'window') continue;
-      if (project.schemaVersion === 1) throw new Error('Window flow nodes require schemaVersion 2');
       const { action, windowId } = node.config ?? {};
       if (!['open', 'close', 'focus'].includes(action) || !ids.has(windowId))
         throw new Error(`Invalid window action or target: ${node.id}`);
@@ -220,6 +236,7 @@ export function runtimeConfig(base, project) {
 }
 
 export async function exportProject(project, outputDir, root = sourceRoot) {
+  project = await currentProject(project);
   checkWindowFormat(project);
   const output = path.resolve(outputDir);
   if (output === root || root.startsWith(output + path.sep))

@@ -36,4 +36,18 @@ describe('serial bridge capability and generation', () => {
     expect(await native.scanSerialPorts()).toEqual(snapshot);
     expect(wire.invoke).toHaveBeenLastCalledWith('serial_scan', { generation: 7 });
   });
+  it('passes the selected flow entry to the native runtime without changing the payload', async () => {
+    wire.desktop = true;
+    wire.invoke.mockImplementation(async (command: string) =>
+      command === 'project_generation' ? 7 : {},
+    );
+    const native = await import('../src/native/bridge');
+    await native.runFlow('usb_discovery', { value: 'original' }, 'close_trigger');
+    expect(wire.invoke).toHaveBeenLastCalledWith('runtime_run_flow', {
+      flowId: 'usb_discovery',
+      input: { value: 'original' },
+      entryNodeId: 'close_trigger',
+      generation: 7,
+    });
+  });
 });

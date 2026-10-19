@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "designer-theme",
+  "description": "Allow the designer to synchronize its native title bar with the selected theme.",
+  "windows": ["main"],
+  "permissions": ["core:window:allow-set-theme"]
+}

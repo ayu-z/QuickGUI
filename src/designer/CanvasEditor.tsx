@@ -39,7 +39,6 @@ export interface CanvasEditorProps {
   onCopy?: () => void;
   onCut?: () => void;
   onPaste?: (point?: Point) => void;
-  onRequestUpgrade?: (reason: string) => void;
   canUndo?: boolean;
   canRedo?: boolean;
   onAdd: (type: WidgetType, x?: number, y?: number) => void;
@@ -62,7 +61,16 @@ type Gesture = {
   direction?: Direction;
   additive: string[];
   moved: boolean;
-  last: string;
+  patches: WidgetPatch[];
+  frame?: number;
+  preview: {
+    id: string;
+    element: HTMLElement;
+    style: Pick<
+      CSSStyleDeclaration,
+      'transform' | 'willChange' | 'left' | 'top' | 'width' | 'height'
+    >;
+  }[];
 };
 const MIN_ZOOM = 0.1,
   MAX_ZOOM = 8;
@@ -133,7 +141,6 @@ export function CanvasEditor({
   onCopy,
   onCut,
   onPaste,
-  onRequestUpgrade,
   canUndo,
   canRedo,
   onAdd,
@@ -280,17 +287,39 @@ export function CanvasEditor({
     setMarquee(null);
     setPanning(false);
     if (!current) return;
-    if (current.kind === 'move' || current.kind === 'resize') {
-      if (commit) callbacks.current.onCommitTransaction?.();
-      else callbacks.current.onCancelTransaction?.();
+    if (current.frame !== undefined) cancelAnimationFrame(current.frame);
+    for (const item of current.preview) Object.assign(item.element.style, item.style);
+    if (current.kind === 'resize') {
+      const { width, height } = current.layouts[0].layout;
+      current.owner.setAttribute('aria-valuetext', `${width} × ${height}`);
     }
-    if (current.kind === 'pan' && !commit) changeView(current.view);
     if (current.owner.hasPointerCapture(current.pointer))
       current.owner.releasePointerCapture(current.pointer);
+    if (current.kind === 'move' || current.kind === 'resize') {
+      if (commit) {
+        // The gesture is a local visual draft. Validate and publish only the final layout.
+        try {
+          if (current.patches.length) {
+            const { onUpdateMany, onUpdate } = callbacks.current;
+            if (onUpdateMany) onUpdateMany(current.patches);
+            else current.patches.forEach(({ id, patch }) => onUpdate(id, patch));
+          }
+          callbacks.current.onCommitTransaction?.();
+        } catch (error) {
+          callbacks.current.onCancelTransaction?.();
+          throw error;
+        }
+      } else callbacks.current.onCancelTransaction?.();
+    }
+    if (current.kind === 'pan' && !commit) changeView(current.view);
   };
   useEffect(() => {
     const down = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && (gesture.current || nudge.current)) {
+      if (
+        (gesture.current || nudge.current) &&
+        (event.key === 'Escape' ||
+          ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'z'))
+      ) {
         event.preventDefault();
         event.stopPropagation();
         finish(false);
@@ -332,8 +361,8 @@ export function CanvasEditor({
       window.removeEventListener('keydown', down, true);
       window.removeEventListener('keyup', up, true);
       window.removeEventListener('blur', blur);
-      if (gesture.current?.kind === 'move' || gesture.current?.kind === 'resize' || nudge.current)
-        callbacks.current.onCancelTransaction?.();
+      finish(false);
+      if (nudge.current) callbacks.current.onCancelTransaction?.();
     };
   }, []);
   const begin = (
@@ -342,6 +371,7 @@ export function CanvasEditor({
     layouts: Gesture['layouts'] = [],
     direction?: Direction,
   ) => {
+    if (gesture.current) return;
     event.preventDefault();
     event.stopPropagation();
     setMenu(null);
@@ -359,7 +389,21 @@ export function CanvasEditor({
       direction,
       additive: event.shiftKey ? [...ids] : [],
       moved: false,
-      last: '',
+      patches: [],
+      preview: [...artboardRef.current!.querySelectorAll<HTMLElement>('[data-design-widget]')]
+        .filter((element) => layouts.some((item) => item.id === element.dataset.designWidget))
+        .map((element) => ({
+          id: element.dataset.designWidget!,
+          element,
+          style: {
+            transform: element.style.transform,
+            willChange: element.style.willChange,
+            left: element.style.left,
+            top: element.style.top,
+            width: element.style.width,
+            height: element.style.height,
+          },
+        })),
     };
     if (kind === 'move' || kind === 'resize')
       onBeginTransaction?.(kind === 'move' ? 'Move widgets' : 'Resize widget');
@@ -370,7 +414,8 @@ export function CanvasEditor({
     widget: Widget,
     direction?: Direction,
   ) => {
-    if (event.button !== 0 || inheritedFlag(widget, project.widgets, 'locked')) return;
+    if (gesture.current || event.button !== 0 || inheritedFlag(widget, project.widgets, 'locked'))
+      return;
     if (!direction && (event.shiftKey || event.ctrlKey || event.metaKey)) {
       event.stopPropagation();
       event.preventDefault();
@@ -409,7 +454,12 @@ export function CanvasEditor({
   };
   const move = (event: PointerEvent<HTMLDivElement>) => {
     const current = gesture.current;
-    if (!current || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    if (
+      !current ||
+      current.pointer !== event.pointerId ||
+      !event.currentTarget.hasPointerCapture(event.pointerId)
+    )
+      return;
     const dx = (event.clientX - current.start.x) / current.view.zoom,
       dy = (event.clientY - current.start.y) / current.view.zoom;
     current.moved ||=
@@ -483,16 +533,60 @@ export function CanvasEditor({
         patch: { layout: { ...item.layout, x: item.layout.x + x, y: item.layout.y + y } },
       }));
     }
-    const signature = JSON.stringify(patches);
-    if (signature === current.last) return;
-    current.last = signature;
-    update(patches);
+    if (
+      patches.every(({ patch }, index) => {
+        const previous = current.patches[index]?.patch.layout,
+          next = patch.layout!;
+        return (
+          previous &&
+          previous.x === next.x &&
+          previous.y === next.y &&
+          previous.width === next.width &&
+          previous.height === next.height
+        );
+      })
+    )
+      return;
+    current.patches = patches;
+    if (current.frame !== undefined) return;
+    current.frame = requestAnimationFrame(() => {
+      current.frame = undefined;
+      if (gesture.current !== current) return;
+      for (const { id, patch } of current.patches) {
+        const item = current.preview.find((item) => item.id === id),
+          original = current.layouts.find((item) => item.id === id)!.layout,
+          layout = patch.layout!;
+        if (!item) continue;
+        if (current.kind === 'move') {
+          item.element.style.willChange = 'transform';
+          item.element.style.transform = `translate3d(${layout.x - original.x}px,${layout.y - original.y}px,0)`;
+        } else {
+          if (item.element.style.position === 'absolute') {
+            item.element.style.left = `${layout.x}px`;
+            item.element.style.top = `${layout.y}px`;
+          }
+          item.element.style.width = `${layout.width}px`;
+          item.element.style.height = `${layout.height}px`;
+          current.owner.setAttribute('aria-valuetext', `${layout.width} × ${layout.height}`);
+        }
+      }
+    });
   };
   const end = (event: PointerEvent<HTMLDivElement>) => {
     const current = gesture.current;
-    if (!current || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    if (
+      !current ||
+      current.pointer !== event.pointerId ||
+      !event.currentTarget.hasPointerCapture(event.pointerId)
+    )
+      return;
+    // Pointer-up can arrive before the queued frame, or at a newer coordinate.
+    move(event);
     if (current.kind === 'marquee' && !current.moved && !event.shiftKey) select([]);
     finish(true);
+  };
+  const cancelPointer = (event: PointerEvent<HTMLDivElement>) => {
+    if (gesture.current?.pointer === event.pointerId) finish(false);
   };
   const keys = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (isEditingText(event.target)) return;
@@ -574,7 +668,7 @@ export function CanvasEditor({
             onPointerDown={(event) => startWidget(event, widget)}
             onPointerMove={move}
             onPointerUp={end}
-            onPointerCancel={() => finish(false)}
+            onPointerCancel={cancelPointer}
             onLostPointerCapture={(event) => {
               if (gesture.current?.owner === event.currentTarget) finish(false);
             }}
@@ -586,9 +680,7 @@ export function CanvasEditor({
               } else keys(event);
             }}
           >
-            <div
-              className={`qg-design-widget-content ${widget.definitionVersion === 2 ? 'qg-modern-design-content' : ''}`}
-            >
+            <div className="qg-design-widget-content qg-modern-design-content">
               {renderWidget ? (
                 renderWidget(widget)
               ) : (
@@ -598,29 +690,28 @@ export function CanvasEditor({
                   values={initialValues}
                   interactive={false}
                 >
-                  {widget.definitionVersion === 2 ? renderTree(widget.id) : undefined}
+                  {renderTree(widget.id)}
                 </WidgetView>
               )}
             </div>
-            {(widget.definitionVersion !== 2 || renderWidget) &&
-              project.widgets.some((w) => w.parentId === widget.id) && (
-                <div
-                  className="qg-design-children"
-                  style={{
-                    display:
-                      widget.layout.mode === 'flex'
-                        ? 'flex'
-                        : widget.layout.mode === 'grid'
-                          ? 'grid'
-                          : 'block',
-                    flexDirection: widget.layout.direction,
-                    gridTemplateColumns: `repeat(${widget.layout.columns ?? 2},1fr)`,
-                    gap: widget.layout.gap,
-                  }}
-                >
-                  {renderTree(widget.id)}
-                </div>
-              )}
+            {renderWidget && project.widgets.some((w) => w.parentId === widget.id) && (
+              <div
+                className="qg-design-children"
+                style={{
+                  display:
+                    widget.layout.mode === 'flex'
+                      ? 'flex'
+                      : widget.layout.mode === 'grid'
+                        ? 'grid'
+                        : 'block',
+                  flexDirection: widget.layout.direction,
+                  gridTemplateColumns: `repeat(${widget.layout.columns ?? 2},1fr)`,
+                  gap: widget.layout.gap,
+                }}
+              >
+                {renderTree(widget.id)}
+              </div>
+            )}
             {selected && (
               <>
                 <span
@@ -643,7 +734,7 @@ export function CanvasEditor({
                       onPointerDown={(event) => startWidget(event, widget, direction)}
                       onPointerMove={move}
                       onPointerUp={end}
-                      onPointerCancel={() => finish(false)}
+                      onPointerCancel={cancelPointer}
                       onLostPointerCapture={(event) => {
                         if (gesture.current?.owner === event.currentTarget) finish(false);
                       }}
@@ -666,10 +757,6 @@ export function CanvasEditor({
     }
     if (command === 'paste') {
       onPaste?.(menu?.world);
-      return;
-    }
-    if (['lock', 'unlock', 'hide', 'show'].includes(command) && project.schemaVersion < 3) {
-      onRequestUpgrade?.(command);
       return;
     }
     onCommand?.(command, menu?.world);
@@ -780,7 +867,7 @@ export function CanvasEditor({
         }}
         onPointerMove={move}
         onPointerUp={end}
-        onPointerCancel={() => finish(false)}
+        onPointerCancel={cancelPointer}
         onLostPointerCapture={(event) => {
           if (gesture.current?.owner === event.currentTarget) finish(false);
         }}

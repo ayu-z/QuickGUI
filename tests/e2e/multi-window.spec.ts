@@ -71,7 +71,7 @@ test('creates, configures, renames and round-trips independent scenes with stabl
   );
   await expect(page.locator('.qg-artboard-caption')).toContainText('设备详情运行窗口');
   const exported = await exportedProject(page, info, 'multi-window');
-  expect(exported.project.schemaVersion).toBe(2);
+  expect(exported.project.schemaVersion).toBe(5);
   expect(exported.project.widgets).toHaveLength(originalCount);
   expect(exported.project.window.title).toBe('泵站控制面板');
   expect(exported.project.windows).toHaveLength(1);
@@ -143,6 +143,7 @@ test('retains invalid per-widget drafts during switching and protects deletion b
 test('keeps module insertion and editing scoped to the selected window and protects child-only bindings', async ({
   page,
 }) => {
+  const mainWidgetCount = await page.locator('.qg-design-widget').count();
   await page.locator('.left-tabs').getByRole('button', { name: '模块', exact: true }).click();
   await page.getByRole('button', { name: '从选中控件创建', exact: true }).click();
   await page.locator('.module-card').getByRole('button', { name: '编辑定义', exact: true }).click();
@@ -152,7 +153,7 @@ test('keeps module insertion and editing scoped to the selected window and prote
   await page.locator('.module-card').getByRole('button', { name: '添加实例', exact: true }).click();
   await expect(page.locator('.qg-design-widget')).toHaveCount(1);
   await selectWindow(page, 'main');
-  await expect(page.locator('.qg-design-widget')).toHaveCount(22);
+  await expect(page.locator('.qg-design-widget')).toHaveCount(mainWidgetCount);
   await selectWindow(page, id);
   await page.locator('.module-card').getByRole('button', { name: '编辑定义', exact: true }).click();
   await page.locator('.qg-inspector').getByLabel('字号', { exact: true }).fill('22');
@@ -177,6 +178,13 @@ test('keeps module insertion and editing scoped to the selected window and prote
     .locator('.data-table tbody tr')
     .last()
     .locator('td')
+    .nth(1)
+    .locator('select')
+    .selectOption('string');
+  await page
+    .locator('.data-table tbody tr')
+    .last()
+    .locator('td')
     .first()
     .locator('input')
     .fill('childOnly');
@@ -193,7 +201,7 @@ test('keeps module insertion and editing scoped to the selected window and prote
     .click();
   await inspector
     .getByRole('combobox', { name: '绑定变量', exact: true })
-    .selectOption({ label: 'childOnly · number' });
+    .selectOption({ label: 'childOnly · string' });
   await page
     .locator('.workspace-tabs nav')
     .getByRole('button', { name: '数据', exact: true })
@@ -270,12 +278,13 @@ test('configures real window flow nodes, protects references and opens and close
   const settings = page.locator('.qg-flow-settings');
   await settings.getByRole('combobox', { name: '目标窗口', exact: true }).selectOption('main');
   await settings.getByRole('combobox', { name: '窗口操作', exact: true }).selectOption('focus');
+  const initialEdges = await page.locator('.react-flow__edge').count();
   await page
-    .locator('.react-flow__node[data-id="log-cycle"] .react-flow__handle.source')
-    .dragTo(windowNode.locator('.react-flow__handle.target'));
-  await expect(page.locator('.react-flow__edge')).toHaveCount(5);
+    .locator('.react-flow__node[data-id="log-cycle"] [data-handleid="output"]')
+    .dragTo(windowNode.locator('[data-handleid="input"]'));
+  await expect(page.locator('.react-flow__edge')).toHaveCount(initialEdges + 1);
   const upgraded = await exportedProject(page, info, 'window-node-upgrades-schema');
-  expect(upgraded.project.schemaVersion).toBe(2);
+  expect(upgraded.project.schemaVersion).toBe(5);
   expect(upgraded.project.windows).toEqual([]);
   expect(upgraded.project.flows[0].nodes.find((node) => node.id === nodeId)?.config).toEqual({
     action: 'focus',
@@ -336,7 +345,7 @@ test('configures real window flow nodes, protects references and opens and close
   await page.locator(`.react-flow__node[data-id="${nodeId}"]`).click();
   await settings.getByRole('combobox', { name: '窗口操作', exact: true }).selectOption('close');
   const exported = await exportedProject(page, info, 'close-window-node');
-  expect(exported.project.schemaVersion).toBe(2);
+  expect(exported.project.schemaVersion).toBe(5);
   expect(exported.project.windows![0].id).toBe(childId);
   expect(exported.project.flows[0].nodes.find((node) => node.id === nodeId)).toMatchObject({
     kind: 'window',

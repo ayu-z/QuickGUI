@@ -6,9 +6,11 @@ include!(concat!(env!("OUT_DIR"), "/export_sources.rs"));
 pub fn export(project: &Value, output: &Path) -> Result<(), String> {
     if !matches!(
         project.get("schemaVersion").and_then(Value::as_u64),
-        Some(1 | 2 | 3 | 4)
+        Some(5)
     ) {
-        return Err("Unsupported project schema".into());
+        return Err(
+            "Unsupported project schema: source export requires current schemaVersion 5".into(),
+        );
     }
     if output.exists()
         && fs::read_dir(output)
@@ -149,7 +151,7 @@ mod tests {
     use super::*;
     #[test]
     fn exports_v4_project_with_native_serial_and_flow_sources() {
-        let project = json!({"schemaVersion":4,"windows":[],"window":{"title":"Serial","width":960,"height":640},"publish":{"appName":"Serial","identifier":"dev.example.serial","version":"1.0.0"},"flows":[{"id":"flow","nodes":[{"id":"scan","kind":"serial","config":{"action":"scan"}}]}]});
+        let project = json!({"schemaVersion":5,"windows":[],"window":{"title":"Serial","width":960,"height":640},"publish":{"appName":"Serial","identifier":"dev.example.serial","version":"1.0.0"},"flows":[{"id":"flow","nodes":[{"id":"scan","kind":"serial","config":{"action":"scan"}}]}]});
         let directory = std::env::temp_dir().join(format!(
             "quickgui-serial-export-{}-{}",
             std::process::id(),
@@ -172,9 +174,37 @@ mod tests {
         fs::remove_dir_all(directory).unwrap();
     }
     #[test]
+    fn exports_v5_interfaces_and_both_function_block_runtimes() {
+        let project: Value = serde_json::from_str(include_str!(
+            "../../crates/quickgui-engine/tests/fixtures/function-blocks.json"
+        ))
+        .unwrap();
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let directory =
+            std::env::temp_dir().join(format!("quickgui-fb-{}-{nonce}", std::process::id()));
+        export(&project, &directory).unwrap();
+        let actual: Value =
+            serde_json::from_slice(&fs::read(directory.join("project.json")).unwrap()).unwrap();
+        assert_eq!(actual, project);
+        assert!(directory.join("src/core/functionBlocks.ts").is_file());
+        assert!(directory
+            .join("src/runtime/functionBlockRuntime.ts")
+            .is_file());
+        assert!(directory
+            .join("crates/quickgui-engine/src/function_blocks.rs")
+            .is_file());
+        assert!(directory
+            .join("src-tauri/src/snapshot_publisher.rs")
+            .is_file());
+        fs::remove_dir_all(directory).unwrap();
+    }
+    #[test]
     fn exports_v3_json_paths_and_scopes_without_downgrading() {
         let project = json!({
-            "schemaVersion":3, "window":{"title":"V3","width":960,"height":640},
+            "schemaVersion":5, "window":{"title":"V3","width":960,"height":640},
             "windows":[{"id":"detail","widgets":[]}],
             "publish":{"appName":"V3","identifier":"dev.example.v3","version":"1.0.0"},
             "variables":[{"id":"data","type":"json","initial":{"samples":[1,null]}}],
@@ -195,7 +225,7 @@ mod tests {
         assert!(directory.join("src/core/propertySchema.ts").is_file());
         fs::remove_dir_all(&directory).unwrap();
         let mut future = project;
-        future["schemaVersion"] = json!(5);
+        future["schemaVersion"] = json!(6);
         assert!(export(&future, &directory)
             .unwrap_err()
             .contains("Unsupported"));
@@ -203,7 +233,7 @@ mod tests {
     }
     #[test]
     fn exports_full_json_and_standalone_native_entry_without_overwriting_existing_work() {
-        let project = json!({"schemaVersion":1,"name":"</script><script>unexpected()</script>","window":{"title":"Quoted \" title","width":960,"height":640},"publish":{"appName":"Pump Station","identifier":"dev.example.pump","version":"1.2.3","publisher":""},"scripts":[{"id":"../../outside","source":"void qg_process(void) {}"}],"assets":[{"id":"asset","data":"data:text/plain;base64,dGVzdA=="}]});
+        let project = json!({"schemaVersion":5,"name":"</script><script>unexpected()</script>","window":{"title":"Quoted \" title","width":960,"height":640},"publish":{"appName":"Pump Station","identifier":"dev.example.pump","version":"1.2.3","publisher":""},"scripts":[{"id":"../../outside","source":"void qg_process(void) {}"}],"assets":[{"id":"asset","data":"data:text/plain;base64,dGVzdA=="}]});
         let nonce = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()

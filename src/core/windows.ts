@@ -4,11 +4,9 @@ export const MAIN_WINDOW_ID = 'main';
 export const MAX_ADDITIONAL_WINDOWS = 31;
 export const WINDOW_ID_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 
-/** Returns canonical scene references; a v1 document is never mutated or upgraded. */
+/** Returns canonical scene references from the current project model. */
 export function listProjectWindows(project: Project): ProjectWindow[] {
-  if (project.schemaVersion === 1 && Object.hasOwn(project, 'windows'))
-    throw new Error('schemaVersion 1 cannot contain windows; upgrade to schemaVersion 2 first');
-  if (project.schemaVersion >= 2 && !Array.isArray(project.windows))
+  if (!Array.isArray(project.windows))
     throw new Error(`schemaVersion ${project.schemaVersion} requires a windows array`);
   return [
     {

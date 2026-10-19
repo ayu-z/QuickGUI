@@ -41,7 +41,7 @@ function freezeDeep(value: unknown): void {
 }
 
 describe('project compatibility without silent data loss', () => {
-  it.each([5, 99, '1', '2', null])(
+  it.each([6, 99, '1', '2', null])(
     'rejects unsupported schemaVersion %s before interpreting the project',
     (schemaVersion) => {
       const input = { ...fixture(), schemaVersion, futureSubsystem: { mustNotDisappear: true } };
@@ -150,15 +150,17 @@ describe('project compatibility without silent data loss', () => {
     expect(bytes).toEqual(original);
   });
 
-  it('opens and round-trips a valid older v1 project without newer optional fields', () => {
+  it('normalizes a valid older v1 project and exports only the current version', () => {
     const old = fixture();
+    old.schemaVersion = 1;
+    delete old.windows;
     delete old.translations;
     const original = structuredClone(old);
     freezeDeep(old);
     const parsed = validateProject(old);
-    expect(parsed).toEqual(original);
+    expect(parsed).toEqual({ ...original, schemaVersion: 5, windows: [] });
     expect(parsed).not.toBe(old);
-    expect(importProject(exportProject(parsed))).toEqual(original);
+    expect(importProject(exportProject(parsed))).toEqual(parsed);
     expect(old).toEqual(original);
   });
 

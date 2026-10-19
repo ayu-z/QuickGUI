@@ -1,4 +1,7 @@
 import { createEmptyProject, createWidget } from '../core/project';
+import { createBlockInterface, dataInputHandle, dataOutputHandle } from '../core/functionBlocks';
+import { createFlowNodeConfig } from '../core/flowV4';
+import { integrateCommunicationFlow } from './communicationFlow';
 import type { Flow, FlowNode, Json, Locale, Project, Widget, WidgetType } from '../core/types';
 
 const literal = (value: Json): Json => ({ source: 'literal', value });
@@ -84,7 +87,7 @@ function makeFlow(id: string, name: string, specs: NodeSpec[], links?: Link[]): 
 export function createSerialAssistantProject(locale: Locale = 'zh-CN'): Project {
   const zh = locale === 'zh-CN';
   const project = createEmptyProject(zh ? '串口助手' : 'Serial Assistant');
-  project.schemaVersion = 4;
+  project.schemaVersion = 5;
   project.locale = locale;
   project.window = {
     ...project.window,
@@ -712,5 +715,178 @@ export function createSerialAssistantProject(locale: Locale = 'zh-CN'): Project 
         ],
       ),
     );
+  for (const flow of project.flows)
+    for (const node of flow.nodes) {
+      node.block = createBlockInterface(node, project);
+      if (node.kind === 'write' && Object.hasOwn(node.config, 'value'))
+        node.block.inputs[0].defaultValue = structuredClone(node.config.value);
+    }
+  for (const id of ['serial_send', 'serial_periodic']) {
+    const flow = project.flows.find((item) => item.id === id)!;
+    const sendNode = flow.nodes.find(
+      (node) => node.kind === 'serial' && node.config.action === 'send',
+    )!;
+    for (const [index, key] of ['data', 'encoding', 'lineEnding'].entries()) {
+      const source: FlowNode = {
+        id: `${id}_read_${key}`,
+        kind: 'read',
+        label: {
+          data: '发送内容 / TX data',
+          encoding: '编码 / Encoding',
+          lineEnding: '行尾 / Line ending',
+        }[key]!,
+        config: { variable: 'serial_tx', path: [key] },
+        position: { x: 40, y: 300 + index * 190 },
+      };
+      source.block = createBlockInterface(source, project);
+      source.block.outputs[0].type = 'string';
+      flow.nodes.push(source);
+      flow.edges.push({
+        id: `${source.id}_to_send`,
+        kind: 'data',
+        source: source.id,
+        target: sendNode.id,
+        sourceHandle: dataOutputHandle('q'),
+        targetHandle: dataInputHandle(`p_${key}`),
+      });
+    }
+  }
+  for (const direction of ['rx', 'tx']) {
+    const flow = project.flows.find((item) => item.id === `serial_${direction}`)!;
+    const eventNode = flow.nodes[0],
+      row = flow.nodes[1],
+      time = flow.nodes[3];
+    eventNode.block!.outputs.push({
+      id: 'time',
+      name: 'TIME',
+      type: 'string',
+      path: ['timestampIso'],
+    });
+    time.config.value = input();
+    time.block!.inputs[0].type = 'string';
+    time.block!.outputs[0].type = 'string';
+    for (const [source, output, target, port] of [
+      [eventNode.id, 'q', row.id, 'in'],
+      [eventNode.id, 'time', time.id, 'in'],
+      [row.id, 'q', flow.nodes[2].id, 'in'],
+      [time.id, 'q', flow.nodes[4].id, 'in'],
+    ])
+      flow.edges.push({
+        id: `${source}_${output}_${target}_${port}`,
+        kind: 'data',
+        source,
+        target,
+        sourceHandle: dataOutputHandle(output),
+        targetHandle: dataInputHandle(port),
+      });
+  }
+  // Discovery and communication are the only serial FB types. Commands select
+  // an execution input while every communication node shares serial_port.
+  for (const flow of project.flows)
+    for (const node of flow.nodes.filter((node) => node.kind === 'serial')) {
+      const command = String(node.config.action);
+      node.config = {
+        ...createFlowNodeConfig(
+          'serial',
+          project,
+          ['scan', 'filter'].includes(command) ? 'discover' : 'communicate',
+        ),
+        ...node.config,
+        action: ['scan', 'filter'].includes(command) ? 'discover' : 'communicate',
+      };
+      const outputs = node.block!.outputs.map((port) => ({
+        ...port,
+        path: ['result', ...port.path],
+      }));
+      node.block = { ...createBlockInterface(node, project), outputs };
+      for (const edge of flow.edges)
+        if (edge.target === node.id && edge.kind !== 'data') edge.targetHandle = command;
+    }
+  for (const flow of project.flows) {
+    const source = flow.nodes.find(
+      (node) => node.kind === 'event' && node.config.trigger === 'serial',
+    );
+    if (!source) continue;
+    const event = String(source.config.event);
+    const port =
+      event === 'devices' ? 'changed' : event === 'data' ? String(source.config.direction) : event;
+    source.kind = 'serial';
+    source.config = createFlowNodeConfig(
+      'serial',
+      project,
+      event === 'devices' ? 'discover' : 'communicate',
+    );
+    source.block = {
+      ...createBlockInterface(source, project),
+      outputs: source.block!.outputs.map((p) => ({ ...p, path: ['result', ...p.path] })),
+    };
+    for (const edge of flow.edges)
+      if (edge.source === source.id && edge.kind !== 'data') edge.sourceHandle = port;
+    if (event === 'devices') {
+      const start: FlowNode = {
+        id: 'serial_devices_startup',
+        kind: 'event',
+        label: '监听设备变化 / Watch devices',
+        position: { x: 40, y: 760 },
+        config: { trigger: 'startup' },
+      };
+      start.block = createBlockInterface(start, project);
+      flow.nodes.push(start);
+      flow.edges.push({
+        id: 'serial_devices_watch',
+        source: start.id,
+        target: source.id,
+        targetHandle: 'watch',
+      });
+      for (const edge of flow.edges.filter(
+        (edge) => edge.source === source.id && edge.kind !== 'data',
+      ))
+        flow.edges.push({ ...edge, id: `${edge.id}_snapshot`, sourceHandle: 'success' });
+    }
+  }
+  const allNodes = project.flows.flatMap((flow) => flow.nodes);
+  const aliases: Record<string, string> = {};
+  const communication = allNodes.find((node) => node.id === 'serial_send_1')!;
+  communication.label = '串口通信 / Serial communication';
+  communication.config.enabled = variable('serial_settings', 'autoReconnect');
+  communication.config.settings = variable('serial_settings');
+  communication.block!.outputs.push({
+    id: 'time',
+    name: 'TIME',
+    type: 'string',
+    path: ['result', 'timestampIso'],
+  });
+  for (const node of allNodes) {
+    if (
+      node.kind === 'serial' &&
+      node.config.action === 'communicate' &&
+      !['serial_open_1', communication.id].includes(node.id)
+    )
+      aliases[node.id] = communication.id;
+    if (node.id.endsWith('_error_map')) aliases[node.id] = 'serial_errors_1';
+    if (node.id.endsWith('_error_write')) aliases[node.id] = 'serial_errors_2';
+    if (node.id.endsWith('_stop_timer')) aliases[node.id] = 'serial_errors_3';
+  }
+  aliases.serial_devices_0 = 'serial_scan_1';
+  aliases.serial_devices_1 = 'serial_scan_2';
+  for (const [prefix, first] of [
+    ['serial_devices', 2],
+    ['serial_filter', 1],
+  ] as const)
+    for (let index = 0; index < 3; index++)
+      aliases[`${prefix}_${first + index}`] = `serial_scan_${3 + index}`;
+  for (const key of ['data', 'encoding', 'lineEnding'])
+    aliases[`serial_periodic_read_${key}`] = `serial_send_read_${key}`;
+  const flow = integrateCommunicationFlow(
+    project,
+    zh ? '串口助手 · 设备发现与通信' : 'Serial assistant · Discovery and communication',
+    aliases,
+  );
+  flow.edges.push({
+    id: 'serial_discovery_error',
+    source: 'serial_scan_1',
+    target: 'serial_errors_1',
+    sourceHandle: 'error',
+  });
   return project;
 }

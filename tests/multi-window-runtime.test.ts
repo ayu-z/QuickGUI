@@ -117,16 +117,18 @@ describe('shared multi-window runtime', () => {
     const engine = new RuntimeController(fixture());
     const before = engine.getSnapshot().windowState;
     expect(() => engine.windowAction('close', 'main')).toThrow(/main/);
-    expect(() => engine.windowAction('open', '../unknown')).toThrow(/Unknown window/);
+    expect(() => engine.windowAction('open', '../unknown')).toThrow(
+      /Unknown window|Missing window target/,
+    );
     expect(engine.getSnapshot().windowState).toEqual(before);
     const invalid = fixture();
     invalid.flows[0].nodes[1].config.windowId = 'unknown';
-    expect(() => engine.applyProject(invalid)).toThrow(/Unknown window/);
+    expect(() => engine.applyProject(invalid)).toThrow(/Unknown window|Missing window target/);
     expect(engine.getSnapshot().windowState).toEqual(before);
     const malformed = fixture();
     malformed.windows![0].id = 'true';
     malformed.flows[0].nodes[1].config.windowId = true;
-    expect(() => new RuntimeController(malformed)).toThrow(/must be strings/);
+    expect(() => new RuntimeController(malformed)).toThrow(/must be strings|Missing window target/);
     engine.dispose();
   });
 

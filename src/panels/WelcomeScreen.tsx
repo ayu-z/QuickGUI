@@ -21,7 +21,6 @@ export function WelcomeScreen({ store, state }: { store: EditorStore; state: Edi
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
-    document.documentElement.dataset.theme = localStorage.getItem('quickgui.theme') ?? 'dark';
     return () => {
       mounted.current = false;
     };

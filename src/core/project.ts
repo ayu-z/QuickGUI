@@ -1,12 +1,15 @@
 import type { Project, Widget, WidgetType } from './types';
 import { createWidgetDefaults } from './widgetDefinitions';
+import { createBlockInterface } from './functionBlocks';
+import { LATEST_PROJECT_VERSION } from './types';
+import { createPumpSpeedFlow } from '../examples/pumpSpeed';
 
 export const uid = (prefix = 'id') => `${prefix}_${crypto.randomUUID().slice(0, 8)}`;
 export function createEmptyProject(name = '未命名工程'): Project {
   const project = createProject();
   return {
     ...project,
-    schemaVersion: 3,
+    schemaVersion: LATEST_PROJECT_VERSION,
     windows: [],
     name,
     window: { ...project.window, title: name },
@@ -69,7 +72,7 @@ export function createWidget(
   type: WidgetType,
   x = 32,
   y = 32,
-  definitionVersion: 1 | 2 = 1,
+  definitionVersion: 1 | 2 = 2,
 ): Widget {
   const sizes: Partial<Record<WidgetType, [number, number]>> = {
     panel: [300, 180],
@@ -157,8 +160,8 @@ export function createProject(): Project {
       style: { ...base.style, ...style },
     };
   };
-  return {
-    schemaVersion: 1,
+  const project: Project = {
+    schemaVersion: LATEST_PROJECT_VERSION,
     id: uid('project'),
     name: '泵站控制面板',
     revision: 0,
@@ -180,7 +183,7 @@ export function createProject(): Project {
     window: {
       title: '泵站控制面板',
       width: 960,
-      height: 640,
+      height: 780,
       minWidth: 640,
       minHeight: 420,
       resizable: true,
@@ -200,6 +203,7 @@ export function createProject(): Project {
       publisher: '',
       desktopShortcut: true,
     },
+    windows: [],
     widgets: [
       widget(
         'text',
@@ -321,9 +325,17 @@ export function createProject(): Project {
         ...widget('chart', 'chart', '实时温度', 52, 380, 540, 190, {
           min: 0,
           max: 100,
-          value: 42.6,
+          series: [
+            {
+              id: 'temperature',
+              name: '进水温度',
+              value: 42.6,
+              color: '$color.primary',
+              visible: true,
+            },
+          ],
         }),
-        bindings: { value: { variable: 'temperature', mode: 'oneWay' } },
+        bindings: { '/series/0/value': { variable: 'temperature', mode: 'oneWay' } },
       },
       widget('panel', 'status_panel', '参数卡片', 632, 320, 296, 276),
       widget(
@@ -377,6 +389,107 @@ export function createProject(): Project {
         ),
         bindings: { text: { variable: 'cycles', mode: 'oneWay' } },
       },
+      widget('panel', 'speed_demo_panel', '调速计算卡片', 32, 616, 896, 132),
+      widget(
+        'text',
+        'speed_demo_title',
+        '调速计算标题',
+        52,
+        630,
+        180,
+        24,
+        { text: 'FB 调速计算' },
+        { fontSize: 13, fontWeight: 600 },
+      ),
+      widget(
+        'text',
+        'speed_demo_note',
+        '调速计算说明',
+        232,
+        630,
+        660,
+        24,
+        { text: '目标转速 = 百分比 × 额定转速；余量 = 100 − 百分比' },
+        { fontSize: 12, color: '$color.muted' },
+      ),
+      widget(
+        'text',
+        'rated_rpm_label',
+        '额定转速标题',
+        52,
+        660,
+        160,
+        20,
+        { text: '额定转速 / rpm' },
+        { fontSize: 12, color: '$color.muted' },
+      ),
+      {
+        ...widget('number', 'rated_rpm_input', '额定转速', 52, 688, 150, 36, {
+          value: 3000,
+          min: 0,
+          max: 60000,
+          step: 100,
+          precision: 0,
+        }),
+        bindings: { value: { variable: 'rated_rpm', mode: 'twoWay' } },
+      },
+      {
+        ...widget('button', 'calculate_speed_button', '计算转速', 222, 688, 138, 36, {
+          text: '计算转速',
+        }),
+        events: { click: 'calculate-speed' },
+        states: { hover: { background: '$color.primaryHover' } },
+      },
+      widget(
+        'text',
+        'target_rpm_label',
+        '目标转速标题',
+        402,
+        660,
+        190,
+        20,
+        { text: '目标转速 / rpm' },
+        { fontSize: 12, color: '$color.muted' },
+      ),
+      {
+        ...widget(
+          'text',
+          'target_rpm_value',
+          '目标转速结果',
+          402,
+          688,
+          190,
+          36,
+          { text: '0' },
+          { fontSize: 27, fontWeight: 600 },
+        ),
+        bindings: { text: { variable: 'target_rpm', mode: 'oneWay' } },
+      },
+      widget(
+        'text',
+        'speed_margin_label',
+        '调节余量标题',
+        650,
+        660,
+        220,
+        20,
+        { text: '剩余调节量 / %' },
+        { fontSize: 12, color: '$color.muted' },
+      ),
+      {
+        ...widget(
+          'text',
+          'speed_margin_value',
+          '调节余量结果',
+          650,
+          688,
+          220,
+          36,
+          { text: '0' },
+          { fontSize: 27, fontWeight: 600 },
+        ),
+        bindings: { text: { variable: 'speed_margin', mode: 'oneWay' } },
+      },
     ],
     variables: [
       {
@@ -391,6 +504,9 @@ export function createProject(): Project {
       { id: 'running', name: 'running', type: 'boolean', initial: false },
       { id: 'speed', name: 'speed', type: 'number', initial: 65, unit: '%' },
       { id: 'cycles', name: 'cycles', type: 'number', initial: 0, persistent: true },
+      { id: 'rated_rpm', name: 'rated_rpm', type: 'number', initial: 3000, unit: 'rpm' },
+      { id: 'target_rpm', name: 'target_rpm', type: 'number', initial: 0, unit: 'rpm' },
+      { id: 'speed_margin', name: 'speed_margin', type: 'number', initial: 0, unit: '%' },
     ],
     flows: [
       {
@@ -439,7 +555,27 @@ export function createProject(): Project {
           ['read-cycles', 'increment'],
           ['increment', 'write-cycles'],
           ['write-cycles', 'log-cycle'],
-        ].map(([source, target]) => ({ id: `${source}-${target}`, source, target })),
+        ].flatMap(([source, target], index) => [
+          {
+            id: `${source}-${target}`,
+            source,
+            target,
+            sourceHandle: 'output',
+            targetHandle: 'input',
+          },
+          ...(index === 0
+            ? []
+            : [
+                {
+                  id: `${source}-${target}-data`,
+                  source,
+                  target,
+                  kind: 'data' as const,
+                  sourceHandle: 'data-out:q',
+                  targetHandle: target === 'increment' ? 'data-in:a' : 'data-in:in',
+                },
+              ]),
+        ]),
       },
     ],
     translations: {
@@ -453,6 +589,10 @@ export function createProject(): Project {
     assets: [],
     connections: [],
   };
+  for (const flow of project.flows)
+    for (const node of flow.nodes) node.block = createBlockInterface(node, project);
+  project.flows.push(createPumpSpeedFlow(project));
+  return project;
 }
 
 export function serializeProject(project: Project): string {

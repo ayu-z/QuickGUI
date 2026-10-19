@@ -136,8 +136,7 @@ async function readProjectUpdate(options, contract) {
   if (!stats.isFile() || stats.size > 30_000_000)
     throw new Error('Project must be a JSON file no larger than 30 MB');
   const text = await readFile(filename, 'utf8');
-  const project = JSON.parse(text);
-  contract.validateProject(project);
+  const project = contract.validateProject(JSON.parse(text));
   const index = project.modules.findIndex((module) => module.id === options.module);
   if (index < 0)
     throw new Error(
@@ -244,16 +243,6 @@ export async function buildComponent(sourceDirectory, outputFilename, options = 
         throw new Error(
           `Source manifest ${key} differs from this module's immutable package identity; import it as a new component instead`,
         );
-    if (
-      update.project.schemaVersion < 3 &&
-      (manifest.schemaVersion === 2 ||
-        previous.packageIdentity ||
-        previous.resourceScopeId ||
-        previous.embeddedResourceScope)
-    )
-      throw new Error(
-        'This rebuild needs project schema v3; upgrade the working copy in the designer first',
-      );
   }
   const dependencies = path.resolve(scriptRoot, '../node_modules');
   const result = await build({
@@ -342,7 +331,7 @@ export async function buildComponent(sourceDirectory, outputFilename, options = 
     else rebuilt.propertyDefinitions = module.propertyDefinitions;
     candidate.modules[update.index] = rebuilt;
     candidate.revision += 1;
-    contract.validateProject(candidate);
+    candidate = contract.validateProject(candidate);
   }
   const portable =
     manifest.schemaVersion === 2 && !rebuilt.packageIdentity

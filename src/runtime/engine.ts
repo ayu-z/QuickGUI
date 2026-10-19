@@ -23,6 +23,7 @@ import { uid } from '../core/project';
 import { validateFlow, validateProject } from '../core/validation';
 import { resolveValueRef } from '../core/flowV4';
 import { executeV4DataNode, isV4Action } from './flowV4Runtime';
+import { runFunctionBlockFlow } from './functionBlockRuntime';
 import {
   applyWindowAction,
   initialWindowState,
@@ -36,10 +37,10 @@ export class RuntimeController {
   protected listeners = new Set<() => void>();
   protected snapshot: RuntimeSnapshot;
   private abort = new AbortController();
-  private queue: Promise<void> = Promise.resolve();
   private queued = 0;
   private generation = 0;
   private scriptState: Record<string, Record<string, number>> = {};
+  private blockState = new Map<string, Record<string, number>>();
   private history: Record<string, number[]> = {};
   private timers: ReturnType<typeof setInterval>[] = [];
   private booted = new Set<string>();
@@ -52,6 +53,7 @@ export class RuntimeController {
     project: Project,
     private executeScript?: ScriptExecutor,
   ) {
+    project = validateProject(project);
     this.validateRuntimeValues(project);
     validateWindowActions(project);
     this.project = project;
@@ -103,8 +105,7 @@ export class RuntimeController {
     if (variable.readOnly) throw new Error(`Variable is read-only: ${variable.name}`);
     if (path !== undefined) validateJsonPath(path);
     if (path?.length) {
-      if (this.project.schemaVersion < 3 || variable.type !== 'json')
-        throw new Error('JSON paths require schemaVersion 3 and a json variable');
+      if (variable.type !== 'json') throw new Error('JSON paths require a json variable');
       value = replaceJsonPath(this.snapshot.values[variable.id].value, path, value);
     }
     value = variableValue(variable, value);
@@ -130,6 +131,7 @@ export class RuntimeController {
     }
   }
   applyProject = (project: Project) => {
+    project = validateProject(project);
     this.validateRuntimeValues(project);
     validateWindowActions(project);
     for (const flow of project.flows) validateFlow(flow, project.schemaVersion);
@@ -141,8 +143,6 @@ export class RuntimeController {
       return;
     if (
       this.activated &&
-      project.schemaVersion >= 4 &&
-      this.project.schemaVersion >= 4 &&
       project.id === this.project.id &&
       this.runtimeDefinition(project) === this.runtimeDefinition(this.project)
     ) {
@@ -163,6 +163,7 @@ export class RuntimeController {
     const sameProject = project.id === this.project.id;
     if (!sameProject) {
       this.scriptState = {};
+      this.blockState.clear();
       this.history = {};
       this.booted.clear();
       this.unsupportedSources.clear();
@@ -192,6 +193,14 @@ export class RuntimeController {
       running: true,
       ...(!sameProject ? { logs: [] } : {}),
     });
+    const blockKeys = new Set(
+      project.flows.flatMap((flow) =>
+        flow.nodes
+          .filter((node) => node.block && node.kind === 'script')
+          .map((node) => JSON.stringify([flow.id, node.id, node.config.scriptId])),
+      ),
+    );
+    for (const key of this.blockState.keys()) if (!blockKeys.has(key)) this.blockState.delete(key);
     this.scheduleEvents();
   };
   stop = () => {
@@ -228,7 +237,7 @@ export class RuntimeController {
                 );
             }, ms),
           );
-        } else if (trigger === 'controlledInterval' && this.project.schemaVersion >= 4) {
+        } else if (trigger === 'controlledInterval') {
           let next = 0,
             previousInterval = 0,
             previousEnabled = false,
@@ -277,7 +286,7 @@ export class RuntimeController {
               }
             }, 100),
           );
-        } else if (trigger === 'serial' && this.project.schemaVersion >= 4) {
+        } else if (trigger === 'serial') {
           const key = `${this.project.id}:${flow.id}:${node.id}`;
           if (!this.unsupportedSources.has(key)) {
             this.unsupportedSources.add(key);
@@ -303,7 +312,7 @@ export class RuntimeController {
       return Promise.reject(new Error('Flow queue is full; command was not accepted'));
     const generation = this.generation;
     this.queued++;
-    const task = (this.project.schemaVersion >= 4 ? Promise.resolve() : this.queue)
+    const task = Promise.resolve()
       .then(async () => {
         if (generation !== this.generation) {
           this.log('Queued execution cancelled by project update', 'warning', undefined, id);
@@ -314,7 +323,6 @@ export class RuntimeController {
       .finally(() => {
         this.queued--;
       });
-    if (this.project.schemaVersion < 4) this.queue = task.catch(() => {});
     return task;
   };
   private async executeFlow(
@@ -328,16 +336,21 @@ export class RuntimeController {
     if (!flow || !flow.enabled) throw new Error(`Flow unavailable: ${id}`);
     const order = validateFlow(flow, this.project.schemaVersion);
     const messages = new Map<string, Json[]>();
+    if (
+      !entryNode &&
+      flow.nodes.filter(
+        (node) =>
+          node.kind === 'event' && (!node.config.trigger || node.config.trigger === 'manual'),
+      ).length > 1
+    )
+      throw new Error('Choose a manual event entry for this flow');
     const execution = ++this.executionSequence;
-    let activations = 0;
     for (const node of flow.nodes)
       if (
         node.kind === 'event' &&
         (entryNode
           ? node.id === entryNode
-          : this.project.schemaVersion < 4 ||
-            !node.config.trigger ||
-            node.config.trigger === 'manual')
+          : !node.config.trigger || node.config.trigger === 'manual')
       )
         messages.set(node.id, [input]);
     if (!messages.size)
@@ -346,43 +359,25 @@ export class RuntimeController {
       );
     this.log(`Started: ${flow.name}`, 'info', undefined, id);
     try {
-      for (const nodeId of order) {
+      await runFunctionBlockFlow(flow, order, messages, async (node, message, port) => {
         signal.throwIfAborted();
-        const node = flow.nodes.find((n) => n.id === nodeId)!;
-        for (const message of messages.get(nodeId) ?? []) {
-          if (++activations > 10000) throw new Error('Flow activation limit exceeded');
-          if (this.project.schemaVersion >= 4) {
-            this.activeExecutions.set(execution, nodeId);
-            this.publish({ activeNodes: [...new Set(this.activeExecutions.values())] });
-          } else this.publish({ activeNodes: [nodeId] });
-          const result = await this.executeNode(node, message, signal);
-          signal.throwIfAborted();
-          if (generation !== this.generation) throw new Error('Stale execution');
-          if (
-            result.port === 'error' &&
-            !flow.edges.some((edge) => edge.source === nodeId && edge.sourceHandle === 'error')
-          ) {
-            const error: Record<string, Json> =
-              result.value && typeof result.value === 'object' && !Array.isArray(result.value)
-                ? result.value
-                : {};
-            throw new Error(String(error.message ?? 'Flow node failed'));
-          }
-          for (const edge of flow.edges.filter((e) => e.source === nodeId)) {
-            if (
-              result.port &&
-              (this.project.schemaVersion >= 3
-                ? (edge.sourceHandle ?? (isV4Action(node) ? 'success' : 'true')) !== result.port
-                : edge.sourceHandle && edge.sourceHandle !== result.port)
-            )
-              continue;
-            const incoming = messages.get(edge.target) ?? [];
-            if (incoming.length >= 256) throw new Error('Node input queue limit exceeded');
-            incoming.push(result.value);
-            messages.set(edge.target, incoming);
-          }
+        if (generation !== this.generation) throw new Error('Stale execution');
+        this.activeExecutions.set(execution, node.id);
+        this.publish({ activeNodes: [...new Set(this.activeExecutions.values())] });
+        let result: { value: Json; port?: string };
+        try {
+          result = await this.executeNode(node, message, signal, id, port);
+        } catch (error) {
+          if (!node.block || signal.aborted) throw error;
+          result = {
+            value: { code: 'BLOCK_ERROR', message: String(error), operation: node.kind },
+            port: 'error',
+          };
         }
-      }
+        signal.throwIfAborted();
+        if (generation !== this.generation) throw new Error('Stale execution');
+        return result;
+      });
       this.log(`Completed: ${flow.name}`, 'info', undefined, id);
     } catch (error) {
       this.log(
@@ -402,10 +397,19 @@ export class RuntimeController {
     node: FlowNode,
     input: Json,
     signal: AbortSignal,
+    flowId?: string,
+    port?: string,
   ): Promise<{ value: Json; port?: string }> {
     const c = node.config;
     if (isV4Action(node))
-      return executeV4DataNode(node, input, this.project, this.snapshot.values, this.setVariable);
+      return executeV4DataNode(
+        node,
+        input,
+        this.project,
+        this.snapshot.values,
+        this.setVariable,
+        port,
+      );
     let value = input;
     switch (node.kind) {
       case 'event':
@@ -420,8 +424,8 @@ export class RuntimeController {
         value = this.snapshot.values[id].value;
         if (c.path !== undefined) {
           validateJsonPath(c.path);
-          if (c.path.length && (this.project.schemaVersion < 3 || variable?.type !== 'json'))
-            throw new Error('JSON paths require schemaVersion 3 and a json variable');
+          if (c.path.length && variable?.type !== 'json')
+            throw new Error('JSON paths require a json variable');
           value = readJsonPath(value, c.path);
         } else value = cloneJson(value);
         break;
@@ -430,20 +434,18 @@ export class RuntimeController {
         const written = Object.hasOwn(c, 'value') ? c.value : input;
         if (c.path !== undefined) validateJsonPath(c.path);
         this.setVariable(String(c.variable), written, c.path as JsonPath | undefined);
-        if (this.project.schemaVersion >= 3) value = cloneJson(written);
+        value = cloneJson(written);
         break;
       }
       case 'math': {
-        const strict = this.project.schemaVersion >= 3;
         if (
-          strict &&
-          (typeof input !== 'number' ||
-            typeof c.operand !== 'number' ||
-            !['add', 'subtract', 'multiply', 'divide'].includes(String(c.operation)))
+          typeof input !== 'number' ||
+          typeof c.operand !== 'number' ||
+          !['add', 'subtract', 'multiply', 'divide'].includes(String(c.operation))
         )
           throw new Error('Math requires numeric inputs and a valid operation');
         const a = Number(input),
-          b = Number(strict ? c.operand : (c.operand ?? 1));
+          b = Number(c.operand);
         if (!Number.isFinite(a) || !Number.isFinite(b))
           throw new Error('Math node requires finite numbers');
         if (c.operation === 'divide' && b === 0) throw new Error('Division by zero');
@@ -459,58 +461,37 @@ export class RuntimeController {
         break;
       }
       case 'condition': {
-        const b = this.project.schemaVersion >= 3 ? (c.value ?? null) : c.value;
-        const a = input;
-        if (this.project.schemaVersion >= 3) {
-          if (!['eq', 'neq', 'gt', 'gte', 'lt', 'lte'].includes(String(c.operator)))
-            throw new Error('Unknown comparison');
-          const equality = c.operator === 'eq' || c.operator === 'neq';
-          if (
-            !equality &&
-            (typeof a !== 'number' ||
-              typeof b !== 'number' ||
-              !Number.isFinite(a) ||
-              !Number.isFinite(b))
-          )
-            throw new Error('Comparison requires numeric inputs');
-          const pass = equality
-            ? c.operator === 'eq'
-              ? equalJson(a, b)
-              : !equalJson(a, b)
-            : c.operator === 'gt'
-              ? Number(a) > Number(b)
-              : c.operator === 'gte'
-                ? Number(a) >= Number(b)
-                : c.operator === 'lt'
-                  ? Number(a) < Number(b)
-                  : Number(a) <= Number(b);
-          return { value: cloneJson(input), port: pass ? 'true' : 'false' };
-        }
-        const pass =
-          c.operator === 'eq'
-            ? a === b
-            : c.operator === 'neq'
-              ? a !== b
-              : c.operator === 'gte'
-                ? Number(a) >= Number(b)
-                : c.operator === 'lt'
-                  ? Number(a) < Number(b)
-                  : c.operator === 'lte'
-                    ? Number(a) <= Number(b)
-                    : Number(a) > Number(b);
-        return { value, port: pass ? 'true' : 'false' };
+        const a = input,
+          b = c.value ?? null;
+        if (!['eq', 'neq', 'gt', 'gte', 'lt', 'lte'].includes(String(c.operator)))
+          throw new Error('Unknown comparison');
+        const equality = c.operator === 'eq' || c.operator === 'neq';
+        if (
+          !equality &&
+          (typeof a !== 'number' ||
+            typeof b !== 'number' ||
+            !Number.isFinite(a) ||
+            !Number.isFinite(b))
+        )
+          throw new Error('Comparison requires numeric inputs');
+        const pass = equality
+          ? c.operator === 'eq'
+            ? equalJson(a, b)
+            : !equalJson(a, b)
+          : c.operator === 'gt'
+            ? Number(a) > Number(b)
+            : c.operator === 'gte'
+              ? Number(a) >= Number(b)
+              : c.operator === 'lt'
+                ? Number(a) < Number(b)
+                : Number(a) <= Number(b);
+        return { value: cloneJson(input), port: pass ? 'true' : 'false' };
       }
       case 'delay':
         await new Promise<void>((resolve, reject) => {
-          if (
-            this.project.schemaVersion >= 3 &&
-            (typeof c.ms !== 'number' || !Number.isInteger(c.ms) || c.ms < 0)
-          )
+          if (typeof c.ms !== 'number' || !Number.isInteger(c.ms) || c.ms < 0)
             throw new Error('Delay ms must be a nonnegative integer');
-          const timeout =
-            this.project.schemaVersion >= 3
-              ? Math.min(60000, Number(c.ms))
-              : Math.min(30000, Math.max(0, Number(c.ms ?? 100)));
+          const timeout = Math.min(60000, Number(c.ms));
           const abort = () => {
             clearTimeout(timer);
             reject(new Error('Cancelled'));
@@ -533,7 +514,12 @@ export class RuntimeController {
         this.log(`Event ${String(c.event ?? 'output')}: ${JSON.stringify(input)}`, 'info', node.id);
         break;
       case 'script': {
-        const response = await this.executeScriptTransaction(String(c.scriptId), input, node.id);
+        const response = await this.executeScriptTransaction(
+          String(c.scriptId),
+          input,
+          node.id,
+          flowId,
+        );
         signal.throwIfAborted();
         value = response.output;
         break;
@@ -574,24 +560,11 @@ export class RuntimeController {
     return { value };
   }
   private validateRuntimeValues(project: Project) {
-    if (project.schemaVersion >= 4) validateProject(project);
-    else
-      for (const flow of project.flows)
-        for (const node of flow.nodes)
-          if (
-            isV4Action(node) ||
-            node.config.trigger === 'serial' ||
-            node.config.trigger === 'controlledInterval'
-          )
-            throw new Error('Serial and v4 data nodes require schemaVersion 4');
     for (const variable of project.variables) {
-      if (variable.type === 'json' && project.schemaVersion < 3)
-        throw new Error('JSON variables require schemaVersion 3');
       variableValue(variable, variable.initial);
     }
     for (const script of project.scripts)
       if (script.variableAliases !== undefined) {
-        if (project.schemaVersion < 3) throw new Error('C aliases require schemaVersion 3');
         for (const target of Object.values(script.variableAliases))
           if (!project.variables.some((v) => v.id === target && v.type === 'number'))
             throw new Error(`Invalid C alias target: ${target}`);
@@ -599,7 +572,6 @@ export class RuntimeController {
     for (const flow of project.flows)
       for (const node of flow.nodes)
         if (node.config.path !== undefined) {
-          if (project.schemaVersion < 3) throw new Error('JSON paths require schemaVersion 3');
           validateJsonPath(node.config.path);
         }
   }
@@ -634,7 +606,7 @@ export class RuntimeController {
       return Promise.reject(new Error('Flow queue is full; command was not accepted'));
     const generation = this.generation;
     this.queued++;
-    const task = this.queue
+    const task = Promise.resolve()
       .then(() => {
         if (generation !== this.generation) throw new Error('Stale C execution');
         return this.executeScriptTransaction(scriptId, input);
@@ -642,19 +614,14 @@ export class RuntimeController {
       .finally(() => {
         this.queued--;
       });
-    this.queue = task.then(
-      () => {},
-      () => {},
-    );
     return task;
   };
   private async executeScriptTransaction(
     scriptId: string,
     input: Json,
     nodeId?: string,
+    flowId?: string,
   ): Promise<ScriptResponse> {
-    if (this.project.schemaVersion < 4)
-      return this.executeScriptTransactionNow(scriptId, input, nodeId);
     const generation = this.generation;
     const previous = this.scriptQueues.get(scriptId) ?? Promise.resolve();
     const task = previous
@@ -662,7 +629,7 @@ export class RuntimeController {
       .then(() => {
         if (generation !== this.generation || this.abort.signal.aborted)
           throw new Error('Stale C execution');
-        return this.executeScriptTransactionNow(scriptId, input, nodeId);
+        return this.executeScriptTransactionNow(scriptId, input, nodeId, flowId);
       });
     this.scriptQueues.set(scriptId, task);
     try {
@@ -675,11 +642,18 @@ export class RuntimeController {
     scriptId: string,
     input: Json,
     nodeId?: string,
+    flowId?: string,
   ): Promise<ScriptResponse> {
     if (!this.executeScript) throw new Error('C scripts require the desktop runtime');
     const script = this.project.scripts.find((s) => s.id === scriptId);
     if (!script) throw new Error('C script not found');
     const generation = this.generation;
+    const blockKey =
+      flowId &&
+      nodeId &&
+      this.project.flows.find((f) => f.id === flowId)?.nodes.find((n) => n.id === nodeId)?.block
+        ? JSON.stringify([flowId, nodeId, scriptId])
+        : undefined;
     const variables: Record<string, number> = Object.create(null) as Record<string, number>;
     const numeric = this.project.variables.filter((v) => v.type === 'number');
     for (const variable of numeric)
@@ -687,7 +661,6 @@ export class RuntimeController {
     for (const variable of numeric)
       variables[variable.id] = this.snapshot.values[variable.id].value as number;
     if (script.variableAliases !== undefined) {
-      if (this.project.schemaVersion < 3) throw new Error('C aliases require schemaVersion 3');
       for (const target of Object.values(script.variableAliases))
         if (!numeric.some((v) => v.id === target))
           throw new Error(`Invalid C alias target: ${target}`);
@@ -696,7 +669,10 @@ export class RuntimeController {
       source: script.source,
       input: cloneJson(input),
       variables,
-      state: { ...(this.scriptState[scriptId] ?? {}) },
+      state: {
+        ...((blockKey === undefined ? this.scriptState[scriptId] : this.blockState.get(blockKey)) ??
+          {}),
+      },
       timeoutMs: script.timeoutMs,
       ...(script.variableAliases === undefined
         ? {}
@@ -723,7 +699,8 @@ export class RuntimeController {
       writes[variable.id] = { value, quality: 'good', timestamp: Date.now() };
     }
     const previousValues = this.snapshot.values;
-    this.scriptState[scriptId] = { ...response.state };
+    if (blockKey === undefined) this.scriptState[scriptId] = { ...response.state };
+    else this.blockState.set(blockKey, { ...response.state });
     this.publish({ values: { ...previousValues, ...writes } });
     for (const [id, current] of Object.entries(writes))
       this.recordNumericChange(this.resolveVariable(id)!, current.value, previousValues[id]?.value);

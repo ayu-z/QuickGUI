@@ -392,6 +392,20 @@ async fn attached(framing: &str) -> (SerialService, tokio_serial::SerialStream, 
     let name = format!("quickgui-pty-test-{}", NEXT.fetch_add(1, Ordering::AcqRel));
     let lease = PortLease::acquire(&name).unwrap();
     let (peer, port) = tokio_serial::SerialStream::pair().unwrap();
+    let service = attach_transport(&name, framing, port, Some(lease));
+    (service, peer, name)
+}
+
+// Exercise the production IO actor on all platforms without occupying a device.
+fn attach_transport<P>(
+    name: &str,
+    framing: &str,
+    port: P,
+    lease: Option<PortLease>,
+) -> SerialService
+where
+    P: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
     let service = SerialService::new(CancellationToken::new());
     let cancel = service.inner.lifetime.child_token();
     let settings = serde_json::from_value(json!({"portName":name,"framing":framing})).unwrap();
@@ -400,7 +414,7 @@ async fn attached(framing: &str) -> (SerialService, tokio_serial::SerialStream, 
     state.session_id = 1;
     state.listening = true;
     state.listen_epoch = 1;
-    state.port = Some(info(&name));
+    state.port = Some(info(name));
     let (sender, receiver) = mpsc::channel(TX_BATCH_LIMIT);
     service.inner.entries.lock().unwrap().insert(
         "serial".into(),
@@ -427,10 +441,9 @@ async fn attached(framing: &str) -> (SerialService, tokio_serial::SerialStream, 
         .get_mut("serial")
         .unwrap()
         .task = Some(task);
-    (service, peer, name)
+    service
 }
 
-#[cfg(unix)]
 async fn next_data(service: &SerialService, direction: &str) -> SerialDelivery {
     tokio::time::timeout(Duration::from_secs(2), async {
         loop {
@@ -442,6 +455,183 @@ async fn next_data(service: &SerialService, direction: &str) -> SerialDelivery {
     })
     .await
     .expect("serial data event")
+}
+
+#[test]
+fn framed_receive_buffer_preserves_frames_and_partial_tails_at_every_read_boundary() {
+    fn drain(buffer: &mut ReceiveBuffer, mode: &str, frames: &mut Vec<(Vec<u8>, usize)>) {
+        while let Some((wire, start, end)) = buffer.frame(mode) {
+            frames.push((buffer.payload(start, end).to_vec(), wire));
+            buffer.consume(wire);
+        }
+    }
+    for (mode, wire, tail, expected) in [
+        (
+            "line",
+            b"\r\none\r\n\nend".as_slice(),
+            b"\n".as_slice(),
+            vec![
+                (vec![], 2),
+                (b"one".to_vec(), 5),
+                (vec![], 1),
+                (b"end".to_vec(), 4),
+            ],
+        ),
+        (
+            "length16",
+            b"\0\0\0\x03one\0\x03two\0\x03en".as_slice(),
+            b"d".as_slice(),
+            vec![
+                (vec![], 2),
+                (b"one".to_vec(), 5),
+                (b"two".to_vec(), 5),
+                (b"end".to_vec(), 5),
+            ],
+        ),
+    ] {
+        for split in 0..=wire.len() {
+            let mut buffer = ReceiveBuffer::default();
+            let mut frames = Vec::new();
+            buffer.append(&wire[..split]);
+            drain(&mut buffer, mode, &mut frames);
+            buffer.append(&wire[split..]);
+            drain(&mut buffer, mode, &mut frames);
+            assert_eq!(
+                frames,
+                expected[..3],
+                "{mode} split {split} waits for the incomplete tail"
+            );
+            buffer.append(tail);
+            drain(&mut buffer, mode, &mut frames);
+            assert_eq!(frames, expected, "{mode} split {split}");
+            assert!(buffer.is_empty());
+        }
+    }
+}
+
+#[test]
+fn fragmented_long_lines_reuse_the_search_cursor_and_consuming_frames_does_not_move_the_tail() {
+    let mut buffer = ReceiveBuffer::default();
+    for _ in 0..1024 {
+        buffer.append(b"abcdefgh");
+        assert!(buffer.frame("line").is_none());
+        assert_eq!(buffer.scanned, buffer.bytes.len());
+    }
+    buffer.append(b"\r\nsecond\npartial");
+    let (wire, start, end) = buffer.frame("line").unwrap();
+    assert_eq!(end - start, 8192);
+    let allocation = buffer.bytes.as_ptr();
+    buffer.consume(wire);
+    assert_eq!(buffer.bytes.as_ptr(), allocation);
+    assert_eq!(buffer.start, wire);
+    let (wire, start, end) = buffer.frame("line").unwrap();
+    assert_eq!(buffer.payload(start, end), b"second");
+    buffer.consume(wire);
+    assert!(buffer.frame("line").is_none());
+    buffer.append(b" end\n");
+    let (_, start, end) = buffer.frame("line").unwrap();
+    assert_eq!(buffer.payload(start, end), b"partial end");
+    buffer.clear();
+    buffer.append(b"raw");
+    assert_eq!(buffer.frame("raw"), Some((3, 0, 3)));
+}
+
+#[tokio::test]
+async fn length_prefixes_split_across_reads_keep_wire_counts_utf8_and_budget_accounting() {
+    let (port, mut peer) = tokio::io::duplex(16);
+    let service = attach_transport("memory-length16", "length16", port, None);
+    peer.write_all(&[0]).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while service.snapshot()[0].rx_bytes < 1 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(service.inner.ingress.lock().unwrap().data.is_empty());
+    peer.write_all(b"\x03\xe4\xbd\xa0\0\0\0\x03end")
+        .await
+        .unwrap();
+    for (expected, bytes) in [("你", 5), ("", 2), ("end", 5)] {
+        let frame = next_data(&service, "rx").await;
+        assert_eq!(frame.event.payload["text"], expected);
+        assert_eq!(frame.event.payload["byteLength"], bytes);
+    }
+    service.shutdown().await;
+    assert_eq!(service.inner.rx.bytes.load(Ordering::Acquire), 0);
+    assert_eq!(service.inner.rx.batches.load(Ordering::Acquire), 0);
+}
+
+#[tokio::test]
+async fn small_packets_use_the_same_actor_without_waiting_for_a_full_buffer() {
+    let (port, mut peer) = tokio::io::duplex(8);
+    let service = attach_transport("memory-loopback", "line", port, None);
+    let echo = tokio::spawn(async move {
+        let mut byte = [0];
+        // Small buffers force partial writes and split RX framing.
+        while peer.read_exact(&mut byte).await.is_ok() {
+            peer.write_all(&byte).await.unwrap();
+        }
+    });
+    for i in 0..16 {
+        let message = format!("{i}:123456");
+        service
+            .send(
+                "serial",
+                format!("{message}\n").into_bytes(),
+                1000,
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        let rx = next_data(&service, "rx").await;
+        assert_eq!(rx.event.payload["text"], message);
+        assert_eq!(rx.event.payload["byteLength"], message.len() + 1);
+        assert_eq!(rx.event.payload["timestamp"], rx.event.timestamp);
+        assert_eq!(
+            rx.event.payload["timestampIso"],
+            timestamp_iso(rx.event.timestamp)
+        );
+    }
+    let state = service.snapshot().remove(0);
+    assert_eq!(state.tx_messages, 16);
+    assert_eq!(state.rx_batches, 16);
+    tokio::time::timeout(Duration::from_secs(2), service.shutdown())
+        .await
+        .expect("shutdown cancels an idle read");
+    echo.await.unwrap();
+    assert_eq!(service.inner.rx.bytes.load(Ordering::Acquire), 0);
+    assert_eq!(service.inner.tx.bytes.load(Ordering::Acquire), 0);
+}
+
+#[tokio::test]
+async fn a_slow_consumer_cannot_turn_small_packet_delivery_into_an_unbounded_queue() {
+    let (port, mut peer) = tokio::io::duplex(4096);
+    let service = attach_transport("memory-overflow", "line", port, None);
+    peer.write_all(&b"x\n".repeat(RX_BATCH_LIMIT + 1))
+        .await
+        .unwrap();
+    let stopped = service.inner.entries.lock().unwrap()["serial"]
+        .cancel
+        .clone();
+    tokio::time::timeout(Duration::from_secs(2), stopped.cancelled())
+        .await
+        .expect("full RX budget closes the actor without a consumer");
+    let first = service.next_event(&CancellationToken::new()).await.unwrap();
+    assert_ne!(first.event.kind, "data", "fault control precedes data");
+    let fault = if first.event.kind == "error" {
+        first
+    } else {
+        assert_eq!(first.event.payload["error"]["code"], "RX_OVERFLOW");
+        service.next_event(&CancellationToken::new()).await.unwrap()
+    };
+    assert_eq!(fault.event.kind, "error");
+    assert_eq!(fault.event.payload["code"], "RX_OVERFLOW");
+    assert!(service.snapshot()[0].reconnect_paused);
+    drop(fault);
+    service.shutdown().await;
+    assert_eq!(service.inner.rx.bytes.load(Ordering::Acquire), 0);
+    assert_eq!(service.inner.rx.batches.load(Ordering::Acquire), 0);
 }
 
 #[cfg(unix)]

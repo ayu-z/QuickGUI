@@ -14,7 +14,50 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     sync::{mpsc, oneshot, Notify},
 };
+#[cfg(unix)]
 use tokio_serial::SerialPortBuilderExt;
+
+#[cfg(unix)]
+type NativePort = tokio_serial::SerialStream;
+#[cfg(windows)]
+type NativePort = tokio::net::windows::named_pipe::NamedPipeClient;
+
+#[cfg(unix)]
+fn open_native(builder: tokio_serial::SerialPortBuilder) -> tokio_serial::Result<NativePort> {
+    builder.open_native_async()
+}
+
+#[cfg(windows)]
+fn open_native(builder: tokio_serial::SerialPortBuilder) -> tokio_serial::Result<NativePort> {
+    use std::os::windows::io::{AsRawHandle, IntoRawHandle};
+    use windows_sys::Win32::Devices::Communication::{
+        GetCommTimeouts, SetCommTimeouts, COMMTIMEOUTS,
+    };
+
+    // Open/configure the overlapped COM handle without registering it with IOCP yet.
+    // Tokio registration submits the first read, so changing timeouts afterwards
+    // would leave that first small packet using mio-serial's interval timeout.
+    let port = mio_serial::SerialStream::open(&builder)?;
+    let handle = port.as_raw_handle();
+    let mut timeouts = COMMTIMEOUTS::default();
+    // SAFETY: port owns a live COM handle; the output structure is writable.
+    if unsafe { GetCommTimeouts(handle, &mut timeouts) } == 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    // Windows' first-byte mode: drain buffered bytes immediately, otherwise wait
+    // for the first byte rather than for a packet gap. Keep write timeouts intact.
+    // https://learn.microsoft.com/windows/win32/api/winbase/ns-winbase-commtimeouts
+    timeouts.ReadIntervalTimeout = u32::MAX;
+    timeouts.ReadTotalTimeoutMultiplier = u32::MAX;
+    timeouts.ReadTotalTimeoutConstant = u32::MAX - 1;
+    // SAFETY: the same owned COM handle and an initialized timeout structure.
+    if unsafe { SetCommTimeouts(handle, &timeouts) } == 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    // SAFETY: transfer sole ownership of the overlapped handle to Tokio, which
+    // also closes it if registration fails. No reads have been submitted yet.
+    unsafe { NativePort::from_raw_handle(port.into_raw_handle()) }.map_err(Into::into)
+}
 
 pub const RX_BATCH_LIMIT: usize = 256;
 pub const RX_BYTE_LIMIT: usize = 1024 * 1024;
@@ -381,6 +424,69 @@ pub struct SerialDelivery {
     pub event: SerialEvent,
     _credit: Option<Credit>,
 }
+#[derive(Default)]
+struct ReceiveBuffer {
+    bytes: Vec<u8>,
+    start: usize,
+    scanned: usize,
+}
+impl ReceiveBuffer {
+    fn clear(&mut self) {
+        self.bytes.clear();
+        self.start = 0;
+        self.scanned = 0;
+    }
+    fn is_empty(&self) -> bool {
+        self.start == self.bytes.len()
+    }
+    fn append(&mut self, bytes: &[u8]) {
+        // Compact at most once per OS read, never once per parsed frame.
+        if self.start != 0 {
+            self.bytes.copy_within(self.start.., 0);
+            self.bytes.truncate(self.bytes.len() - self.start);
+            self.scanned -= self.start;
+            self.start = 0;
+        }
+        self.bytes.extend_from_slice(bytes);
+    }
+    fn frame(&mut self, framing: &str) -> Option<(usize, usize, usize)> {
+        let available = self.bytes.len() - self.start;
+        match framing {
+            "raw" if available != 0 => Some((available, 0, available)),
+            "line" => {
+                let Some(offset) = self.bytes[self.scanned..].iter().position(|b| *b == b'\n')
+                else {
+                    // A fragmented long line is scanned only once as it arrives.
+                    self.scanned = self.bytes.len();
+                    return None;
+                };
+                let end = self.scanned + offset;
+                let payload_end = end
+                    - self.start
+                    - usize::from(end > self.start && self.bytes[end - 1] == b'\r');
+                Some((end + 1 - self.start, 0, payload_end))
+            }
+            "length16" if available >= 2 => {
+                let length =
+                    u16::from_be_bytes([self.bytes[self.start], self.bytes[self.start + 1]])
+                        as usize;
+                (available >= length + 2).then_some((length + 2, 2, length + 2))
+            }
+            _ => None,
+        }
+    }
+    fn payload(&self, start: usize, end: usize) -> &[u8] {
+        &self.bytes[self.start + start..self.start + end]
+    }
+    fn consume(&mut self, bytes: usize) {
+        self.start += bytes;
+        self.scanned = self.start;
+        if self.is_empty() {
+            self.clear();
+        }
+    }
+}
+
 struct Ingress {
     control: VecDeque<SerialEvent>,
     data: VecDeque<SerialDelivery>,
@@ -402,6 +508,8 @@ struct Tx {
     _credit: Credit,
 }
 struct Inner {
+    usb: crate::usb::UsbService,
+    discovery_watches: Mutex<BTreeMap<(String, String), u64>>,
     entries: Mutex<BTreeMap<String, Entry>>,
     ingress: Mutex<Ingress>,
     wake: Notify,
@@ -466,6 +574,8 @@ impl SerialService {
     pub fn new(lifetime: CancellationToken) -> Self {
         Self {
             inner: Arc::new(Inner {
+                usb: crate::usb::UsbService::new(lifetime.child_token()),
+                discovery_watches: Mutex::new(Default::default()),
                 entries: Mutex::new(BTreeMap::new()),
                 ingress: Mutex::new(Ingress {
                     control: VecDeque::new(),
@@ -497,6 +607,26 @@ impl SerialService {
             }),
         }
     }
+    pub fn watch_discovery(&self, flow: &str, node: &str, enabled: bool) {
+        let key = (flow.to_owned(), node.to_owned());
+        let mut watches = self.inner.discovery_watches.lock().unwrap();
+        if enabled {
+            watches.insert(key, self.inner.sequence.load(Ordering::Acquire));
+        } else {
+            watches.remove(&key);
+        }
+    }
+    pub fn watching_discovery(&self, flow: &str, node: &str, sequence: u64) -> bool {
+        self.inner
+            .discovery_watches
+            .lock()
+            .unwrap()
+            .get(&(flow.to_owned(), node.to_owned()))
+            .is_some_and(|start| sequence > *start)
+    }
+    pub fn usb(&self) -> &crate::usb::UsbService {
+        &self.inner.usb
+    }
     pub fn is_cancelled(&self) -> bool {
         self.inner.lifetime.is_cancelled()
     }
@@ -510,6 +640,7 @@ impl SerialService {
     }
     pub async fn shutdown(&self) {
         self.cancel();
+        self.inner.usb.reset().await;
         loop {
             let done = self.inner.entries.lock().unwrap().values().all(|entry| {
                 entry
@@ -809,6 +940,8 @@ impl SerialService {
             }
             *previous = key;
         }
+        self.inner.usb.reset().await;
+        self.inner.discovery_watches.lock().unwrap().clear();
         self.inner.revision.fetch_add(1, Ordering::AcqRel);
         {
             let mut q = self.inner.ingress.lock().unwrap();
@@ -860,6 +993,7 @@ impl SerialService {
             loop {
                 tokio::select! {_=service.inner.lifetime.cancelled()=>break,_=ticks.tick()=>{}}
                 if !service.inner.scan_needed.load(Ordering::Acquire)
+                    && service.inner.discovery_watches.lock().unwrap().is_empty()
                     && !service.inner.entries.lock().unwrap().values().any(|entry| {
                         matches!(
                             entry.state.status.as_str(),
@@ -1171,12 +1305,12 @@ impl SerialService {
                         "software" => tokio_serial::FlowControl::Software,
                         _ => tokio_serial::FlowControl::None,
                     });
-                #[cfg(test)]
+                #[cfg(all(test, unix))]
                 let result = demo_test::take_registered_pty(&config.port_name)
                     .map(Ok)
-                    .unwrap_or_else(|| builder.open_native_async());
-                #[cfg(not(test))]
-                let result = builder.open_native_async();
+                    .unwrap_or_else(|| open_native(builder));
+                #[cfg(not(all(test, unix)))]
+                let result = open_native(builder);
                 (result, lease)
             });
             let (port, _lease) = match opening.await {
@@ -1188,7 +1322,7 @@ impl SerialService {
                     return;
                 }
             };
-            let mut port = match port {
+            let port = match port {
                 Ok(port) => port,
                 Err(error) => {
                     let error = SerialError::new("OPEN_FAILED", error.to_string());
@@ -1205,6 +1339,8 @@ impl SerialService {
                 let _ = opened.send(Err(SerialError::new("CANCELLED", "Open cancelled")));
                 return;
             }
+            #[cfg(unix)]
+            let mut port = port;
             #[cfg(unix)]
             if let Err(e) = port.set_exclusive(true) {
                 let error = SerialError::new("OPEN_FAILED", e.to_string());
@@ -1485,11 +1621,11 @@ impl SerialService {
             )
         })?
     }
-    async fn run_port(
+    async fn run_port<P: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin>(
         &self,
         id: String,
         instance: u64,
-        port: tokio_serial::SerialStream,
+        port: P,
         mut commands: mpsc::Receiver<Tx>,
         cancel: CancellationToken,
     ) {
@@ -1509,7 +1645,7 @@ impl SerialService {
             .clone();
         let receive = async move {
             let mut buffer = [0u8; 4096];
-            let mut pending = Vec::<u8>::new();
+            let mut pending = ReceiveBuffer::default();
             let mut parser_credit = Credit {
                 budget: rx.inner.rx.clone(),
                 bytes: 0,
@@ -1574,31 +1710,9 @@ impl SerialService {
                     return;
                 }
                 parser_credit.bytes += size;
-                pending.extend_from_slice(&buffer[..size]);
+                pending.append(&buffer[..size]);
                 loop {
-                    let frame = match framing.as_str() {
-                        "raw" => Some((pending.len(), 0, pending.len())),
-                        "line" => pending.iter().position(|b| *b == b'\n').map(|end| {
-                            (
-                                end + 1,
-                                0,
-                                if end > 0 && pending[end - 1] == b'\r' {
-                                    end - 1
-                                } else {
-                                    end
-                                },
-                            )
-                        }),
-                        "length16" if pending.len() >= 2 => {
-                            let n = u16::from_be_bytes([pending[0], pending[1]]) as usize;
-                            if pending.len() >= n + 2 {
-                                Some((n + 2, 2, n + 2))
-                            } else {
-                                None
-                            }
-                        }
-                        _ => None,
-                    };
+                    let frame = pending.frame(&framing);
                     let Some((wire, start, end)) = frame else {
                         break;
                     };
@@ -1624,15 +1738,17 @@ impl SerialService {
                         batches: 1,
                     };
                     parser_credit.bytes -= wire;
-                    let payload = pending[start..end].to_vec();
-                    pending.drain(..wire);
+                    let payload = pending.payload(start, end);
+                    let payload_hex = hex(payload);
+                    let payload_text = utf8.push(payload);
+                    pending.consume(wire);
                     let state = {
                         let mut entries = rx.inner.entries.lock().unwrap();
                         let entry = entries.get_mut(&rx_id).unwrap();
                         entry.state.rx_batches += 1;
                         entry.state.clone()
                     };
-                    let mut event=rx.event(Some(&rx_id),instance,"data",json!({"kind":"data","direction":"rx","connectionId":rx_id,"sessionId":instance,"hex":hex(&payload),"text":utf8.push(&payload),"byteLength":wire,"counters":state.value()["counters"]}));
+                    let mut event=rx.event(Some(&rx_id),instance,"data",json!({"kind":"data","direction":"rx","connectionId":rx_id,"sessionId":instance,"hex":payload_hex,"text":payload_text,"byteLength":wire,"counters":state.value()["counters"]}));
                     event.listen_epoch = listen_epoch;
                     event.revision = read_epoch;
                     event.payload["sequence"] = json!(event.sequence);

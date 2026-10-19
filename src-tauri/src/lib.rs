@@ -20,6 +20,7 @@ mod build_runtime;
 mod history;
 mod project_file;
 mod scheduler;
+mod snapshot_publisher;
 mod source_export;
 mod windows;
 
@@ -584,9 +585,10 @@ async fn runtime_start(
     let work = project_work(&state, window.label(), generation, true)?;
     let document = project.clone();
     let project: Project = serde_json::from_value(project).map_err(|e| e.to_string())?;
-    let event_sources = scheduler::sources(&project)?;
     // Reject invalid edits before cancelling the currently running version.
-    let mut checked_engine = Engine::new(project.clone())?;
+    let mut checked_engine = Engine::new(project)?;
+    let project = checked_engine.project().clone();
+    let event_sources = scheduler::sources(&project)?;
     let previous = state
         .sessions
         .lock()
@@ -604,8 +606,7 @@ async fn runtime_start(
         return Err("Stale project revision cannot replace the active runtime".into());
     }
     let logic_key = quickgui_engine::flow_v4::execution_key(&project);
-    let same_logic = project.schema_version >= 4
-        && same_project
+    let same_logic = same_project
         && previous
             .as_ref()
             .is_some_and(|p| p.logic_key == logic_key && !p.cancellation.is_cancelled());
@@ -619,20 +620,16 @@ async fn runtime_start(
     } else {
         work.cancellation.child_token()
     };
-    let serial = if project.schema_version >= 4 {
-        Some(
-            previous
-                .as_ref()
-                .filter(|_| same_project)
-                .and_then(|p| p.serial.clone())
-                .filter(|s| !s.is_cancelled())
-                .unwrap_or_else(|| {
-                    quickgui_engine::serial::SerialService::new(work.cancellation.child_token())
-                }),
-        )
-    } else {
-        None
-    };
+    let serial = Some(
+        previous
+            .as_ref()
+            .filter(|_| same_project)
+            .and_then(|p| p.serial.clone())
+            .filter(|s| !s.is_cancelled())
+            .unwrap_or_else(|| {
+                quickgui_engine::serial::SerialService::new(work.cancellation.child_token())
+            }),
+    );
     let recorder = if same_project {
         previous
             .as_ref()
@@ -669,23 +666,31 @@ async fn runtime_start(
     let listener = app.clone();
     let owner_label = window.label().to_owned();
     let window_project = recording_project.clone();
+    let publication_app = app.clone();
+    let publication_owner = owner_label.clone();
+    let publisher = snapshot_publisher::Publisher::new(
+        std::time::Duration::from_millis(16),
+        move |snapshot: Arc<RuntimeSnapshot>| {
+            if snapshot_publisher::current(
+                &publication_app.state::<HostState>(),
+                &publication_owner,
+                epoch,
+                event_generation,
+                &snapshot,
+            ) {
+                windows::publish_snapshot(&publication_app, &publication_owner, &snapshot);
+            }
+        },
+    );
     let observer = Arc::new(move |snapshot: RuntimeSnapshot| {
         let state = listener.state::<HostState>();
-        let current = session(&state, &owner_label)
-            .is_ok_and(|s| s.epoch == epoch && s.revision == snapshot.revision)
-            && state
-                .projects
-                .lock()
-                .ok()
-                .and_then(|p| p.get(&owner_label).cloned())
-                .is_some_and(|p| p.generation == event_generation && !p.closed);
-        if !current {
+        if !snapshot_publisher::current(&state, &owner_label, epoch, event_generation, &snapshot) {
             return;
         }
         if recording_project.revision == snapshot.revision {
             recording_history.record(recording_project.clone(), snapshot.clone());
         }
-        windows::broadcast_snapshot(&listener, &owner_label, &snapshot);
+        windows::remember_snapshot(&listener, &owner_label, &snapshot);
         if owner_label == "preview" {
             windows::queue_sync(
                 listener.clone(),
@@ -695,6 +700,7 @@ async fn runtime_start(
                 event_generation,
             );
         }
+        publisher.submit(snapshot);
     });
     let listener = app.clone();
     let event_owner = window.label().to_owned();
@@ -892,45 +898,43 @@ async fn runtime_run_flow(
     state: State<'_, HostState>,
     flow_id: String,
     input: Value,
+    entry_node_id: Option<String>,
     generation: Option<u64>,
 ) -> Result<RuntimeSnapshot, String> {
     project_work(&state, window.label(), generation, false)?;
     let active = session(&state, window.label())?;
     let host = runner_path(&app).ok().map(ScriptHost::new);
     let work = begin_work(&state, window.label(), generation)?;
-    if active.engine.lock().await.project().schema_version >= 4 {
-        if active.cancellation.is_cancelled() {
-            return Err("Runtime stopped".into());
-        }
-        project_work(&state, window.label(), generation, false)?;
-        let cancellation = active.cancellation.child_token();
-        let run = quickgui_engine::flow_v4::run_shared(
-            active.engine.clone(),
-            active.serial.clone(),
-            &flow_id,
-            None,
-            input,
-            cancellation.clone(),
-            host.as_ref(),
-        );
-        tokio::pin!(run);
-        return tokio::select! {
-            result = &mut run => result,
-            _ = work.cancellation.cancelled() => { cancellation.cancel(); run.await }
-        };
+
+    if active.cancellation.is_cancelled() {
+        return Err("Runtime stopped".into());
     }
-    let mut engine = active.engine.lock().await;
     project_work(&state, window.label(), generation, false)?;
-    require_current(&state, window.label(), &active, &engine)?;
-    let result = engine
-        .run_flow(
-            &flow_id,
-            input,
-            active.cancellation.child_token(),
-            host.as_ref(),
-        )
-        .await;
-    result
+    let cancellation = active.cancellation.child_token();
+    let selected_entry = {
+        let engine = active.engine.lock().await;
+        let flow = engine
+            .project()
+            .flows
+            .iter()
+            .find(|flow| flow.id == flow_id)
+            .ok_or("Unknown flow")?;
+        quickgui_engine::flow_v4::manual_entry_id(flow, entry_node_id.as_deref())?.to_owned()
+    };
+    let run = quickgui_engine::flow_v4::run_shared(
+        active.engine.clone(),
+        active.serial.clone(),
+        &flow_id,
+        Some(&selected_entry),
+        input,
+        cancellation.clone(),
+        host.as_ref(),
+    );
+    tokio::pin!(run);
+    return tokio::select! {
+        result = &mut run => result,
+        _ = work.cancellation.cancelled() => { cancellation.cancel(); run.await }
+    };
 }
 
 #[tauri::command]
@@ -946,30 +950,23 @@ async fn runtime_run_script(
     let work = begin_work(&state, window.label(), generation)?;
     let active = session(&state, window.label())?;
     let host = ScriptHost::new(runner_path(&app)?);
-    if active.engine.lock().await.project().schema_version >= 4 {
-        if active.cancellation.is_cancelled() {
-            return Err("Runtime stopped".into());
-        }
-        let cancellation = active.cancellation.child_token();
-        let run = quickgui_engine::flow_v4::script_shared(
-            active.engine.clone(),
-            &script_id,
-            input,
-            cancellation.clone(),
-            &host,
-        );
-        tokio::pin!(run);
-        return tokio::select! {
-            result = &mut run => result,
-            _ = work.cancellation.cancelled() => { cancellation.cancel(); run.await }
-        };
+
+    if active.cancellation.is_cancelled() {
+        return Err("Runtime stopped".into());
     }
-    let mut engine = active.engine.lock().await;
-    project_work(&state, window.label(), generation, false)?;
-    require_current(&state, window.label(), &active, &engine)?;
-    engine
-        .execute_script(&script_id, input, work.cancellation.clone(), &host)
-        .await
+    let cancellation = active.cancellation.child_token();
+    let run = quickgui_engine::flow_v4::script_shared(
+        active.engine.clone(),
+        &script_id,
+        input,
+        cancellation.clone(),
+        &host,
+    );
+    tokio::pin!(run);
+    return tokio::select! {
+        result = &mut run => result,
+        _ = work.cancellation.cancelled() => { cancellation.cancel(); run.await }
+    };
 }
 
 #[tauri::command]

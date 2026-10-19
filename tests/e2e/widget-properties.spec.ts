@@ -10,7 +10,7 @@ const modern = (type: WidgetType): Widget => ({
 });
 const fixture = (widgets: Widget[]): Project => ({
   ...createEmptyProject(),
-  schemaVersion: 3,
+  schemaVersion: 5,
   windows: [],
   widgets,
 });
@@ -33,10 +33,8 @@ async function mount(page: Page, project: Project, inspector = false) {
     const state = window as unknown as {
       fixtureWidget: Widget;
       fixtureEvents: { event: string; payload: unknown }[];
-      upgrades: number;
     };
     state.fixtureEvents = [];
-    state.upgrades = 0;
     const element = document.createElement('div');
     element.id = 'widget-fixture';
     Object.assign(element.style, {
@@ -64,9 +62,6 @@ async function mount(page: Page, project: Project, inspector = false) {
             onDraft: () => {},
             onDelete: () => {},
             onDuplicate: () => {},
-            onRequestUpgrade: () => {
-              state.upgrades++;
-            },
           })
         : React.createElement(renderer.Scene, {
             project,
@@ -179,7 +174,7 @@ test('series reordering preserves binding identity and JSON leaf paths', async (
   expect(widget.bindings['/series/1/value']).toBeUndefined();
 });
 
-test('property editor rejects invalid ranges, previews states and keeps legacy upgrades explicit', async ({
+test('property editor rejects invalid ranges, previews states with current definitions', async ({
   page,
 }) => {
   const number = modern('number');
@@ -199,12 +194,4 @@ test('property editor rejects invalid ranges, previews states and keeps legacy u
     'background-color',
     'rgb(18, 52, 86)',
   );
-  number.definitionVersion = 1;
-  await mount(page, fixture([number]), true);
-  await page.locator('#widget-fixture').getByRole('button', { name: '升级控件属性' }).click();
-  expect(await page.evaluate(() => (window as unknown as { upgrades: number }).upgrades)).toBe(1);
-  expect(
-    (await page.evaluate(() => (window as unknown as { fixtureWidget: Widget }).fixtureWidget))
-      .definitionVersion,
-  ).toBe(1);
 });

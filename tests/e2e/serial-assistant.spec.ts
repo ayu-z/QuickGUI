@@ -35,7 +35,7 @@ async function exported(page: Page, info: TestInfo, name: string): Promise<Proje
   return validateProject(JSON.parse(strFromU8(files['quickgui.json'])));
 }
 
-test('the serial example is an editable v4 project with ordinary controls and safe defaults', async ({
+test('the serial example is an editable v5 project with ordinary controls and safe defaults', async ({
   page,
 }, info) => {
   await openExample(page);
@@ -43,7 +43,7 @@ test('the serial example is an editable v4 project with ordinary controls and sa
   await page.locator('[data-design-widget="send_payload"]').click();
   await expect(page.locator('.qg-inspector').getByLabel('多行输入', { exact: true })).toBeChecked();
   const project = await exported(page, info, 'serial-example');
-  expect(project.schemaVersion).toBe(4);
+  expect(project.schemaVersion).toBe(5);
   expect(project.scripts).toEqual([]);
   expect(project.modules).toEqual([]);
   expect(
@@ -78,10 +78,11 @@ test('the serial example is an editable v4 project with ordinary controls and sa
       maxBytes: 524288,
       droppedPath: ['dropped'],
     });
-  expect(project.flows.find((flow) => flow.id === 'serial_open')?.nodes[0].config.trigger).toBe(
+  expect(project.flows).toHaveLength(1);
+  expect(project.flows[0].nodes.find((node) => node.id === 'serial_open_0')?.config.trigger).toBe(
     'manual',
   );
-  expect(project.flows.find((flow) => flow.id === 'serial_send')?.nodes[0].config.trigger).toBe(
+  expect(project.flows[0].nodes.find((node) => node.id === 'serial_send_0')?.config.trigger).toBe(
     'manual',
   );
   await page.screenshot({ path: 'artifacts/serial-assistant-designer.png', fullPage: true });
@@ -123,13 +124,14 @@ test('serial flow ports, value sources and connection profiles are editable and 
 }, info) => {
   await openExample(page);
   await section(page, '流程');
+  await page.screenshot({ path: 'artifacts/serial-integrated-flow.png', fullPage: true });
   const scan = page.locator('.react-flow__node[data-id="serial_scan_1"]');
   await scan.click();
   await expect(scan.locator('.react-flow__handle[data-handleid="success"]')).toHaveCount(1);
   await expect(scan.locator('.react-flow__handle[data-handleid="error"]')).toHaveCount(1);
   await page
     .locator('.qg-node-palette')
-    .getByRole('button', { name: 'VID/PID 过滤', exact: true })
+    .getByRole('button', { name: '串口 设备发现', exact: true })
     .click();
   const selectedId = await page.locator('.react-flow__node.selected').getAttribute('data-id');
   const settings = page.locator('.qg-flow-settings');
@@ -160,7 +162,7 @@ test('serial flow ports, value sources and connection profiles are editable and 
   await page.screenshot({ path: 'artifacts/serial-connection-profile.png', fullPage: true });
 });
 
-test('adding a serial node to a legacy project requires v4 confirmation and is reversible', async ({
+test('adding a serial node immediately uses FB ports and remains reversible', async ({
   page,
 }, info) => {
   await page.goto('/');
@@ -168,20 +170,15 @@ test('adding a serial node to a legacy project requires v4 confirmation and is r
   const before = await page.locator('.react-flow__node').count();
   const add = page
     .locator('.qg-node-palette')
-    .getByRole('button', { name: '扫描串口', exact: true });
+    .getByRole('button', { name: '串口 设备发现', exact: true });
   await add.click();
   const dialog = page.getByRole('dialog', { name: '升级工程与控件', exact: true });
-  await expect(dialog).toBeVisible();
-  await dialog.getByRole('button', { name: '取消', exact: true }).click();
-  await expect(page.locator('.react-flow__node')).toHaveCount(before);
-  await add.click();
-  await dialog.getByRole('button', { name: '升级工作副本', exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await expect(page.locator('.react-flow__node')).toHaveCount(before + 1);
-  expect((await exported(page, info, 'serial-v4-upgrade')).schemaVersion).toBe(4);
+  expect((await exported(page, info, 'serial-v4-upgrade')).schemaVersion).toBe(5);
   await page.locator('.workspace-tools').getByRole('button', { name: '撤销', exact: true }).click();
   const undone = await exported(page, info, 'serial-v4-upgrade-undone');
-  expect(undone.schemaVersion).toBe(1);
+  expect(undone.schemaVersion).toBe(5);
   expect(undone.flows.flatMap((flow) => flow.nodes).some((node) => node.kind === 'serial')).toBe(
     false,
   );

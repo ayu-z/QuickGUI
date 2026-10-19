@@ -21,7 +21,7 @@ export function projectFilename(name: string): string {
 export function exportProject(project: Project, drafts: Record<string, string> = {}): Uint8Array {
   if (Object.keys(drafts).length)
     throw new Error('Resolve unapplied CODE drafts before exporting.');
-  validateProject(project);
+  project = validateProject(project);
   return zipSync(
     {
       'quickgui.json': strToU8(serializeProject(project)),

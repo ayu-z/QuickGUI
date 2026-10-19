@@ -134,6 +134,8 @@ pub struct FlowNode {
     pub position: Value,
     #[serde(default)]
     pub config: JsonMap,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block: Option<crate::function_blocks::BlockInterface>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -146,6 +148,8 @@ pub struct FlowEdge {
     pub source_handle: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_handle: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

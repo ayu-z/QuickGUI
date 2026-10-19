@@ -985,6 +985,101 @@
     0 0 0 2px color-mix(in srgb, var(--node-color) 18%, transparent),
     0 4px 16px #0003;
 }
+.qg-flow-card.fb {
+  width: 250px;
+}
+.qg-fb-pins {
+  padding: 4px 0 10px;
+  border-top: 1px solid var(--border);
+}
+.qg-fb-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  min-height: 24px;
+}
+.qg-fb-pin {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 11px;
+  min-width: 0;
+  font-size: 10px;
+}
+.qg-fb-pin > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.qg-fb-pin small {
+  color: var(--muted);
+  font:
+    8px Consolas,
+    monospace;
+}
+.qg-fb-pin.output {
+  justify-content: flex-end;
+  text-align: right;
+}
+.qg-fb-pin .react-flow__handle-left {
+  left: -4px;
+}
+.qg-fb-pin .react-flow__handle-right {
+  right: -4px;
+}
+.qg-flow-card .qg-fb-handle.execution {
+  border-radius: 0;
+  background: var(--text);
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+  width: 10px;
+  height: 10px;
+  border: 0;
+}
+.qg-flow-card .qg-fb-handle.number {
+  background: #38bdf8;
+}
+.qg-flow-card .qg-fb-handle.boolean {
+  background: #fbbf24;
+}
+.qg-flow-card .qg-fb-handle.string {
+  background: #34d399;
+}
+.qg-flow-card .qg-fb-handle.json {
+  background: #c084fc;
+}
+.qg-fb-editor {
+  padding: 12px 0;
+  margin: 12px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.qg-fb-editor > .qg-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 4px 0;
+}
+.qg-fb-port-editor {
+  margin: 10px 0;
+  padding: 10px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.qg-fb-port-editor legend {
+  color: var(--muted);
+  font-size: 10px;
+}
+.qg-fb-default-toggle {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 10px;
+  margin: 10px 0;
+}
+.qg-fb-default-toggle input {
+  width: auto;
+}
 .qg-flow-card.running {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, #a3e635) 32%, transparent);
   border-color: var(--accent, #a3e635);

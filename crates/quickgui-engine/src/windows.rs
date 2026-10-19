@@ -1,4 +1,4 @@
-use crate::{Project, RuntimeWindowState, WindowConfig};
+use crate::{Flow, Project, RuntimeWindowState, WindowConfig};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -39,7 +39,7 @@ fn blank_name(name: &str) -> bool {
 
 struct References<'a> {
     variables: BTreeSet<&'a str>,
-    flows: BTreeSet<&'a str>,
+    flows: BTreeMap<&'a str, &'a Flow>,
     modules: BTreeMap<&'a str, &'a Value>,
 }
 
@@ -82,10 +82,53 @@ fn validate_widgets<'a>(
             let events = events
                 .as_object()
                 .ok_or_else(|| format!("Invalid widget events: {id}"))?;
-            for flow in events.values() {
-                let flow = flow.as_str().unwrap_or("");
-                if !references.flows.contains(flow) {
-                    return Err(format!("Missing flow for widget {id}: {flow}"));
+            for binding in events.values() {
+                let (flow_id, entry) = if let Some(flow) = binding.as_str() {
+                    (flow, None)
+                } else {
+                    let object = binding.as_object().ok_or("Invalid flow binding")?;
+                    if object.len() != 2
+                        || object
+                            .keys()
+                            .any(|key| !["flowId", "entryNodeId"].contains(&key.as_str()))
+                    {
+                        return Err("Invalid flow binding fields".into());
+                    }
+                    (
+                        object
+                            .get("flowId")
+                            .and_then(Value::as_str)
+                            .ok_or("Missing flow binding ID")?,
+                        Some(
+                            object
+                                .get("entryNodeId")
+                                .and_then(Value::as_str)
+                                .filter(|id| !id.is_empty())
+                                .ok_or("Missing event entry ID")?,
+                        ),
+                    )
+                };
+                let flow = references
+                    .flows
+                    .get(flow_id)
+                    .ok_or_else(|| format!("Missing flow for widget {id}: {flow_id}"))?;
+                let entries: Vec<_> = flow
+                    .nodes
+                    .iter()
+                    .filter(|node| {
+                        node.kind == "event"
+                            && node
+                                .config
+                                .get("trigger")
+                                .and_then(Value::as_str)
+                                .unwrap_or("manual")
+                                == "manual"
+                    })
+                    .collect();
+                if entry.map_or(entries.len() > 1, |entry| {
+                    !entries.iter().any(|node| node.id == entry)
+                }) {
+                    return Err(format!("Missing or ambiguous manual event entry: {id}"));
                 }
             }
         }
@@ -142,7 +185,11 @@ fn validate_content(project: &Project) -> Result<(), String> {
             .iter()
             .flat_map(|variable| [variable.id.as_str(), variable.name.as_str()])
             .collect(),
-        flows: project.flows.iter().map(|flow| flow.id.as_str()).collect(),
+        flows: project
+            .flows
+            .iter()
+            .map(|flow| (flow.id.as_str(), flow))
+            .collect(),
         modules,
     };
     let assets: BTreeSet<_> = project
@@ -253,7 +300,7 @@ fn validate_content(project: &Project) -> Result<(), String> {
 }
 
 pub(crate) fn validate(project: &Project) -> Result<(), String> {
-    if !matches!(project.schema_version, 1 | 2 | 3 | 4) {
+    if !matches!(project.schema_version, 1 | 2 | 3 | 4 | 5) {
         return Err(format!(
             "Unsupported project schema {}",
             project.schema_version
@@ -385,7 +432,7 @@ mod tests {
         local["bindings"] = json!({"text":{"variable":"speed","mode":"oneWay"}});
         local["events"] = json!({"click":"flow"});
         serde_json::from_value(json!({
-            "schemaVersion":2,"id":"windows-test","name":"Windows","revision":1,"locale":"en","theme":{},"publish":{},
+            "schemaVersion":5,"id":"windows-test","name":"Windows","revision":1,"locale":"en","theme":{},"publish":{},
             "window":config,"widgets":[widget("main-root","panel")],
             "windows":[{"id":"details","name":"Details","config":child_config,"widgets":[widget("details-root","panel"),instance],"openOnStart":false}],
             "variables":[{"id":"speed-id","name":"speed","type":"number","initial":0}],
@@ -393,6 +440,31 @@ mod tests {
             "modules":[{"id":"card","name":"Card","version":"1.0.0","width":200,"height":100,"widgets":[local],"exposedProps":{"text":{"widgetId":"main-root","property":"text","default":""}}}],
             "assets":[{"id":"icon","name":"Icon","mime":"image/png","data":"data:image/png;base64,AA=="}]
         })).unwrap()
+    }
+
+    #[test]
+    fn widget_events_require_exact_manual_entries_when_flows_are_combined() {
+        let mut project = fixture();
+        let mut other = project.flows[0].nodes[0].clone();
+        other.id = "other".into();
+        project.flows[0].nodes.push(other);
+        assert!(validate(&project).unwrap_err().contains("event entry"));
+        project.modules[0]["widgets"][0]["events"]["click"] =
+            json!({"flowId":"flow","entryNodeId":"event"});
+        validate(&project).unwrap();
+        for binding in [
+            json!({"flowId":"flow","entryNodeId":"missing"}),
+            json!({"flowId":"flow","entryNodeId":"event","extra":true}),
+        ] {
+            project.modules[0]["widgets"][0]["events"]["click"] = binding;
+            assert!(validate(&project).is_err());
+        }
+        project.modules[0]["widgets"][0]["events"]["click"] =
+            json!({"flowId":"flow","entryNodeId":"event"});
+        project.flows[0].nodes[0]
+            .config
+            .insert("trigger".into(), json!("startup"));
+        assert!(validate(&project).unwrap_err().contains("event entry"));
     }
 
     #[test]

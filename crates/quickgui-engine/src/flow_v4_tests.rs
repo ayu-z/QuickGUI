@@ -17,6 +17,26 @@ fn project(mut nodes: Value, edges: Value) -> Project {
 fn node(id: &str, kind: &str, config: Value) -> Value {
     json!({"id":id,"kind":kind,"label":id,"config":config})
 }
+#[test]
+fn manual_commands_choose_one_entry_and_reject_ambiguous_or_automatic_entries() {
+    let mut p = project(
+        json!([
+            node("a", "event", json!({"trigger":"manual"})),
+            node("b", "event", json!({"trigger":"manual"})),
+            node("startup", "event", json!({"trigger":"startup"}))
+        ]),
+        json!([]),
+    );
+    assert!(manual_entry_id(&p.flows[0], None)
+        .unwrap_err()
+        .contains("Choose"));
+    assert_eq!(manual_entry_id(&p.flows[0], Some("b")).unwrap(), "b");
+    for id in ["missing", "startup"] {
+        assert!(manual_entry_id(&p.flows[0], Some(id)).is_err());
+    }
+    p.flows[0].nodes.remove(1);
+    assert_eq!(manual_entry_id(&p.flows[0], None).unwrap(), "a");
+}
 fn edge(source: &str, target: &str, port: Option<&str>) -> Value {
     let mut edge = json!({"id":format!("{source}-{target}"),"source":source,"target":target});
     if let Some(port) = port {
@@ -24,6 +44,182 @@ fn edge(source: &str, target: &str, port: Option<&str>) -> Value {
     }
     edge
 }
+
+#[tokio::test]
+async fn repeated_events_reuse_validated_plans_and_invalid_edits_preserve_them() {
+    let mut p = project(
+        json!([
+            node("start", "event", json!({})),
+            node("add", "math", json!({"operation":"add","operand":1})),
+            node("write", "write", json!({"variable":"v"}))
+        ]),
+        json!([edge("start", "add", None), edge("add", "write", None)]),
+    );
+    let engine = Arc::new(Mutex::new(Engine::new(p.clone()).unwrap()));
+    let plan = engine.lock().await.flow_plans["f"].clone();
+    for input in 0..8 {
+        let result = run_shared(
+            engine.clone(),
+            None,
+            "f",
+            None,
+            json!(input),
+            CancellationToken::new(),
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.values["v"].value, json!((input + 1) as f64));
+        let e = engine.lock().await;
+        assert!(Arc::ptr_eq(&plan.0, &e.flow_plans["f"].0));
+        assert!(Arc::ptr_eq(&plan.1, &e.flow_plans["f"].1));
+    }
+    let mut invalid = p.clone();
+    invalid.flows[0].edges[0].target = "missing".into();
+    {
+        let mut e = engine.lock().await;
+        assert!(e.apply_project(invalid).is_err());
+        assert!(Arc::ptr_eq(&plan.0, &e.flow_plans["f"].0));
+        assert_eq!(e.snapshot().values["v"].value, json!(8.));
+        p.flows[0].nodes[1]
+            .config
+            .insert("operand".into(), json!(100));
+        e.apply_project(p).unwrap();
+        assert!(!Arc::ptr_eq(&plan.0, &e.flow_plans["f"].0));
+    }
+    let result = run_shared(
+        engine,
+        None,
+        "f",
+        None,
+        json!(7),
+        CancellationToken::new(),
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.values["v"].value, json!(107.));
+}
+
+#[tokio::test]
+async fn activity_sampling_keeps_value_writes_events_errors_and_final_cleanup_immediate() {
+    let mut nodes = vec![node("start", "event", json!({}))];
+    for i in 0..80 {
+        nodes.push(node(
+            &format!("add-{i}"),
+            "math",
+            json!({"operation":"add","operand":1}),
+        ));
+        if i == 39 {
+            nodes.push(node("middle", "write", json!({"variable":"v"})));
+        }
+    }
+    nodes.extend([
+        node("write", "write", json!({"variable":"v"})),
+        node("emit", "emit", json!({"event":"received"})),
+        node("log", "log", json!({"message":"packet processed"})),
+        node(
+            "fail",
+            "map",
+            json!({"operation":"value","value":{"source":"input","path":["missing"]}}),
+        ),
+    ]);
+    let edges: Vec<_> = nodes
+        .windows(2)
+        .map(|pair| {
+            edge(
+                pair[0]["id"].as_str().unwrap(),
+                pair[1]["id"].as_str().unwrap(),
+                None,
+            )
+        })
+        .collect();
+    let engine = Arc::new(Mutex::new(
+        Engine::new(project(json!(nodes), json!(edges))).unwrap(),
+    ));
+    let snapshots = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+    {
+        let mut e = engine.lock().await;
+        let collected = snapshots.clone();
+        e.set_observer(Arc::new(move |snapshot| {
+            // Model an expensive synchronous WebView/history subscriber. Its
+            // own time must not defeat activity sampling on the next node.
+            if !snapshot.active_nodes.is_empty() && snapshot.values["v"].value == json!(0) {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            collected.lock().unwrap().push(snapshot)
+        }));
+        let collected = events.clone();
+        e.set_event_observer(Arc::new(move |event| collected.lock().unwrap().push(event)));
+    }
+    assert!(run_shared(
+        engine.clone(),
+        None,
+        "f",
+        None,
+        json!(0),
+        CancellationToken::new(),
+        None,
+    )
+    .await
+    .is_err());
+    let collected = snapshots.lock().unwrap();
+    assert!(
+        collected.len() < 40,
+        "highlights must not broadcast a full snapshot per node: {}",
+        collected.len()
+    );
+    let mut values: Vec<_> = collected
+        .iter()
+        .map(|s| s.values["v"].value.as_f64().unwrap())
+        .collect();
+    values.dedup();
+    assert_eq!(
+        values,
+        [0., 40., 80.],
+        "each write is observable even within one visual sample"
+    );
+    let last = collected.last().unwrap();
+    assert!(last.active_nodes.is_empty());
+    assert!(last.logs.iter().any(|l| l.message == "packet processed"));
+    assert_eq!(last.logs.last().unwrap().level, "error");
+    assert_eq!(events.lock().unwrap().len(), 1);
+    assert_eq!(events.lock().unwrap()[0].payload, json!(80.));
+}
+
+#[tokio::test]
+async fn a_waiting_node_remains_observable_when_earlier_node_highlights_were_sampled() {
+    let engine = Arc::new(Mutex::new(Engine::new(delay_project()).unwrap()));
+    let snapshots = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let collected = snapshots.clone();
+    engine.lock().await.set_observer(Arc::new(move |snapshot| {
+        collected.lock().unwrap().push(snapshot);
+    }));
+    let cancel = CancellationToken::new();
+    let active = engine.clone();
+    let stop = cancel.clone();
+    let task =
+        tokio::spawn(
+            async move { run_shared(active, None, "f", None, Value::Null, stop, None).await },
+        );
+    wait_active(&engine, "wait").await;
+    assert!(snapshots
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|s| s.active_nodes == ["wait"]));
+    cancel.cancel();
+    assert!(task.await.unwrap().is_err());
+    assert!(snapshots
+        .lock()
+        .unwrap()
+        .last()
+        .unwrap()
+        .active_nodes
+        .is_empty());
+}
+
 fn delay_project() -> Project {
     project(
         json!([
@@ -65,10 +261,14 @@ fn schema_config_and_reference_validation_are_strict() {
         json!([]),
     );
     assert!(Engine::new(p.clone()).is_ok());
-    for version in [1, 2, 3, 5] {
+    for version in [1, 2, 3, 6] {
         let mut legacy = p.clone();
         legacy.schema_version = version;
-        assert!(Engine::new(legacy).is_err());
+        if version == 6 {
+            assert!(Engine::new(legacy).is_err());
+        } else {
+            assert_eq!(Engine::new(legacy).unwrap().project().schema_version, 5);
+        }
     }
     let mut invalid = p.clone();
     invalid.flows[0].nodes[0]

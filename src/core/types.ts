@@ -44,6 +44,7 @@ export interface Binding {
   mode: 'oneWay' | 'twoWay' | 'once';
   path?: JsonPath;
 }
+export type FlowBinding = string | { flowId: string; entryNodeId: string };
 export interface Widget {
   id: string;
   type: WidgetType;
@@ -55,7 +56,7 @@ export interface Widget {
   style: WidgetStyle;
   states: Record<string, WidgetStyle>;
   bindings: Record<string, Binding>;
-  events: Record<string, string>;
+  events: Record<string, FlowBinding>;
   definitionVersion?: 1 | 2;
   editor?: { locked?: boolean; hidden?: boolean };
   resourceScopeId?: string;
@@ -124,13 +125,34 @@ export type NodeKind =
   | 'window'
   | 'map'
   | 'append'
-  | 'serial';
+  | 'serial'
+  | 'usb';
 export interface FlowNode {
   id: string;
   kind: NodeKind;
   label: string;
   position: { x: number; y: number };
   config: Record<string, Json>;
+  block?: FunctionBlockInterface;
+}
+export interface BlockInput {
+  id: string;
+  name: string;
+  type: VariableType;
+  binding: 'input' | 'config' | 'field';
+  key?: string;
+  defaultValue?: Json;
+}
+export interface BlockOutput {
+  id: string;
+  name: string;
+  type: VariableType;
+  path: JsonPath;
+}
+export interface FunctionBlockInterface {
+  version: 1;
+  inputs: BlockInput[];
+  outputs: BlockOutput[];
 }
 export interface FlowEdge {
   id: string;
@@ -138,6 +160,7 @@ export interface FlowEdge {
   target: string;
   sourceHandle?: string;
   targetHandle?: string;
+  kind?: 'data';
 }
 export interface Flow {
   id: string;
@@ -184,8 +207,10 @@ export interface Connection {
   protocol: 'http' | 'websocket' | 'mqtt' | 'serial' | 'tcp';
   config: Record<string, Json>;
 }
+export const LATEST_PROJECT_VERSION = 5;
+
 export interface Project {
-  schemaVersion: 1 | 2 | 3 | 4;
+  schemaVersion: 1 | 2 | 3 | 4 | 5;
   id: string;
   name: string;
   revision: number;

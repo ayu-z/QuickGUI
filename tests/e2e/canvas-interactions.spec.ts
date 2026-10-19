@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { createProject, createWidget } from '../../src/core/project';
 import { upgradeProject } from '../../src/core/migration';
+import { createSerialAssistantProject } from '../../src/examples/serialAssistant';
 
 async function openFixture(page: Page) {
   const project = upgradeProject(createProject());
@@ -25,6 +26,213 @@ async function openFixture(page: Page) {
   return project;
 }
 const widget = (page: Page, id: string) => page.locator(`[data-design-widget="${id}"]`);
+const revision = async (page: Page) =>
+  Number((await page.locator('.statusbar').textContent())!.match(/rev (\d+)/)![1]);
+
+test('dragging the 64-widget demo keeps model work out of pointer moves and saves one final edit', async ({
+  page,
+}) => {
+  const project = createSerialAssistantProject();
+  await page.addInitScript(
+    (recovery) => {
+      localStorage.setItem('quickgui.project.v1', recovery);
+    },
+    JSON.stringify({ project, drafts: {} }),
+  );
+  await page.goto('/');
+  await expect(page.locator('[data-design-widget]')).toHaveCount(64);
+  const target = widget(page, 'scan_ports');
+  await target.click();
+  const before = (await target.boundingBox())!,
+    initialRevision = await revision(page),
+    start = { x: before.x + before.width / 2, y: before.y + before.height / 2 };
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(start.x + 100, start.y + 50, { steps: 35 });
+  await expect.poll(async () => (await target.boundingBox())!.x).toBeGreaterThan(before.x + 80);
+  expect(await revision(page)).toBe(initialRevision);
+  const savedDuringDrag = await page.evaluate(
+    () => JSON.parse(localStorage.getItem('quickgui.project.v1')!).project,
+  );
+  expect(
+    savedDuringDrag.widgets.find((widget: { id: string }) => widget.id === 'scan_ports').layout,
+  ).toEqual(project.widgets.find((widget) => widget.id === 'scan_ports')!.layout);
+  await page.mouse.up();
+  await expect.poll(() => revision(page)).toBe(initialRevision + 1);
+  const finalLayout = await target.evaluate((element) => ({
+    x: parseFloat((element as HTMLElement).style.left),
+    y: parseFloat((element as HTMLElement).style.top),
+  }));
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          JSON.parse(localStorage.getItem('quickgui.project.v1')!).project.widgets.find(
+            (widget: { id: string }) => widget.id === 'scan_ports',
+          ).layout.x,
+      ),
+    )
+    .toBe(finalLayout.x);
+  await page.keyboard.press('ControlOrMeta+z');
+  expect((await target.boundingBox())!.x).toBeCloseTo(before.x, 0);
+  await expect(
+    page.locator('.workspace-tools').getByRole('button', { name: '撤销', exact: true }),
+  ).toBeDisabled();
+  await page.keyboard.press('ControlOrMeta+Shift+z');
+  expect(await target.evaluate((element) => parseFloat((element as HTMLElement).style.left))).toBe(
+    finalLayout.x,
+  );
+});
+
+test('release commits the latest pointer coordinate and cancellation discards queued move and resize frames', async ({
+  page,
+}) => {
+  await openFixture(page);
+  const alpha = widget(page, 'alpha'),
+    initialRevision = await revision(page),
+    zoom = await page
+      .getByTestId('design-canvas')
+      .evaluate((element) => new DOMMatrixReadOnly(getComputedStyle(element).transform).a);
+  const startPointer = async (target = alpha) => {
+    await target.evaluate((element) =>
+      element.addEventListener(
+        'pointerdown',
+        (event) => {
+          (element as HTMLElement).dataset.testPointer = String((event as PointerEvent).pointerId);
+        },
+        { once: true, capture: true },
+      ),
+    );
+    const box = (await target.boundingBox())!;
+    const start = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    return start;
+  };
+  let start = await startPointer();
+  await alpha.evaluate(
+    (element, point) => {
+      element.dispatchEvent(
+        new PointerEvent('pointerup', {
+          bubbles: true,
+          pointerId: Number((element as HTMLElement).dataset.testPointer),
+          clientX: point.x,
+          clientY: point.y,
+        }),
+      );
+    },
+    { x: start.x + 56 * zoom, y: start.y + 24 * zoom },
+  );
+  await page.mouse.up();
+  expect(
+    await alpha.evaluate((element) => [
+      (element as HTMLElement).style.left,
+      (element as HTMLElement).style.top,
+    ]),
+  ).toEqual(['96px', '104px']);
+  expect(await revision(page)).toBe(initialRevision + 1);
+  const committed = await alpha.getAttribute('style');
+  for (const kind of ['move', 'resize'] as const) {
+    const target = kind === 'move' ? alpha : alpha.locator('.qg-resize-nw');
+    start = await startPointer(target);
+    await target.evaluate(
+      (element, point) => {
+        const pointerId = Number((element as HTMLElement).dataset.testPointer);
+        element.dispatchEvent(
+          new PointerEvent('pointermove', {
+            bubbles: true,
+            pointerId,
+            clientX: point.x,
+            clientY: point.y,
+          }),
+        );
+        element.dispatchEvent(new PointerEvent('pointercancel', { bubbles: true, pointerId }));
+      },
+      { x: start.x + 30 * zoom, y: start.y + 16 * zoom },
+    );
+    await page.mouse.up();
+    await page.evaluate(() => new Promise(requestAnimationFrame));
+    expect(await alpha.getAttribute('style')).toBe(committed);
+    expect(await revision(page)).toBe(initialRevision + 1);
+  }
+  for (const kind of ['move', 'resize'] as const) {
+    const target = kind === 'move' ? alpha : alpha.locator('.qg-resize-nw');
+    start = await startPointer(target);
+    // Another touch must neither replace nor cancel the active mouse gesture.
+    await target.evaluate((element) => {
+      element.dispatchEvent(
+        new PointerEvent('pointerdown', {
+          bubbles: true,
+          pointerId: 73,
+          pointerType: 'touch',
+          button: 0,
+        }),
+      );
+      element.dispatchEvent(new PointerEvent('pointercancel', { bubbles: true, pointerId: 73 }));
+    });
+    await page.mouse.move(start.x + 30, start.y + 15, { steps: 4 });
+    await expect(alpha).not.toHaveAttribute('style', committed!);
+    expect(await revision(page)).toBe(initialRevision + 1);
+    await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+    await page.mouse.up();
+    expect(await alpha.getAttribute('style')).toBe(committed);
+    expect(await revision(page)).toBe(initialRevision + 1);
+  }
+  start = await startPointer();
+  await page.mouse.move(start.x + 40, start.y + 20, { steps: 4 });
+  await page.keyboard.press('ControlOrMeta+z');
+  await page.mouse.up();
+  expect(await alpha.getAttribute('style')).toBe(committed);
+  expect(await revision(page)).toBe(initialRevision + 1);
+});
+
+test('flow block positions stay local during dragging and commit as one undoable edit', async ({
+  page,
+}) => {
+  const project = createSerialAssistantProject();
+  await page.addInitScript(
+    (recovery) => {
+      localStorage.setItem('quickgui.project.v1', recovery);
+    },
+    JSON.stringify({ project, drafts: {} }),
+  );
+  await page.goto('/');
+  await page
+    .locator('.workspace-tabs nav')
+    .getByRole('button', { name: '流程', exact: true })
+    .click();
+  const target = page.locator('.react-flow__node[data-id="serial_scan_0"]'),
+    header = target.locator('.qg-flow-card-header');
+  await header.click();
+  const before = await target.getAttribute('style'),
+    box = (await header.boundingBox())!,
+    initialRevision = await revision(page),
+    start = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(start.x + 80, start.y + 40, { steps: 30 });
+  await expect(target).not.toHaveAttribute('style', before!);
+  expect(await revision(page)).toBe(initialRevision);
+  await page.mouse.up();
+  await expect.poll(() => revision(page)).toBe(initialRevision + 1);
+  const after = await target.getAttribute('style');
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect(target).toHaveAttribute('style', before!);
+  await expect(
+    page.locator('.workspace-tools').getByRole('button', { name: '撤销', exact: true }),
+  ).toBeDisabled();
+  await page.keyboard.press('ControlOrMeta+Shift+z');
+  await expect(target).toHaveAttribute('style', after!);
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const project = JSON.parse(localStorage.getItem('quickgui.project.v1')!).project;
+        return project.flows[0].nodes.find((node: { id: string }) => node.id === 'serial_scan_0')
+          .position;
+      }),
+    )
+    .not.toEqual(project.flows[0].nodes.find((node) => node.id === 'serial_scan_0')!.position);
+});
 
 test('wheel keeps the pointer anchor, pan is local and viewport survives reload', async ({
   page,

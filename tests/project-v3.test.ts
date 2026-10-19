@@ -6,15 +6,18 @@ import { exportProject, importProject } from '../src/core/archive';
 import { variableReferences } from '../src/core/references';
 
 describe('v3 project persistence and references', () => {
-  it('creates v3 documents and preserves legacy behavior through explicit copy migration', () => {
-    expect(validateProject(createEmptyProject()).schemaVersion).toBe(3);
-    const old = createProject(),
-      original = structuredClone(old);
+  it('creates current documents and normalizes copies without mutating the source', () => {
+    expect(validateProject(createEmptyProject()).schemaVersion).toBe(5);
+    const old = createProject();
+    old.schemaVersion = 1;
+    delete old.windows;
+    old.widgets = [createWidget('input', 0, 0, 1)];
+    const original = structuredClone(old);
     const next = upgradeProject(old);
     expect(old).toEqual(original);
-    expect(next.widgets.every((widget) => widget.definitionVersion === 1)).toBe(true);
+    expect(next.widgets.every((widget) => widget.definitionVersion === 2)).toBe(true);
     expect(importProject(exportProject(next))).toEqual(next);
-    expect(validateProject(old)).toEqual(original);
+    expect(validateProject(old)).toEqual(next);
   });
   it('round-trips typed paths, editor flags and JSON data without dropping extensions', () => {
     const p = createEmptyProject(),
@@ -36,12 +39,12 @@ describe('v3 project persistence and references', () => {
     widget.bindings.value = { variable: 'Number', mode: 'twoWay', path: [] };
     expect(validateProject(p)).toEqual(p);
     widget.bindings.value.path = ['nested'];
-    expect(() => validateProject(p)).toThrow(/json variable/);
+    expect(() => validateProject(p)).toThrow(/json variable|JSON variable/);
   });
   it('checks saved flow paths before handing the document to the runtime', () => {
     const p = createProject();
     p.flows[0].nodes.find((node) => node.kind === 'read')!.config.path = [];
-    expect(() => validateProject(p)).toThrow(/schemaVersion 3/);
+    expect(validateProject(p).schemaVersion).toBe(5);
     const next = upgradeProject(p),
       node = next.flows[0].nodes.find((entry) => entry.kind === 'read')!;
     expect(validateProject(next)).toEqual(next);

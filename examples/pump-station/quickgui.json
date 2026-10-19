@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 5,
   "id": "quickgui.pump-station.example",
   "name": "泵站控制面板",
   "revision": 0,
@@ -21,7 +21,7 @@
   "window": {
     "title": "泵站控制面板",
     "width": 960,
-    "height": 640,
+    "height": 780,
     "minWidth": 640,
     "minHeight": 420,
     "resizable": true,
@@ -41,6 +41,7 @@
     "publisher": "",
     "desktopShortcut": true
   },
+  "windows": [],
   "widgets": [
     {
       "id": "heading",
@@ -53,9 +54,15 @@
         "height": 32
       },
       "props": {
-        "text": "泵站控制面板",
         "enabled": true,
-        "visible": true
+        "visible": true,
+        "title": "",
+        "text": "泵站控制面板",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
       },
       "style": {
         "color": "$color.text",
@@ -65,7 +72,8 @@
       },
       "states": {},
       "bindings": {},
-      "events": {}
+      "events": {},
+      "definitionVersion": 2
     },
     {
       "id": "subtitle",
@@ -78,9 +86,15 @@
         "height": 24
       },
       "props": {
-        "text": "PRODUCTION LINE A  /  设备运行概览",
         "enabled": true,
-        "visible": true
+        "visible": true,
+        "title": "",
+        "text": "PRODUCTION LINE A  /  设备运行概览",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
       },
       "style": {
         "color": "$color.muted",
@@ -90,7 +104,8 @@
       },
       "states": {},
       "bindings": {},
-      "events": {}
+      "events": {},
+      "definitionVersion": 2
     },
     {
       "id": "metric_panel",
@@ -103,9 +118,10 @@
         "height": 180
       },
       "props": {
-        "text": "容器",
         "enabled": true,
-        "visible": true
+        "visible": true,
+        "title": "",
+        "overflow": "hidden"
       },
       "style": {
         "color": "$color.text",
@@ -118,7 +134,8 @@
       },
       "states": {},
       "bindings": {},
-      "events": {}
+      "events": {},
+      "definitionVersion": 2
     },
     {
       "id": "temperature_label",
@@ -131,9 +148,15 @@
         "height": 24
       },
       "props": {
-        "text": "进水温度",
         "enabled": true,
-        "visible": true
+        "visible": true,
+        "title": "",
+        "text": "进水温度",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
       },
       "style": {
         "color": "$color.muted",
@@ -142,7 +165,8 @@
       },
       "states": {},
       "bindings": {},
-      "events": {}
+      "events": {},
+      "definitionVersion": 2
     },
     {
       "id": "temperature",
@@ -155,17 +179,24 @@
         "height": 116
       },
       "props": {
-        "text": "仪表",
         "enabled": true,
         "visible": true,
+        "title": "",
         "value": 42.6,
         "min": 0,
         "max": 100,
-        "unit": "°C"
+        "unit": "°C",
+        "precision": 2,
+        "showValue": true,
+        "startAngle": 180,
+        "sweepAngle": 180,
+        "strokeWidth": 8,
+        "fillColor": "$color.primary",
+        "trackColor": "$color.border"
       },
       "style": {
         "color": "$color.text",
-        "fontSize": 14,
+        "fontSize": 29,
         "borderRadius": 8
       },
       "states": {},
@@ -175,7 +206,8 @@
           "mode": "oneWay"
         }
       },
-      "events": {}
+      "events": {},
+      "definitionVersion": 2
     },
     {
       "id": "pressure_panel",
@@ -188,9 +220,10 @@
         "height": 180
       },
       "props": {
-        "text": "容器",
         "enabled": true,
-        "visible": true
+        "visible": true,
+        "title": "",
+        "overflow": "hidden"
       },
       "style": {
         "color": "$color.text",
@@ -203,7 +236,8 @@
       },
       "states": {},
       "bindings": {},
-      "events": {}
+      "events": {},
+      "definitionVersion": 2
     },
     {
       "id": "pressure_label",
@@ -216,9 +250,15 @@
         "height": 24
       },
       "props": {
-        "text": "管道压力",
         "enabled": true,
-        "visible": true
+        "visible": true,
+        "title": "",
+        "text": "管道压力",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
       },
       "style": {
         "color": "$color.muted",
@@ -227,7 +267,8 @@
       },
       "states": {},
       "bindings": {},
-      "events": {}
+      "events": {},
+      "definitionVersion": 2
     },
     {
       "id": "pressure",
@@ -240,10 +281,15 @@
         "height": 52
       },
       "props": {
-        "text": "0.36 MPa",
         "enabled": true,
         "visible": true,
-        "unit": "MPa"
+        "title": "",
+        "text": "0.36 MPa",
+        "unit": "MPa",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
       },
       "style": {
         "color": "$color.text",
@@ -258,7 +304,8 @@
           "mode": "oneWay"
         }
       },
-      "events": {}
+      "events": {},
+      "definitionVersion": 2
     },
     {
       "id": "pressure_note",
@@ -271,9 +318,15 @@
         "height": 22
       },
       "props": {
-        "text": "● 正常范围  0.20–0.60 MPa",
         "enabled": true,
-        "visible": true
+        "visible": true,
+        "title": "",
+        "text": "● 正常范围  0.20–0.60 MPa",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
       },
       "style": {
         "color": "$color.success",
@@ -282,7 +335,8 @@
       },
       "states": {},
       "bindings": {},
-      "events": {}
+      "events": {},
+      "definitionVersion": 2
     },
     {
       "id": "control_panel",
@@ -295,9 +349,10 @@
         "height": 180
       },
       "props": {
-        "text": "容器",
         "enabled": true,
-        "visible": true
+        "visible": true,
+        "title": "",
+        "overflow": "hidden"
       },
       "style": {
         "color": "$color.text",
@@ -310,7 +365,8 @@
       },
       "states": {},
       "bindings": {},
-      "events": {}
+      "events": {},
+      "definitionVersion": 2
     },
     {
       "id": "control_label",
@@ -323,9 +379,15 @@
         "height": 24
       },
       "props": {
-        "text": "运行控制",
         "enabled": true,
-        "visible": true
+        "visible": true,
+        "title": "",
+        "text": "运行控制",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
       },
       "style": {
         "color": "$color.muted",
@@ -334,7 +396,8 @@
       },
       "states": {},
       "bindings": {},
-      "events": {}
+      "events": {},
+      "definitionVersion": 2
     },
     {
       "id": "power",
@@ -347,10 +410,15 @@
         "height": 36
       },
       "props": {
-        "text": "自动运行",
         "enabled": true,
         "visible": true,
-        "value": false
+        "title": "",
+        "text": "自动运行",
+        "value": false,
+        "onText": "",
+        "offText": "",
+        "onColor": "$color.primary",
+        "offColor": "$color.border"
       },
       "style": {
         "color": "$color.text",
@@ -364,7 +432,8 @@
           "mode": "twoWay"
         }
       },
-      "events": {}
+      "events": {},
+      "definitionVersion": 2
     },
     {
       "id": "start_button",
@@ -377,9 +446,13 @@
         "height": 42
       },
       "props": {
-        "text": "启动循环",
         "enabled": true,
-        "visible": true
+        "visible": true,
+        "title": "",
+        "text": "启动循环",
+        "iconAssetId": "",
+        "iconPosition": "left",
+        "iconSize": 16
       },
       "style": {
         "color": "#ffffff",
@@ -396,7 +469,8 @@
       "bindings": {},
       "events": {
         "click": "start-cycle"
-      }
+      },
+      "definitionVersion": 2
     },
     {
       "id": "chart_panel",
@@ -409,9 +483,10 @@
         "height": 276
       },
       "props": {
-        "text": "容器",
         "enabled": true,
-        "visible": true
+        "visible": true,
+        "title": "",
+        "overflow": "hidden"
       },
       "style": {
         "color": "$color.text",
@@ -424,7 +499,8 @@
       },
       "states": {},
       "bindings": {},
-      "events": {}
+      "events": {},
+      "definitionVersion": 2
     },
     {
       "id": "chart_label",
@@ -437,9 +513,15 @@
         "height": 24
       },
       "props": {
-        "text": "温度趋势",
         "enabled": true,
-        "visible": true
+        "visible": true,
+        "title": "",
+        "text": "温度趋势",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
       },
       "style": {
         "color": "$color.text",
@@ -449,7 +531,8 @@
       },
       "states": {},
       "bindings": {},
-      "events": {}
+      "events": {},
+      "definitionVersion": 2
     },
     {
       "id": "chart",
@@ -462,12 +545,30 @@
         "height": 190
       },
       "props": {
-        "text": "趋势图",
         "enabled": true,
         "visible": true,
-        "value": 42.6,
+        "title": "",
+        "mode": "realtime",
+        "series": [
+          {
+            "id": "temperature",
+            "name": "进水温度",
+            "value": 42.6,
+            "color": "$color.primary",
+            "visible": true
+          }
+        ],
         "min": 0,
         "max": 100,
+        "sampleInterval": 250,
+        "maxPoints": 600,
+        "showLegend": true,
+        "showGrid": true,
+        "lineWidth": 2,
+        "historyDuration": 3600,
+        "historyFrom": 0,
+        "historyTo": 0,
+        "historyAggregation": "avg",
         "unit": ""
       },
       "style": {
@@ -477,12 +578,13 @@
       },
       "states": {},
       "bindings": {
-        "value": {
+        "/series/0/value": {
           "variable": "temperature",
           "mode": "oneWay"
         }
       },
-      "events": {}
+      "events": {},
+      "definitionVersion": 2
     },
     {
       "id": "status_panel",
@@ -495,9 +597,10 @@
         "height": 276
       },
       "props": {
-        "text": "容器",
         "enabled": true,
-        "visible": true
+        "visible": true,
+        "title": "",
+        "overflow": "hidden"
       },
       "style": {
         "color": "$color.text",
@@ -510,7 +613,8 @@
       },
       "states": {},
       "bindings": {},
-      "events": {}
+      "events": {},
+      "definitionVersion": 2
     },
     {
       "id": "status_label",
@@ -523,9 +627,15 @@
         "height": 24
       },
       "props": {
-        "text": "参数设置",
         "enabled": true,
-        "visible": true
+        "visible": true,
+        "title": "",
+        "text": "参数设置",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
       },
       "style": {
         "color": "$color.text",
@@ -535,7 +645,8 @@
       },
       "states": {},
       "bindings": {},
-      "events": {}
+      "events": {},
+      "definitionVersion": 2
     },
     {
       "id": "speed_label",
@@ -548,9 +659,15 @@
         "height": 22
       },
       "props": {
-        "text": "目标转速  /  %",
         "enabled": true,
-        "visible": true
+        "visible": true,
+        "title": "",
+        "text": "目标转速  /  %",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
       },
       "style": {
         "color": "$color.muted",
@@ -559,7 +676,8 @@
       },
       "states": {},
       "bindings": {},
-      "events": {}
+      "events": {},
+      "definitionVersion": 2
     },
     {
       "id": "speed",
@@ -572,13 +690,18 @@
         "height": 36
       },
       "props": {
-        "text": "滑块",
         "enabled": true,
         "visible": true,
+        "title": "",
         "value": 65,
         "min": 0,
         "max": 100,
-        "unit": ""
+        "step": 1,
+        "precision": 2,
+        "unit": "",
+        "showValue": true,
+        "orientation": "horizontal",
+        "fillColor": "$color.primary"
       },
       "style": {
         "color": "$color.text",
@@ -592,7 +715,8 @@
           "mode": "twoWay"
         }
       },
-      "events": {}
+      "events": {},
+      "definitionVersion": 2
     },
     {
       "id": "cycle_label",
@@ -605,9 +729,15 @@
         "height": 22
       },
       "props": {
-        "text": "累计循环",
         "enabled": true,
-        "visible": true
+        "visible": true,
+        "title": "",
+        "text": "累计循环",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
       },
       "style": {
         "color": "$color.muted",
@@ -616,7 +746,8 @@
       },
       "states": {},
       "bindings": {},
-      "events": {}
+      "events": {},
+      "definitionVersion": 2
     },
     {
       "id": "cycles",
@@ -629,10 +760,15 @@
         "height": 36
       },
       "props": {
-        "text": "0",
         "enabled": true,
         "visible": true,
-        "unit": "次"
+        "title": "",
+        "text": "0",
+        "unit": "次",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
       },
       "style": {
         "color": "$color.text",
@@ -647,7 +783,347 @@
           "mode": "oneWay"
         }
       },
-      "events": {}
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "speed_demo_panel",
+      "type": "panel",
+      "name": "调速计算卡片",
+      "layout": {
+        "x": 32,
+        "y": 616,
+        "width": 896,
+        "height": 132
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "overflow": "hidden"
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 12,
+        "background": "$color.surface",
+        "borderWidth": 1,
+        "borderColor": "$color.border",
+        "borderStyle": "solid"
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "speed_demo_title",
+      "type": "text",
+      "name": "调速计算标题",
+      "layout": {
+        "x": 52,
+        "y": 630,
+        "width": 180,
+        "height": 24
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "FB 调速计算",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 13,
+        "borderRadius": 8,
+        "fontWeight": 600
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "speed_demo_note",
+      "type": "text",
+      "name": "调速计算说明",
+      "layout": {
+        "x": 232,
+        "y": 630,
+        "width": 660,
+        "height": 24
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "目标转速 = 百分比 × 额定转速；余量 = 100 − 百分比",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "rated_rpm_label",
+      "type": "text",
+      "name": "额定转速标题",
+      "layout": {
+        "x": 52,
+        "y": 660,
+        "width": 160,
+        "height": 20
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "额定转速 / rpm",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "rated_rpm_input",
+      "type": "number",
+      "name": "额定转速",
+      "layout": {
+        "x": 52,
+        "y": 688,
+        "width": 150,
+        "height": 36
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "value": 3000,
+        "min": 0,
+        "max": 60000,
+        "step": 100,
+        "precision": 0,
+        "unit": "",
+        "readOnly": false
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.surface",
+        "borderWidth": 1,
+        "borderStyle": "solid",
+        "borderColor": "$color.border",
+        "padding": 8
+      },
+      "states": {},
+      "bindings": {
+        "value": {
+          "variable": "rated_rpm",
+          "mode": "twoWay"
+        }
+      },
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "calculate_speed_button",
+      "type": "button",
+      "name": "计算转速",
+      "layout": {
+        "x": 222,
+        "y": 688,
+        "width": 138,
+        "height": 36
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "计算转速",
+        "iconAssetId": "",
+        "iconPosition": "left",
+        "iconSize": 16
+      },
+      "style": {
+        "color": "#ffffff",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.primary",
+        "fontWeight": 600
+      },
+      "states": {
+        "hover": {
+          "background": "$color.primaryHover"
+        }
+      },
+      "bindings": {},
+      "events": {
+        "click": "calculate-speed"
+      },
+      "definitionVersion": 2
+    },
+    {
+      "id": "target_rpm_label",
+      "type": "text",
+      "name": "目标转速标题",
+      "layout": {
+        "x": 402,
+        "y": 660,
+        "width": 190,
+        "height": 20
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "目标转速 / rpm",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "target_rpm_value",
+      "type": "text",
+      "name": "目标转速结果",
+      "layout": {
+        "x": 402,
+        "y": 688,
+        "width": 190,
+        "height": 36
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "0",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 27,
+        "borderRadius": 8,
+        "fontWeight": 600
+      },
+      "states": {},
+      "bindings": {
+        "text": {
+          "variable": "target_rpm",
+          "mode": "oneWay"
+        }
+      },
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "speed_margin_label",
+      "type": "text",
+      "name": "调节余量标题",
+      "layout": {
+        "x": 650,
+        "y": 660,
+        "width": 220,
+        "height": 20
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "剩余调节量 / %",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.muted",
+        "fontSize": 12,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "speed_margin_value",
+      "type": "text",
+      "name": "调节余量结果",
+      "layout": {
+        "x": 650,
+        "y": 688,
+        "width": 220,
+        "height": 36
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "0",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 27,
+        "borderRadius": 8,
+        "fontWeight": 600
+      },
+      "states": {},
+      "bindings": {
+        "text": {
+          "variable": "speed_margin",
+          "mode": "oneWay"
+        }
+      },
+      "events": {},
+      "definitionVersion": 2
     }
   ],
   "variables": [
@@ -687,6 +1163,27 @@
       "type": "number",
       "initial": 0,
       "persistent": true
+    },
+    {
+      "id": "rated_rpm",
+      "name": "rated_rpm",
+      "type": "number",
+      "initial": 3000,
+      "unit": "rpm"
+    },
+    {
+      "id": "target_rpm",
+      "name": "target_rpm",
+      "type": "number",
+      "initial": 0,
+      "unit": "rpm"
+    },
+    {
+      "id": "speed_margin",
+      "name": "speed_margin",
+      "type": "number",
+      "initial": 0,
+      "unit": "%"
     }
   ],
   "flows": [
@@ -703,7 +1200,19 @@
             "x": 30,
             "y": 130
           },
-          "config": {}
+          "config": {},
+          "block": {
+            "version": 1,
+            "inputs": [],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "VALUE",
+                "type": "json",
+                "path": []
+              }
+            ]
+          }
         },
         {
           "id": "read-cycles",
@@ -715,6 +1224,18 @@
           },
           "config": {
             "variable": "cycles"
+          },
+          "block": {
+            "version": 1,
+            "inputs": [],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "number",
+                "path": []
+              }
+            ]
           }
         },
         {
@@ -728,6 +1249,32 @@
           "config": {
             "operation": "add",
             "operand": 1
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "a",
+                "name": "A",
+                "type": "number",
+                "binding": "input"
+              },
+              {
+                "id": "b",
+                "name": "B",
+                "type": "number",
+                "binding": "config",
+                "key": "operand"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "number",
+                "path": []
+              }
+            ]
           }
         },
         {
@@ -740,6 +1287,25 @@
           },
           "config": {
             "variable": "cycles"
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "number",
+                "binding": "input"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "number",
+                "path": []
+              }
+            ]
           }
         },
         {
@@ -752,6 +1318,25 @@
           },
           "config": {
             "message": "Cycle completed"
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "json",
+                "binding": "input"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "json",
+                "path": []
+              }
+            ]
           }
         }
       ],
@@ -759,22 +1344,498 @@
         {
           "id": "trigger-read-cycles",
           "source": "trigger",
-          "target": "read-cycles"
+          "target": "read-cycles",
+          "sourceHandle": "output",
+          "targetHandle": "input"
         },
         {
           "id": "read-cycles-increment",
           "source": "read-cycles",
-          "target": "increment"
+          "target": "increment",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        },
+        {
+          "id": "read-cycles-increment-data",
+          "source": "read-cycles",
+          "target": "increment",
+          "kind": "data",
+          "sourceHandle": "data-out:q",
+          "targetHandle": "data-in:a"
         },
         {
           "id": "increment-write-cycles",
           "source": "increment",
-          "target": "write-cycles"
+          "target": "write-cycles",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        },
+        {
+          "id": "increment-write-cycles-data",
+          "source": "increment",
+          "target": "write-cycles",
+          "kind": "data",
+          "sourceHandle": "data-out:q",
+          "targetHandle": "data-in:in"
         },
         {
           "id": "write-cycles-log-cycle",
           "source": "write-cycles",
-          "target": "log-cycle"
+          "target": "log-cycle",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        },
+        {
+          "id": "write-cycles-log-cycle-data",
+          "source": "write-cycles",
+          "target": "log-cycle",
+          "kind": "data",
+          "sourceHandle": "data-out:q",
+          "targetHandle": "data-in:in"
+        }
+      ]
+    },
+    {
+      "id": "calculate-speed",
+      "name": "FB · 调速计算",
+      "enabled": true,
+      "nodes": [
+        {
+          "id": "speed-trigger",
+          "kind": "event",
+          "label": "点击计算转速",
+          "position": {
+            "x": 790,
+            "y": -50
+          },
+          "config": {
+            "trigger": "manual"
+          },
+          "block": {
+            "version": 1,
+            "inputs": [],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "VALUE",
+                "type": "json",
+                "path": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "read-speed",
+          "kind": "read",
+          "label": "目标百分比",
+          "position": {
+            "x": 20,
+            "y": 100
+          },
+          "config": {
+            "variable": "speed"
+          },
+          "block": {
+            "version": 1,
+            "inputs": [],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "number",
+                "path": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "read-rated-rpm",
+          "kind": "read",
+          "label": "额定转速",
+          "position": {
+            "x": 20,
+            "y": 340
+          },
+          "config": {
+            "variable": "rated_rpm"
+          },
+          "block": {
+            "version": 1,
+            "inputs": [],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "number",
+                "path": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "speed-product",
+          "kind": "math",
+          "label": "百分比 × 额定转速",
+          "position": {
+            "x": 280,
+            "y": 100
+          },
+          "config": {
+            "operation": "multiply",
+            "operand": 1
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "a",
+                "name": "A",
+                "type": "number",
+                "binding": "input"
+              },
+              {
+                "id": "b",
+                "name": "B",
+                "type": "number",
+                "binding": "config",
+                "key": "operand"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "number",
+                "path": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "speed-percent",
+          "kind": "math",
+          "label": "换算为 rpm",
+          "position": {
+            "x": 530,
+            "y": 100
+          },
+          "config": {
+            "operation": "divide",
+            "operand": 100
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "a",
+                "name": "A",
+                "type": "number",
+                "binding": "input"
+              },
+              {
+                "id": "b",
+                "name": "B",
+                "type": "number",
+                "binding": "config",
+                "key": "operand"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "number",
+                "path": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "speed-headroom",
+          "kind": "math",
+          "label": "100 − 目标百分比",
+          "position": {
+            "x": 530,
+            "y": 400
+          },
+          "config": {
+            "operation": "subtract",
+            "operand": 0
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "a",
+                "name": "A",
+                "type": "number",
+                "binding": "input",
+                "defaultValue": 100
+              },
+              {
+                "id": "b",
+                "name": "B",
+                "type": "number",
+                "binding": "config",
+                "key": "operand"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "number",
+                "path": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "speed-results",
+          "kind": "map",
+          "label": "调速结果 FB",
+          "position": {
+            "x": 790,
+            "y": 170
+          },
+          "config": {
+            "operation": "object",
+            "fields": {
+              "rpm": {
+                "source": "input",
+                "path": ["rpm"]
+              },
+              "margin": {
+                "source": "input",
+                "path": ["margin"]
+              }
+            }
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "rpm",
+                "name": "RPM",
+                "type": "number",
+                "binding": "field",
+                "key": "rpm"
+              },
+              {
+                "id": "margin",
+                "name": "MARGIN",
+                "type": "number",
+                "binding": "field",
+                "key": "margin"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "rpm",
+                "name": "RPM",
+                "type": "number",
+                "path": ["rpm"]
+              },
+              {
+                "id": "margin",
+                "name": "MARGIN",
+                "type": "number",
+                "path": ["margin"]
+              }
+            ]
+          }
+        },
+        {
+          "id": "save-target-rpm",
+          "kind": "write",
+          "label": "保存目标转速",
+          "position": {
+            "x": 1080,
+            "y": 70
+          },
+          "config": {
+            "variable": "target_rpm"
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "number",
+                "binding": "input"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "number",
+                "path": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "save-speed-margin",
+          "kind": "write",
+          "label": "保存调节余量",
+          "position": {
+            "x": 1080,
+            "y": 290
+          },
+          "config": {
+            "variable": "speed_margin"
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "number",
+                "binding": "input"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "number",
+                "path": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "log-target-rpm",
+          "kind": "log",
+          "label": "记录目标转速",
+          "position": {
+            "x": 1080,
+            "y": 510
+          },
+          "config": {},
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "json",
+                "binding": "input"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "json",
+                "path": []
+              }
+            ]
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "speed-trigger-results",
+          "source": "speed-trigger",
+          "target": "speed-results",
+          "targetHandle": "input"
+        },
+        {
+          "id": "speed-results-save-target-rpm",
+          "source": "speed-results",
+          "sourceHandle": "success",
+          "target": "save-target-rpm",
+          "targetHandle": "input"
+        },
+        {
+          "id": "speed-results-save-speed-margin",
+          "source": "speed-results",
+          "sourceHandle": "success",
+          "target": "save-speed-margin",
+          "targetHandle": "input"
+        },
+        {
+          "id": "speed-results-log-target-rpm",
+          "source": "speed-results",
+          "sourceHandle": "success",
+          "target": "log-target-rpm",
+          "targetHandle": "input"
+        },
+        {
+          "id": "read-speed-q-speed-product-a",
+          "kind": "data",
+          "source": "read-speed",
+          "sourceHandle": "data-out:q",
+          "target": "speed-product",
+          "targetHandle": "data-in:a"
+        },
+        {
+          "id": "read-rated-rpm-q-speed-product-b",
+          "kind": "data",
+          "source": "read-rated-rpm",
+          "sourceHandle": "data-out:q",
+          "target": "speed-product",
+          "targetHandle": "data-in:b"
+        },
+        {
+          "id": "speed-product-q-speed-percent-a",
+          "kind": "data",
+          "source": "speed-product",
+          "sourceHandle": "data-out:q",
+          "target": "speed-percent",
+          "targetHandle": "data-in:a"
+        },
+        {
+          "id": "read-speed-q-speed-headroom-b",
+          "kind": "data",
+          "source": "read-speed",
+          "sourceHandle": "data-out:q",
+          "target": "speed-headroom",
+          "targetHandle": "data-in:b"
+        },
+        {
+          "id": "speed-percent-q-speed-results-rpm",
+          "kind": "data",
+          "source": "speed-percent",
+          "sourceHandle": "data-out:q",
+          "target": "speed-results",
+          "targetHandle": "data-in:rpm"
+        },
+        {
+          "id": "speed-headroom-q-speed-results-margin",
+          "kind": "data",
+          "source": "speed-headroom",
+          "sourceHandle": "data-out:q",
+          "target": "speed-results",
+          "targetHandle": "data-in:margin"
+        },
+        {
+          "id": "speed-results-rpm-save-target-rpm-in",
+          "kind": "data",
+          "source": "speed-results",
+          "sourceHandle": "data-out:rpm",
+          "target": "save-target-rpm",
+          "targetHandle": "data-in:in"
+        },
+        {
+          "id": "speed-results-margin-save-speed-margin-in",
+          "kind": "data",
+          "source": "speed-results",
+          "sourceHandle": "data-out:margin",
+          "target": "save-speed-margin",
+          "targetHandle": "data-in:in"
+        },
+        {
+          "id": "speed-results-rpm-log-target-rpm-in",
+          "kind": "data",
+          "source": "speed-results",
+          "sourceHandle": "data-out:rpm",
+          "target": "log-target-rpm",
+          "targetHandle": "data-in:in"
         }
       ]
     }

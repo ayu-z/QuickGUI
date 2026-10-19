@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 4,
+  "schemaVersion": 5,
   "id": "serial-assistant-example",
   "name": "串口助手",
   "revision": 0,
@@ -41,6 +41,7 @@
     "publisher": "",
     "desktopShortcut": true
   },
+  "windows": [],
   "widgets": [
     {
       "id": "device_panel",
@@ -337,7 +338,10 @@
       "states": {},
       "bindings": {},
       "events": {
-        "click": "serial_scan"
+        "click": {
+          "flowId": "serial_scan",
+          "entryNodeId": "serial_scan_0"
+        }
       },
       "definitionVersion": 2
     },
@@ -449,7 +453,10 @@
         }
       },
       "events": {
-        "change": "serial_filter"
+        "change": {
+          "flowId": "serial_scan",
+          "entryNodeId": "serial_filter_0"
+        }
       },
       "definitionVersion": 2
     },
@@ -499,7 +506,10 @@
         }
       },
       "events": {
-        "change": "serial_filter"
+        "change": {
+          "flowId": "serial_scan",
+          "entryNodeId": "serial_filter_0"
+        }
       },
       "definitionVersion": 2
     },
@@ -1082,7 +1092,10 @@
         }
       },
       "events": {
-        "click": "serial_open"
+        "click": {
+          "flowId": "serial_scan",
+          "entryNodeId": "serial_open_0"
+        }
       },
       "definitionVersion": 2
     },
@@ -1121,7 +1134,10 @@
         }
       },
       "events": {
-        "click": "serial_close"
+        "click": {
+          "flowId": "serial_scan",
+          "entryNodeId": "serial_close_0"
+        }
       },
       "definitionVersion": 2
     },
@@ -1160,7 +1176,10 @@
         }
       },
       "events": {
-        "click": "serial_listen_start"
+        "click": {
+          "flowId": "serial_scan",
+          "entryNodeId": "serial_listen_start_0"
+        }
       },
       "definitionVersion": 2
     },
@@ -1199,7 +1218,10 @@
         }
       },
       "events": {
-        "click": "serial_listen_stop"
+        "click": {
+          "flowId": "serial_scan",
+          "entryNodeId": "serial_listen_stop_0"
+        }
       },
       "definitionVersion": 2
     },
@@ -1238,7 +1260,10 @@
         }
       },
       "events": {
-        "change": "serial_reconnect"
+        "change": {
+          "flowId": "serial_scan",
+          "entryNodeId": "serial_reconnect_0"
+        }
       },
       "definitionVersion": 2
     },
@@ -1500,7 +1525,10 @@
       "states": {},
       "bindings": {},
       "events": {
-        "click": "serial_clear"
+        "click": {
+          "flowId": "serial_scan",
+          "entryNodeId": "serial_clear_0"
+        }
       },
       "definitionVersion": 2
     },
@@ -1539,7 +1567,10 @@
         }
       },
       "events": {
-        "click": "serial_reset_counters"
+        "click": {
+          "flowId": "serial_scan",
+          "entryNodeId": "serial_reset_counters_0"
+        }
       },
       "definitionVersion": 2
     },
@@ -2339,7 +2370,10 @@
         }
       },
       "events": {
-        "click": "serial_send"
+        "click": {
+          "flowId": "serial_scan",
+          "entryNodeId": "serial_send_0"
+        }
       },
       "definitionVersion": 2
     },
@@ -2651,19 +2685,31 @@
   "flows": [
     {
       "id": "serial_scan",
-      "name": "01 · 扫描端口 / Scan ports",
+      "name": "串口助手 · 设备发现与通信",
       "enabled": true,
       "nodes": [
         {
           "id": "serial_scan_0",
           "kind": "event",
-          "label": "UI 事件 / UI event",
+          "label": "扫描端口 / Scan ports",
           "config": {
             "trigger": "manual"
           },
           "position": {
             "x": 40,
             "y": 90
+          },
+          "block": {
+            "version": 1,
+            "inputs": [],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "VALUE",
+                "type": "json",
+                "path": []
+              }
+            ]
           }
         },
         {
@@ -2671,11 +2717,57 @@
           "kind": "serial",
           "label": "扫描串口 / Scan serial ports",
           "config": {
-            "action": "scan"
+            "action": "discover",
+            "ports": {
+              "source": "input",
+              "path": ["ports"]
+            },
+            "vid": {
+              "source": "literal",
+              "value": ""
+            },
+            "pid": {
+              "source": "literal",
+              "value": ""
+            }
           },
           "position": {
-            "x": 285,
+            "x": 380,
             "y": 90
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "p_ports",
+                "name": "ports",
+                "type": "json",
+                "binding": "config",
+                "key": "ports"
+              },
+              {
+                "id": "p_vid",
+                "name": "vid",
+                "type": "json",
+                "binding": "config",
+                "key": "vid"
+              },
+              {
+                "id": "p_pid",
+                "name": "pid",
+                "type": "json",
+                "binding": "config",
+                "key": "pid"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "json",
+                "path": ["result"]
+              }
+            ]
           }
         },
         {
@@ -2686,8 +2778,27 @@
             "variable": "serial_ports"
           },
           "position": {
-            "x": 530,
+            "x": 720,
             "y": 90
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "json",
+                "binding": "input"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "json",
+                "path": []
+              }
+            ]
           }
         },
         {
@@ -2695,7 +2806,7 @@
           "kind": "serial",
           "label": "VID / PID 过滤",
           "config": {
-            "action": "filter",
+            "action": "discover",
             "ports": {
               "source": "variable",
               "variable": "serial_ports",
@@ -2713,8 +2824,42 @@
             }
           },
           "position": {
-            "x": 775,
+            "x": 1060,
             "y": 90
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "p_ports",
+                "name": "ports",
+                "type": "json",
+                "binding": "config",
+                "key": "ports"
+              },
+              {
+                "id": "p_vid",
+                "name": "vid",
+                "type": "json",
+                "binding": "config",
+                "key": "vid"
+              },
+              {
+                "id": "p_pid",
+                "name": "pid",
+                "type": "json",
+                "binding": "config",
+                "key": "pid"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "json",
+                "path": ["result"]
+              }
+            ]
           }
         },
         {
@@ -2743,8 +2888,27 @@
             }
           },
           "position": {
-            "x": 1020,
+            "x": 1400,
             "y": 90
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "json",
+                "binding": "input"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "json",
+                "path": []
+              }
+            ]
           }
         },
         {
@@ -2755,541 +2919,99 @@
             "variable": "serial_options"
           },
           "position": {
-            "x": 40,
-            "y": 270
-          }
-        },
-        {
-          "id": "serial_scan_error_map",
-          "kind": "map",
-          "label": "错误字段 / Error fields",
-          "position": {
-            "x": 285,
-            "y": 500
+            "x": 1740,
+            "y": 90
           },
-          "config": {
-            "operation": "object",
-            "fields": {
-              "code": {
-                "source": "input",
-                "path": ["code"]
-              },
-              "message": {
-                "source": "input",
-                "path": ["message"]
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "json",
+                "binding": "input"
               }
-            }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "json",
+                "path": []
+              }
+            ]
           }
         },
         {
-          "id": "serial_scan_error_write",
-          "kind": "write",
-          "label": "显示错误 / Show error",
-          "position": {
-            "x": 530,
-            "y": 500
-          },
-          "config": {
-            "variable": "serial_error"
-          }
-        },
-        {
-          "id": "serial_scan_stop_timer",
-          "kind": "write",
-          "label": "停止定时发送 / Stop periodic sends",
-          "position": {
-            "x": 775,
-            "y": 500
-          },
-          "config": {
-            "variable": "serial_tx",
-            "path": ["periodic"],
-            "value": false
-          }
-        }
-      ],
-      "edges": [
-        {
-          "id": "serial_scan_edge_0",
-          "source": "serial_scan_0",
-          "target": "serial_scan_1",
-          "sourceHandle": "output",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_scan_edge_1",
-          "source": "serial_scan_1",
-          "target": "serial_scan_2",
-          "sourceHandle": "success",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_scan_edge_2",
-          "source": "serial_scan_2",
-          "target": "serial_scan_3",
-          "sourceHandle": "output",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_scan_edge_3",
-          "source": "serial_scan_3",
-          "target": "serial_scan_4",
-          "sourceHandle": "success",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_scan_edge_4",
-          "source": "serial_scan_4",
-          "target": "serial_scan_5",
-          "sourceHandle": "success",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_scan_error_serial_scan_1",
-          "source": "serial_scan_1",
-          "target": "serial_scan_error_map",
-          "sourceHandle": "error",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_scan_error_serial_scan_3",
-          "source": "serial_scan_3",
-          "target": "serial_scan_error_map",
-          "sourceHandle": "error",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_scan_error_serial_scan_4",
-          "source": "serial_scan_4",
-          "target": "serial_scan_error_map",
-          "sourceHandle": "error",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_scan_error_show",
-          "source": "serial_scan_error_map",
-          "target": "serial_scan_error_write",
-          "sourceHandle": "success",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_scan_error_stop",
-          "source": "serial_scan_error_write",
-          "target": "serial_scan_stop_timer",
-          "sourceHandle": "output",
-          "targetHandle": "input"
-        }
-      ]
-    },
-    {
-      "id": "serial_devices",
-      "name": "02 · 插入与拔出 / Device changes",
-      "enabled": true,
-      "nodes": [
-        {
-          "id": "serial_devices_0",
+          "id": "serial_devices_startup",
           "kind": "event",
-          "label": "设备列表事件 / Device event",
-          "config": {
-            "trigger": "serial",
-            "event": "devices"
-          },
+          "label": "监听设备变化 / Watch devices",
           "position": {
             "x": 40,
-            "y": 90
-          }
-        },
-        {
-          "id": "serial_devices_1",
-          "kind": "write",
-          "label": "保存设备快照 / Save snapshot",
-          "config": {
-            "variable": "serial_ports"
+            "y": 298
           },
-          "position": {
-            "x": 285,
-            "y": 90
-          }
-        },
-        {
-          "id": "serial_devices_2",
-          "kind": "serial",
-          "label": "VID / PID 过滤",
           "config": {
-            "action": "filter",
-            "ports": {
-              "source": "variable",
-              "variable": "serial_ports",
-              "path": ["ports"]
-            },
-            "vid": {
-              "source": "variable",
-              "variable": "serial_filters",
-              "path": ["vid"]
-            },
-            "pid": {
-              "source": "variable",
-              "variable": "serial_filters",
-              "path": ["pid"]
-            }
+            "trigger": "startup"
           },
-          "position": {
-            "x": 530,
-            "y": 90
-          }
-        },
-        {
-          "id": "serial_devices_3",
-          "kind": "map",
-          "label": "端口选项 / Port options",
-          "config": {
-            "operation": "array",
-            "items": {
-              "source": "input",
-              "path": []
-            },
-            "fields": {
-              "id": {
-                "source": "input",
-                "path": ["portName"]
-              },
-              "label": {
-                "source": "input",
-                "path": ["displayName"]
-              },
-              "value": {
-                "source": "input",
-                "path": ["portName"]
+          "block": {
+            "version": 1,
+            "inputs": [],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "VALUE",
+                "type": "json",
+                "path": []
               }
-            }
-          },
-          "position": {
-            "x": 775,
-            "y": 90
+            ]
           }
         },
-        {
-          "id": "serial_devices_4",
-          "kind": "write",
-          "label": "更新下拉列表 / Update options",
-          "config": {
-            "variable": "serial_options"
-          },
-          "position": {
-            "x": 1020,
-            "y": 90
-          }
-        },
-        {
-          "id": "serial_devices_error_map",
-          "kind": "map",
-          "label": "错误字段 / Error fields",
-          "position": {
-            "x": 285,
-            "y": 500
-          },
-          "config": {
-            "operation": "object",
-            "fields": {
-              "code": {
-                "source": "input",
-                "path": ["code"]
-              },
-              "message": {
-                "source": "input",
-                "path": ["message"]
-              }
-            }
-          }
-        },
-        {
-          "id": "serial_devices_error_write",
-          "kind": "write",
-          "label": "显示错误 / Show error",
-          "position": {
-            "x": 530,
-            "y": 500
-          },
-          "config": {
-            "variable": "serial_error"
-          }
-        },
-        {
-          "id": "serial_devices_stop_timer",
-          "kind": "write",
-          "label": "停止定时发送 / Stop periodic sends",
-          "position": {
-            "x": 775,
-            "y": 500
-          },
-          "config": {
-            "variable": "serial_tx",
-            "path": ["periodic"],
-            "value": false
-          }
-        }
-      ],
-      "edges": [
-        {
-          "id": "serial_devices_edge_0",
-          "source": "serial_devices_0",
-          "target": "serial_devices_1",
-          "sourceHandle": "output",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_devices_edge_1",
-          "source": "serial_devices_1",
-          "target": "serial_devices_2",
-          "sourceHandle": "output",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_devices_edge_2",
-          "source": "serial_devices_2",
-          "target": "serial_devices_3",
-          "sourceHandle": "success",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_devices_edge_3",
-          "source": "serial_devices_3",
-          "target": "serial_devices_4",
-          "sourceHandle": "success",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_devices_error_serial_devices_2",
-          "source": "serial_devices_2",
-          "target": "serial_devices_error_map",
-          "sourceHandle": "error",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_devices_error_serial_devices_3",
-          "source": "serial_devices_3",
-          "target": "serial_devices_error_map",
-          "sourceHandle": "error",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_devices_error_show",
-          "source": "serial_devices_error_map",
-          "target": "serial_devices_error_write",
-          "sourceHandle": "success",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_devices_error_stop",
-          "source": "serial_devices_error_write",
-          "target": "serial_devices_stop_timer",
-          "sourceHandle": "output",
-          "targetHandle": "input"
-        }
-      ]
-    },
-    {
-      "id": "serial_filter",
-      "name": "03 · 更新 VID/PID 过滤 / Filter devices",
-      "enabled": true,
-      "nodes": [
         {
           "id": "serial_filter_0",
           "kind": "event",
-          "label": "UI 事件 / UI event",
+          "label": "更新 VID/PID 过滤 / Filter devices",
           "config": {
             "trigger": "manual"
           },
           "position": {
             "x": 40,
-            "y": 90
-          }
-        },
-        {
-          "id": "serial_filter_1",
-          "kind": "serial",
-          "label": "VID / PID 过滤",
-          "config": {
-            "action": "filter",
-            "ports": {
-              "source": "variable",
-              "variable": "serial_ports",
-              "path": ["ports"]
-            },
-            "vid": {
-              "source": "variable",
-              "variable": "serial_filters",
-              "path": ["vid"]
-            },
-            "pid": {
-              "source": "variable",
-              "variable": "serial_filters",
-              "path": ["pid"]
-            }
+            "y": 506
           },
-          "position": {
-            "x": 285,
-            "y": 90
-          }
-        },
-        {
-          "id": "serial_filter_2",
-          "kind": "map",
-          "label": "端口选项 / Port options",
-          "config": {
-            "operation": "array",
-            "items": {
-              "source": "input",
-              "path": []
-            },
-            "fields": {
-              "id": {
-                "source": "input",
-                "path": ["portName"]
-              },
-              "label": {
-                "source": "input",
-                "path": ["displayName"]
-              },
-              "value": {
-                "source": "input",
-                "path": ["portName"]
+          "block": {
+            "version": 1,
+            "inputs": [],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "VALUE",
+                "type": "json",
+                "path": []
               }
-            }
-          },
-          "position": {
-            "x": 530,
-            "y": 90
+            ]
           }
         },
-        {
-          "id": "serial_filter_3",
-          "kind": "write",
-          "label": "更新下拉列表 / Update options",
-          "config": {
-            "variable": "serial_options"
-          },
-          "position": {
-            "x": 775,
-            "y": 90
-          }
-        },
-        {
-          "id": "serial_filter_error_map",
-          "kind": "map",
-          "label": "错误字段 / Error fields",
-          "position": {
-            "x": 285,
-            "y": 500
-          },
-          "config": {
-            "operation": "object",
-            "fields": {
-              "code": {
-                "source": "input",
-                "path": ["code"]
-              },
-              "message": {
-                "source": "input",
-                "path": ["message"]
-              }
-            }
-          }
-        },
-        {
-          "id": "serial_filter_error_write",
-          "kind": "write",
-          "label": "显示错误 / Show error",
-          "position": {
-            "x": 530,
-            "y": 500
-          },
-          "config": {
-            "variable": "serial_error"
-          }
-        },
-        {
-          "id": "serial_filter_stop_timer",
-          "kind": "write",
-          "label": "停止定时发送 / Stop periodic sends",
-          "position": {
-            "x": 775,
-            "y": 500
-          },
-          "config": {
-            "variable": "serial_tx",
-            "path": ["periodic"],
-            "value": false
-          }
-        }
-      ],
-      "edges": [
-        {
-          "id": "serial_filter_edge_0",
-          "source": "serial_filter_0",
-          "target": "serial_filter_1",
-          "sourceHandle": "output",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_filter_edge_1",
-          "source": "serial_filter_1",
-          "target": "serial_filter_2",
-          "sourceHandle": "success",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_filter_edge_2",
-          "source": "serial_filter_2",
-          "target": "serial_filter_3",
-          "sourceHandle": "success",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_filter_error_serial_filter_1",
-          "source": "serial_filter_1",
-          "target": "serial_filter_error_map",
-          "sourceHandle": "error",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_filter_error_serial_filter_2",
-          "source": "serial_filter_2",
-          "target": "serial_filter_error_map",
-          "sourceHandle": "error",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_filter_error_show",
-          "source": "serial_filter_error_map",
-          "target": "serial_filter_error_write",
-          "sourceHandle": "success",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_filter_error_stop",
-          "source": "serial_filter_error_write",
-          "target": "serial_filter_stop_timer",
-          "sourceHandle": "output",
-          "targetHandle": "input"
-        }
-      ]
-    },
-    {
-      "id": "serial_open",
-      "name": "04 · 手动打开并监听 / Open and listen",
-      "enabled": true,
-      "nodes": [
         {
           "id": "serial_open_0",
           "kind": "event",
-          "label": "UI 事件 / UI event",
+          "label": "手动打开并监听 / Open and listen",
           "config": {
             "trigger": "manual"
           },
           "position": {
             "x": 40,
-            "y": 90
+            "y": 714
+          },
+          "block": {
+            "version": 1,
+            "inputs": [],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "VALUE",
+                "type": "json",
+                "path": []
+              }
+            ]
           }
         },
         {
@@ -3297,30 +3019,92 @@
           "kind": "serial",
           "label": "打开串口 / Open serial",
           "config": {
-            "action": "open",
+            "action": "communicate",
             "connectionId": "serial_port",
             "settings": {
               "source": "variable",
               "variable": "serial_settings",
               "path": []
+            },
+            "data": {
+              "source": "literal",
+              "value": ""
+            },
+            "encoding": {
+              "source": "literal",
+              "value": "utf8"
+            },
+            "lineEnding": {
+              "source": "literal",
+              "value": "none"
+            },
+            "timeoutMs": {
+              "source": "literal",
+              "value": 5000
+            },
+            "enabled": {
+              "source": "literal",
+              "value": false
             }
           },
           "position": {
-            "x": 285,
-            "y": 90
-          }
-        },
-        {
-          "id": "serial_open_2",
-          "kind": "serial",
-          "label": "开始监听 / Start listening",
-          "config": {
-            "action": "listenStart",
-            "connectionId": "serial_port"
+            "x": 380,
+            "y": 442
           },
-          "position": {
-            "x": 530,
-            "y": 90
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "p_settings",
+                "name": "settings",
+                "type": "json",
+                "binding": "config",
+                "key": "settings"
+              },
+              {
+                "id": "p_data",
+                "name": "data",
+                "type": "json",
+                "binding": "config",
+                "key": "data"
+              },
+              {
+                "id": "p_encoding",
+                "name": "encoding",
+                "type": "string",
+                "binding": "config",
+                "key": "encoding"
+              },
+              {
+                "id": "p_lineEnding",
+                "name": "lineEnding",
+                "type": "string",
+                "binding": "config",
+                "key": "lineEnding"
+              },
+              {
+                "id": "p_timeoutMs",
+                "name": "timeoutMs",
+                "type": "number",
+                "binding": "config",
+                "key": "timeoutMs"
+              },
+              {
+                "id": "p_enabled",
+                "name": "enabled",
+                "type": "boolean",
+                "binding": "config",
+                "key": "enabled"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "json",
+                "path": ["result"]
+              }
+            ]
           }
         },
         {
@@ -3335,126 +3119,55 @@
             }
           },
           "position": {
-            "x": 775,
-            "y": 90
-          }
-        },
-        {
-          "id": "serial_open_error_map",
-          "kind": "map",
-          "label": "错误字段 / Error fields",
-          "position": {
-            "x": 285,
-            "y": 500
+            "x": 1060,
+            "y": 442
           },
-          "config": {
-            "operation": "object",
-            "fields": {
-              "code": {
-                "source": "input",
-                "path": ["code"]
-              },
-              "message": {
-                "source": "input",
-                "path": ["message"]
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "json",
+                "binding": "input",
+                "defaultValue": {
+                  "code": "",
+                  "message": ""
+                }
               }
-            }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "json",
+                "path": []
+              }
+            ]
           }
         },
-        {
-          "id": "serial_open_error_write",
-          "kind": "write",
-          "label": "显示错误 / Show error",
-          "position": {
-            "x": 530,
-            "y": 500
-          },
-          "config": {
-            "variable": "serial_error"
-          }
-        },
-        {
-          "id": "serial_open_stop_timer",
-          "kind": "write",
-          "label": "停止定时发送 / Stop periodic sends",
-          "position": {
-            "x": 775,
-            "y": 500
-          },
-          "config": {
-            "variable": "serial_tx",
-            "path": ["periodic"],
-            "value": false
-          }
-        }
-      ],
-      "edges": [
-        {
-          "id": "serial_open_edge_0",
-          "source": "serial_open_0",
-          "target": "serial_open_1",
-          "sourceHandle": "output",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_open_edge_1",
-          "source": "serial_open_1",
-          "target": "serial_open_2",
-          "sourceHandle": "success",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_open_edge_2",
-          "source": "serial_open_2",
-          "target": "serial_open_3",
-          "sourceHandle": "success",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_open_error_serial_open_1",
-          "source": "serial_open_1",
-          "target": "serial_open_error_map",
-          "sourceHandle": "error",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_open_error_serial_open_2",
-          "source": "serial_open_2",
-          "target": "serial_open_error_map",
-          "sourceHandle": "error",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_open_error_show",
-          "source": "serial_open_error_map",
-          "target": "serial_open_error_write",
-          "sourceHandle": "success",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_open_error_stop",
-          "source": "serial_open_error_write",
-          "target": "serial_open_stop_timer",
-          "sourceHandle": "output",
-          "targetHandle": "input"
-        }
-      ]
-    },
-    {
-      "id": "serial_close",
-      "name": "05 · 断开 / Disconnect",
-      "enabled": true,
-      "nodes": [
         {
           "id": "serial_close_0",
           "kind": "event",
-          "label": "UI 事件 / UI event",
+          "label": "断开 / Disconnect",
           "config": {
             "trigger": "manual"
           },
           "position": {
             "x": 40,
-            "y": 90
+            "y": 922
+          },
+          "block": {
+            "version": 1,
+            "inputs": [],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "VALUE",
+                "type": "json",
+                "path": []
+              }
+            ]
           }
         },
         {
@@ -3467,354 +3180,114 @@
             "value": false
           },
           "position": {
-            "x": 285,
-            "y": 90
-          }
-        },
-        {
-          "id": "serial_close_2",
-          "kind": "serial",
-          "label": "关闭串口 / Close serial",
-          "config": {
-            "action": "close",
-            "connectionId": "serial_port"
+            "x": 380,
+            "y": 938
           },
-          "position": {
-            "x": 530,
-            "y": 90
-          }
-        },
-        {
-          "id": "serial_close_error_map",
-          "kind": "map",
-          "label": "错误字段 / Error fields",
-          "position": {
-            "x": 285,
-            "y": 500
-          },
-          "config": {
-            "operation": "object",
-            "fields": {
-              "code": {
-                "source": "input",
-                "path": ["code"]
-              },
-              "message": {
-                "source": "input",
-                "path": ["message"]
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "json",
+                "binding": "input",
+                "defaultValue": false
               }
-            }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "json",
+                "path": []
+              }
+            ]
           }
         },
-        {
-          "id": "serial_close_error_write",
-          "kind": "write",
-          "label": "显示错误 / Show error",
-          "position": {
-            "x": 530,
-            "y": 500
-          },
-          "config": {
-            "variable": "serial_error"
-          }
-        },
-        {
-          "id": "serial_close_stop_timer",
-          "kind": "write",
-          "label": "停止定时发送 / Stop periodic sends",
-          "position": {
-            "x": 775,
-            "y": 500
-          },
-          "config": {
-            "variable": "serial_tx",
-            "path": ["periodic"],
-            "value": false
-          }
-        }
-      ],
-      "edges": [
-        {
-          "id": "serial_close_edge_0",
-          "source": "serial_close_0",
-          "target": "serial_close_1",
-          "sourceHandle": "output",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_close_edge_1",
-          "source": "serial_close_1",
-          "target": "serial_close_2",
-          "sourceHandle": "output",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_close_error_serial_close_2",
-          "source": "serial_close_2",
-          "target": "serial_close_error_map",
-          "sourceHandle": "error",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_close_error_show",
-          "source": "serial_close_error_map",
-          "target": "serial_close_error_write",
-          "sourceHandle": "success",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_close_error_stop",
-          "source": "serial_close_error_write",
-          "target": "serial_close_stop_timer",
-          "sourceHandle": "output",
-          "targetHandle": "input"
-        }
-      ]
-    },
-    {
-      "id": "serial_listen_start",
-      "name": "06 · 开始监听 / Start listening",
-      "enabled": true,
-      "nodes": [
         {
           "id": "serial_listen_start_0",
           "kind": "event",
-          "label": "UI 事件 / UI event",
+          "label": "开始监听 / Start listening",
           "config": {
             "trigger": "manual"
           },
           "position": {
             "x": 40,
-            "y": 90
-          }
-        },
-        {
-          "id": "serial_listen_start_1",
-          "kind": "serial",
-          "label": "开始监听 / Start listening",
-          "config": {
-            "action": "listenStart",
-            "connectionId": "serial_port"
+            "y": 1130
           },
-          "position": {
-            "x": 285,
-            "y": 90
-          }
-        },
-        {
-          "id": "serial_listen_start_error_map",
-          "kind": "map",
-          "label": "错误字段 / Error fields",
-          "position": {
-            "x": 285,
-            "y": 500
-          },
-          "config": {
-            "operation": "object",
-            "fields": {
-              "code": {
-                "source": "input",
-                "path": ["code"]
-              },
-              "message": {
-                "source": "input",
-                "path": ["message"]
+          "block": {
+            "version": 1,
+            "inputs": [],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "VALUE",
+                "type": "json",
+                "path": []
               }
-            }
+            ]
           }
         },
-        {
-          "id": "serial_listen_start_error_write",
-          "kind": "write",
-          "label": "显示错误 / Show error",
-          "position": {
-            "x": 530,
-            "y": 500
-          },
-          "config": {
-            "variable": "serial_error"
-          }
-        },
-        {
-          "id": "serial_listen_start_stop_timer",
-          "kind": "write",
-          "label": "停止定时发送 / Stop periodic sends",
-          "position": {
-            "x": 775,
-            "y": 500
-          },
-          "config": {
-            "variable": "serial_tx",
-            "path": ["periodic"],
-            "value": false
-          }
-        }
-      ],
-      "edges": [
-        {
-          "id": "serial_listen_start_edge_0",
-          "source": "serial_listen_start_0",
-          "target": "serial_listen_start_1",
-          "sourceHandle": "output",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_listen_start_error_serial_listen_start_1",
-          "source": "serial_listen_start_1",
-          "target": "serial_listen_start_error_map",
-          "sourceHandle": "error",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_listen_start_error_show",
-          "source": "serial_listen_start_error_map",
-          "target": "serial_listen_start_error_write",
-          "sourceHandle": "success",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_listen_start_error_stop",
-          "source": "serial_listen_start_error_write",
-          "target": "serial_listen_start_stop_timer",
-          "sourceHandle": "output",
-          "targetHandle": "input"
-        }
-      ]
-    },
-    {
-      "id": "serial_listen_stop",
-      "name": "07 · 停止监听 / Stop listening",
-      "enabled": true,
-      "nodes": [
         {
           "id": "serial_listen_stop_0",
           "kind": "event",
-          "label": "UI 事件 / UI event",
+          "label": "停止监听 / Stop listening",
           "config": {
             "trigger": "manual"
           },
           "position": {
             "x": 40,
-            "y": 90
-          }
-        },
-        {
-          "id": "serial_listen_stop_1",
-          "kind": "serial",
-          "label": "停止监听 / Stop listening",
-          "config": {
-            "action": "listenStop",
-            "connectionId": "serial_port"
+            "y": 1338
           },
-          "position": {
-            "x": 285,
-            "y": 90
-          }
-        },
-        {
-          "id": "serial_listen_stop_error_map",
-          "kind": "map",
-          "label": "错误字段 / Error fields",
-          "position": {
-            "x": 285,
-            "y": 500
-          },
-          "config": {
-            "operation": "object",
-            "fields": {
-              "code": {
-                "source": "input",
-                "path": ["code"]
-              },
-              "message": {
-                "source": "input",
-                "path": ["message"]
+          "block": {
+            "version": 1,
+            "inputs": [],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "VALUE",
+                "type": "json",
+                "path": []
               }
-            }
+            ]
           }
         },
-        {
-          "id": "serial_listen_stop_error_write",
-          "kind": "write",
-          "label": "显示错误 / Show error",
-          "position": {
-            "x": 530,
-            "y": 500
-          },
-          "config": {
-            "variable": "serial_error"
-          }
-        },
-        {
-          "id": "serial_listen_stop_stop_timer",
-          "kind": "write",
-          "label": "停止定时发送 / Stop periodic sends",
-          "position": {
-            "x": 775,
-            "y": 500
-          },
-          "config": {
-            "variable": "serial_tx",
-            "path": ["periodic"],
-            "value": false
-          }
-        }
-      ],
-      "edges": [
-        {
-          "id": "serial_listen_stop_edge_0",
-          "source": "serial_listen_stop_0",
-          "target": "serial_listen_stop_1",
-          "sourceHandle": "output",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_listen_stop_error_serial_listen_stop_1",
-          "source": "serial_listen_stop_1",
-          "target": "serial_listen_stop_error_map",
-          "sourceHandle": "error",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_listen_stop_error_show",
-          "source": "serial_listen_stop_error_map",
-          "target": "serial_listen_stop_error_write",
-          "sourceHandle": "success",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_listen_stop_error_stop",
-          "source": "serial_listen_stop_error_write",
-          "target": "serial_listen_stop_stop_timer",
-          "sourceHandle": "output",
-          "targetHandle": "input"
-        }
-      ]
-    },
-    {
-      "id": "serial_send",
-      "name": "08 · 手动发送 / Send once",
-      "enabled": true,
-      "nodes": [
         {
           "id": "serial_send_0",
           "kind": "event",
-          "label": "UI 事件 / UI event",
+          "label": "手动发送 / Send once",
           "config": {
             "trigger": "manual"
           },
           "position": {
             "x": 40,
-            "y": 90
+            "y": 1546
+          },
+          "block": {
+            "version": 1,
+            "inputs": [],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "VALUE",
+                "type": "json",
+                "path": []
+              }
+            ]
           }
         },
         {
           "id": "serial_send_1",
           "kind": "serial",
-          "label": "串口发送 / Serial send",
+          "label": "串口通信 / Serial communication",
           "config": {
-            "action": "send",
+            "action": "communicate",
             "connectionId": "serial_port",
+            "settings": {
+              "source": "variable",
+              "variable": "serial_settings",
+              "path": []
+            },
             "data": {
               "source": "variable",
               "variable": "serial_tx",
@@ -3833,98 +3306,154 @@
             "timeoutMs": {
               "source": "literal",
               "value": 5000
+            },
+            "enabled": {
+              "source": "variable",
+              "variable": "serial_settings",
+              "path": ["autoReconnect"]
             }
           },
           "position": {
-            "x": 285,
-            "y": 90
-          }
-        },
-        {
-          "id": "serial_send_error_map",
-          "kind": "map",
-          "label": "错误字段 / Error fields",
-          "position": {
-            "x": 285,
-            "y": 500
+            "x": 720,
+            "y": 322
           },
-          "config": {
-            "operation": "object",
-            "fields": {
-              "code": {
-                "source": "input",
-                "path": ["code"]
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "p_settings",
+                "name": "settings",
+                "type": "json",
+                "binding": "config",
+                "key": "settings"
               },
-              "message": {
-                "source": "input",
-                "path": ["message"]
+              {
+                "id": "p_data",
+                "name": "data",
+                "type": "json",
+                "binding": "config",
+                "key": "data"
+              },
+              {
+                "id": "p_encoding",
+                "name": "encoding",
+                "type": "string",
+                "binding": "config",
+                "key": "encoding"
+              },
+              {
+                "id": "p_lineEnding",
+                "name": "lineEnding",
+                "type": "string",
+                "binding": "config",
+                "key": "lineEnding"
+              },
+              {
+                "id": "p_timeoutMs",
+                "name": "timeoutMs",
+                "type": "number",
+                "binding": "config",
+                "key": "timeoutMs"
+              },
+              {
+                "id": "p_enabled",
+                "name": "enabled",
+                "type": "boolean",
+                "binding": "config",
+                "key": "enabled"
               }
-            }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "json",
+                "path": ["result"]
+              },
+              {
+                "id": "time",
+                "name": "TIME",
+                "type": "string",
+                "path": ["result", "timestampIso"]
+              }
+            ]
           }
         },
         {
-          "id": "serial_send_error_write",
-          "kind": "write",
-          "label": "显示错误 / Show error",
-          "position": {
-            "x": 530,
-            "y": 500
-          },
-          "config": {
-            "variable": "serial_error"
-          }
-        },
-        {
-          "id": "serial_send_stop_timer",
-          "kind": "write",
-          "label": "停止定时发送 / Stop periodic sends",
-          "position": {
-            "x": 775,
-            "y": 500
-          },
+          "id": "serial_send_read_data",
+          "kind": "read",
+          "label": "发送内容 / TX data",
           "config": {
             "variable": "serial_tx",
-            "path": ["periodic"],
-            "value": false
+            "path": ["data"]
+          },
+          "position": {
+            "x": 40,
+            "y": 1754
+          },
+          "block": {
+            "version": 1,
+            "inputs": [],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "string",
+                "path": []
+              }
+            ]
           }
-        }
-      ],
-      "edges": [
-        {
-          "id": "serial_send_edge_0",
-          "source": "serial_send_0",
-          "target": "serial_send_1",
-          "sourceHandle": "output",
-          "targetHandle": "input"
         },
         {
-          "id": "serial_send_error_serial_send_1",
-          "source": "serial_send_1",
-          "target": "serial_send_error_map",
-          "sourceHandle": "error",
-          "targetHandle": "input"
+          "id": "serial_send_read_encoding",
+          "kind": "read",
+          "label": "编码 / Encoding",
+          "config": {
+            "variable": "serial_tx",
+            "path": ["encoding"]
+          },
+          "position": {
+            "x": 40,
+            "y": 1986
+          },
+          "block": {
+            "version": 1,
+            "inputs": [],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "string",
+                "path": []
+              }
+            ]
+          }
         },
         {
-          "id": "serial_send_error_show",
-          "source": "serial_send_error_map",
-          "target": "serial_send_error_write",
-          "sourceHandle": "success",
-          "targetHandle": "input"
+          "id": "serial_send_read_lineEnding",
+          "kind": "read",
+          "label": "行尾 / Line ending",
+          "config": {
+            "variable": "serial_tx",
+            "path": ["lineEnding"]
+          },
+          "position": {
+            "x": 40,
+            "y": 2218
+          },
+          "block": {
+            "version": 1,
+            "inputs": [],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "string",
+                "path": []
+              }
+            ]
+          }
         },
-        {
-          "id": "serial_send_error_stop",
-          "source": "serial_send_error_write",
-          "target": "serial_send_stop_timer",
-          "sourceHandle": "output",
-          "targetHandle": "input"
-        }
-      ]
-    },
-    {
-      "id": "serial_periodic",
-      "name": "09 · 定时发送 / Periodic send",
-      "enabled": true,
-      "nodes": [
         {
           "id": "serial_periodic_0",
           "kind": "event",
@@ -3944,253 +3473,43 @@
           },
           "position": {
             "x": 40,
-            "y": 90
-          }
-        },
-        {
-          "id": "serial_periodic_1",
-          "kind": "serial",
-          "label": "串口发送 / Serial send",
-          "config": {
-            "action": "send",
-            "connectionId": "serial_port",
-            "data": {
-              "source": "variable",
-              "variable": "serial_tx",
-              "path": ["data"]
-            },
-            "encoding": {
-              "source": "variable",
-              "variable": "serial_tx",
-              "path": ["encoding"]
-            },
-            "lineEnding": {
-              "source": "variable",
-              "variable": "serial_tx",
-              "path": ["lineEnding"]
-            },
-            "timeoutMs": {
-              "source": "literal",
-              "value": 5000
-            }
+            "y": 2450
           },
-          "position": {
-            "x": 285,
-            "y": 90
-          }
-        },
-        {
-          "id": "serial_periodic_error_map",
-          "kind": "map",
-          "label": "错误字段 / Error fields",
-          "position": {
-            "x": 285,
-            "y": 500
-          },
-          "config": {
-            "operation": "object",
-            "fields": {
-              "code": {
-                "source": "input",
-                "path": ["code"]
-              },
-              "message": {
-                "source": "input",
-                "path": ["message"]
+          "block": {
+            "version": 1,
+            "inputs": [],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "VALUE",
+                "type": "json",
+                "path": []
               }
-            }
+            ]
           }
         },
-        {
-          "id": "serial_periodic_error_write",
-          "kind": "write",
-          "label": "显示错误 / Show error",
-          "position": {
-            "x": 530,
-            "y": 500
-          },
-          "config": {
-            "variable": "serial_error"
-          }
-        },
-        {
-          "id": "serial_periodic_stop_timer",
-          "kind": "write",
-          "label": "停止定时发送 / Stop periodic sends",
-          "position": {
-            "x": 775,
-            "y": 500
-          },
-          "config": {
-            "variable": "serial_tx",
-            "path": ["periodic"],
-            "value": false
-          }
-        }
-      ],
-      "edges": [
-        {
-          "id": "serial_periodic_edge_0",
-          "source": "serial_periodic_0",
-          "target": "serial_periodic_1",
-          "sourceHandle": "output",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_periodic_error_serial_periodic_1",
-          "source": "serial_periodic_1",
-          "target": "serial_periodic_error_map",
-          "sourceHandle": "error",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_periodic_error_show",
-          "source": "serial_periodic_error_map",
-          "target": "serial_periodic_error_write",
-          "sourceHandle": "success",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_periodic_error_stop",
-          "source": "serial_periodic_error_write",
-          "target": "serial_periodic_stop_timer",
-          "sourceHandle": "output",
-          "targetHandle": "input"
-        }
-      ]
-    },
-    {
-      "id": "serial_reconnect",
-      "name": "10 · 重连策略 / Reconnect policy",
-      "enabled": true,
-      "nodes": [
         {
           "id": "serial_reconnect_0",
           "kind": "event",
-          "label": "UI 事件 / UI event",
+          "label": "重连策略 / Reconnect policy",
           "config": {
             "trigger": "manual"
           },
           "position": {
             "x": 40,
-            "y": 90
-          }
-        },
-        {
-          "id": "serial_reconnect_1",
-          "kind": "serial",
-          "label": "设置重连 / Set reconnect",
-          "config": {
-            "action": "setReconnect",
-            "connectionId": "serial_port",
-            "enabled": {
-              "source": "variable",
-              "variable": "serial_settings",
-              "path": ["autoReconnect"]
-            }
+            "y": 2658
           },
-          "position": {
-            "x": 285,
-            "y": 90
-          }
-        },
-        {
-          "id": "serial_reconnect_error_map",
-          "kind": "map",
-          "label": "错误字段 / Error fields",
-          "position": {
-            "x": 285,
-            "y": 500
-          },
-          "config": {
-            "operation": "object",
-            "fields": {
-              "code": {
-                "source": "input",
-                "path": ["code"]
-              },
-              "message": {
-                "source": "input",
-                "path": ["message"]
+          "block": {
+            "version": 1,
+            "inputs": [],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "VALUE",
+                "type": "json",
+                "path": []
               }
-            }
-          }
-        },
-        {
-          "id": "serial_reconnect_error_write",
-          "kind": "write",
-          "label": "显示错误 / Show error",
-          "position": {
-            "x": 530,
-            "y": 500
-          },
-          "config": {
-            "variable": "serial_error"
-          }
-        },
-        {
-          "id": "serial_reconnect_stop_timer",
-          "kind": "write",
-          "label": "停止定时发送 / Stop periodic sends",
-          "position": {
-            "x": 775,
-            "y": 500
-          },
-          "config": {
-            "variable": "serial_tx",
-            "path": ["periodic"],
-            "value": false
-          }
-        }
-      ],
-      "edges": [
-        {
-          "id": "serial_reconnect_edge_0",
-          "source": "serial_reconnect_0",
-          "target": "serial_reconnect_1",
-          "sourceHandle": "output",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_reconnect_error_serial_reconnect_1",
-          "source": "serial_reconnect_1",
-          "target": "serial_reconnect_error_map",
-          "sourceHandle": "error",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_reconnect_error_show",
-          "source": "serial_reconnect_error_map",
-          "target": "serial_reconnect_error_write",
-          "sourceHandle": "success",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_reconnect_error_stop",
-          "source": "serial_reconnect_error_write",
-          "target": "serial_reconnect_stop_timer",
-          "sourceHandle": "output",
-          "targetHandle": "input"
-        }
-      ]
-    },
-    {
-      "id": "serial_state",
-      "name": "11 · 会话状态 / Session state",
-      "enabled": true,
-      "nodes": [
-        {
-          "id": "serial_state_0",
-          "kind": "event",
-          "label": "串口状态 / Serial state",
-          "config": {
-            "trigger": "serial",
-            "event": "state",
-            "connectionId": "serial_port"
-          },
-          "position": {
-            "x": 40,
-            "y": 90
+            ]
           }
         },
         {
@@ -4201,8 +3520,27 @@
             "variable": "serial_state"
           },
           "position": {
-            "x": 285,
-            "y": 90
+            "x": 1060,
+            "y": 674
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "json",
+                "binding": "input"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "json",
+                "path": []
+              }
+            ]
           }
         },
         {
@@ -4217,8 +3555,27 @@
             }
           },
           "position": {
-            "x": 530,
-            "y": 90
+            "x": 1060,
+            "y": 906
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "json",
+                "binding": "input"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "json",
+                "path": []
+              }
+            ]
           }
         },
         {
@@ -4230,8 +3587,40 @@
             "value": "open"
           },
           "position": {
-            "x": 775,
-            "y": 90
+            "x": 1400,
+            "y": 322
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "a",
+                "name": "A",
+                "type": "json",
+                "binding": "input"
+              },
+              {
+                "id": "b",
+                "name": "B",
+                "type": "json",
+                "binding": "config",
+                "key": "value"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "boolean",
+                "path": ["Q"]
+              },
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "json",
+                "path": ["IN"]
+              }
+            ]
           }
         },
         {
@@ -4244,128 +3633,28 @@
             "value": false
           },
           "position": {
-            "x": 1020,
-            "y": 90
-          }
-        },
-        {
-          "id": "serial_state_error_map",
-          "kind": "map",
-          "label": "错误字段 / Error fields",
-          "position": {
-            "x": 285,
-            "y": 500
+            "x": 1740,
+            "y": 322
           },
-          "config": {
-            "operation": "object",
-            "fields": {
-              "code": {
-                "source": "input",
-                "path": ["code"]
-              },
-              "message": {
-                "source": "input",
-                "path": ["message"]
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "json",
+                "binding": "input",
+                "defaultValue": false
               }
-            }
-          }
-        },
-        {
-          "id": "serial_state_error_write",
-          "kind": "write",
-          "label": "显示错误 / Show error",
-          "position": {
-            "x": 530,
-            "y": 500
-          },
-          "config": {
-            "variable": "serial_error"
-          }
-        },
-        {
-          "id": "serial_state_stop_timer",
-          "kind": "write",
-          "label": "停止定时发送 / Stop periodic sends",
-          "position": {
-            "x": 775,
-            "y": 500
-          },
-          "config": {
-            "variable": "serial_tx",
-            "path": ["periodic"],
-            "value": false
-          }
-        }
-      ],
-      "edges": [
-        {
-          "id": "serial_state_edge_0",
-          "source": "serial_state_0",
-          "target": "serial_state_1",
-          "sourceHandle": "output",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_state_edge_1",
-          "source": "serial_state_0",
-          "target": "serial_state_2",
-          "sourceHandle": "output",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_state_edge_2",
-          "source": "serial_state_2",
-          "target": "serial_state_3",
-          "sourceHandle": "success",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_state_edge_3",
-          "source": "serial_state_3",
-          "target": "serial_state_4",
-          "sourceHandle": "true",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_state_error_serial_state_2",
-          "source": "serial_state_2",
-          "target": "serial_state_error_map",
-          "sourceHandle": "error",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_state_error_show",
-          "source": "serial_state_error_map",
-          "target": "serial_state_error_write",
-          "sourceHandle": "success",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_state_error_stop",
-          "source": "serial_state_error_write",
-          "target": "serial_state_stop_timer",
-          "sourceHandle": "output",
-          "targetHandle": "input"
-        }
-      ]
-    },
-    {
-      "id": "serial_errors",
-      "name": "12 · 设备错误 / Device errors",
-      "enabled": true,
-      "nodes": [
-        {
-          "id": "serial_errors_0",
-          "kind": "event",
-          "label": "串口错误 / Serial error",
-          "config": {
-            "trigger": "serial",
-            "event": "error",
-            "connectionId": "serial_port"
-          },
-          "position": {
-            "x": 40,
-            "y": 90
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "json",
+                "path": []
+              }
+            ]
           }
         },
         {
@@ -4386,8 +3675,27 @@
             }
           },
           "position": {
-            "x": 285,
-            "y": 90
+            "x": 1740,
+            "y": 554
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "json",
+                "binding": "input"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "json",
+                "path": []
+              }
+            ]
           }
         },
         {
@@ -4398,8 +3706,27 @@
             "variable": "serial_error"
           },
           "position": {
-            "x": 530,
+            "x": 2080,
             "y": 90
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "json",
+                "binding": "input"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "json",
+                "path": []
+              }
+            ]
           }
         },
         {
@@ -4412,119 +3739,52 @@
             "value": false
           },
           "position": {
-            "x": 775,
+            "x": 2420,
             "y": 90
-          }
-        },
-        {
-          "id": "serial_errors_error_map",
-          "kind": "map",
-          "label": "错误字段 / Error fields",
-          "position": {
-            "x": 285,
-            "y": 500
           },
-          "config": {
-            "operation": "object",
-            "fields": {
-              "code": {
-                "source": "input",
-                "path": ["code"]
-              },
-              "message": {
-                "source": "input",
-                "path": ["message"]
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "json",
+                "binding": "input",
+                "defaultValue": false
               }
-            }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "json",
+                "path": []
+              }
+            ]
           }
         },
-        {
-          "id": "serial_errors_error_write",
-          "kind": "write",
-          "label": "显示错误 / Show error",
-          "position": {
-            "x": 530,
-            "y": 500
-          },
-          "config": {
-            "variable": "serial_error"
-          }
-        },
-        {
-          "id": "serial_errors_stop_timer",
-          "kind": "write",
-          "label": "停止定时发送 / Stop periodic sends",
-          "position": {
-            "x": 775,
-            "y": 500
-          },
-          "config": {
-            "variable": "serial_tx",
-            "path": ["periodic"],
-            "value": false
-          }
-        }
-      ],
-      "edges": [
-        {
-          "id": "serial_errors_edge_0",
-          "source": "serial_errors_0",
-          "target": "serial_errors_1",
-          "sourceHandle": "output",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_errors_edge_1",
-          "source": "serial_errors_1",
-          "target": "serial_errors_2",
-          "sourceHandle": "success",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_errors_edge_2",
-          "source": "serial_errors_2",
-          "target": "serial_errors_3",
-          "sourceHandle": "output",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_errors_error_serial_errors_1",
-          "source": "serial_errors_1",
-          "target": "serial_errors_error_map",
-          "sourceHandle": "error",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_errors_error_show",
-          "source": "serial_errors_error_map",
-          "target": "serial_errors_error_write",
-          "sourceHandle": "success",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_errors_error_stop",
-          "source": "serial_errors_error_write",
-          "target": "serial_errors_stop_timer",
-          "sourceHandle": "output",
-          "targetHandle": "input"
-        }
-      ]
-    },
-    {
-      "id": "serial_clear",
-      "name": "15 · 清空显示历史 / Clear history",
-      "enabled": true,
-      "nodes": [
         {
           "id": "serial_clear_0",
           "kind": "event",
-          "label": "UI 事件 / UI event",
+          "label": "清空显示历史 / Clear history",
           "config": {
             "trigger": "manual"
           },
           "position": {
             "x": 40,
-            "y": 90
+            "y": 2866
+          },
+          "block": {
+            "version": 1,
+            "inputs": [],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "VALUE",
+                "type": "json",
+                "path": []
+              }
+            ]
           }
         },
         {
@@ -4539,149 +3799,55 @@
             }
           },
           "position": {
-            "x": 285,
-            "y": 90
+            "x": 380,
+            "y": 1170
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "json",
+                "binding": "input",
+                "defaultValue": {
+                  "rows": [],
+                  "dropped": 0
+                }
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "json",
+                "path": []
+              }
+            ]
           }
-        }
-      ],
-      "edges": [
-        {
-          "id": "serial_clear_edge_0",
-          "source": "serial_clear_0",
-          "target": "serial_clear_1",
-          "sourceHandle": "output",
-          "targetHandle": "input"
-        }
-      ]
-    },
-    {
-      "id": "serial_reset_counters",
-      "name": "16 · 重置计数 / Reset counters",
-      "enabled": true,
-      "nodes": [
+        },
         {
           "id": "serial_reset_counters_0",
           "kind": "event",
-          "label": "UI 事件 / UI event",
+          "label": "重置计数 / Reset counters",
           "config": {
             "trigger": "manual"
           },
           "position": {
             "x": 40,
-            "y": 90
-          }
-        },
-        {
-          "id": "serial_reset_counters_1",
-          "kind": "serial",
-          "label": "重置计数 / Reset counters",
-          "config": {
-            "action": "resetCounters",
-            "connectionId": "serial_port"
+            "y": 3074
           },
-          "position": {
-            "x": 285,
-            "y": 90
-          }
-        },
-        {
-          "id": "serial_reset_counters_error_map",
-          "kind": "map",
-          "label": "错误字段 / Error fields",
-          "position": {
-            "x": 285,
-            "y": 500
-          },
-          "config": {
-            "operation": "object",
-            "fields": {
-              "code": {
-                "source": "input",
-                "path": ["code"]
-              },
-              "message": {
-                "source": "input",
-                "path": ["message"]
+          "block": {
+            "version": 1,
+            "inputs": [],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "VALUE",
+                "type": "json",
+                "path": []
               }
-            }
-          }
-        },
-        {
-          "id": "serial_reset_counters_error_write",
-          "kind": "write",
-          "label": "显示错误 / Show error",
-          "position": {
-            "x": 530,
-            "y": 500
-          },
-          "config": {
-            "variable": "serial_error"
-          }
-        },
-        {
-          "id": "serial_reset_counters_stop_timer",
-          "kind": "write",
-          "label": "停止定时发送 / Stop periodic sends",
-          "position": {
-            "x": 775,
-            "y": 500
-          },
-          "config": {
-            "variable": "serial_tx",
-            "path": ["periodic"],
-            "value": false
-          }
-        }
-      ],
-      "edges": [
-        {
-          "id": "serial_reset_counters_edge_0",
-          "source": "serial_reset_counters_0",
-          "target": "serial_reset_counters_1",
-          "sourceHandle": "output",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_reset_counters_error_serial_reset_counters_1",
-          "source": "serial_reset_counters_1",
-          "target": "serial_reset_counters_error_map",
-          "sourceHandle": "error",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_reset_counters_error_show",
-          "source": "serial_reset_counters_error_map",
-          "target": "serial_reset_counters_error_write",
-          "sourceHandle": "success",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_reset_counters_error_stop",
-          "source": "serial_reset_counters_error_write",
-          "target": "serial_reset_counters_stop_timer",
-          "sourceHandle": "output",
-          "targetHandle": "input"
-        }
-      ]
-    },
-    {
-      "id": "serial_rx",
-      "name": "13 · 接收记录 / RX history",
-      "enabled": true,
-      "nodes": [
-        {
-          "id": "serial_rx_0",
-          "kind": "event",
-          "label": "RX 数据 / Data",
-          "config": {
-            "trigger": "serial",
-            "event": "data",
-            "direction": "rx",
-            "connectionId": "serial_port"
-          },
-          "position": {
-            "x": 40,
-            "y": 90
+            ]
           }
         },
         {
@@ -4714,8 +3880,27 @@
             }
           },
           "position": {
-            "x": 285,
-            "y": 90
+            "x": 1060,
+            "y": 1138
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "json",
+                "binding": "input"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "json",
+                "path": []
+              }
+            ]
           }
         },
         {
@@ -4735,8 +3920,27 @@
             "droppedPath": ["dropped"]
           },
           "position": {
-            "x": 530,
-            "y": 90
+            "x": 1400,
+            "y": 602
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "json",
+                "binding": "input"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "json",
+                "path": []
+              }
+            ]
           }
         },
         {
@@ -4747,12 +3951,31 @@
             "operation": "value",
             "value": {
               "source": "input",
-              "path": ["timestampIso"]
+              "path": []
             }
           },
           "position": {
-            "x": 775,
-            "y": 90
+            "x": 1060,
+            "y": 1370
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "string",
+                "binding": "input"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "string",
+                "path": []
+              }
+            ]
           }
         },
         {
@@ -4763,143 +3986,27 @@
             "variable": "serial_last_rx"
           },
           "position": {
-            "x": 1020,
-            "y": 90
-          }
-        },
-        {
-          "id": "serial_rx_error_map",
-          "kind": "map",
-          "label": "错误字段 / Error fields",
-          "position": {
-            "x": 285,
-            "y": 500
+            "x": 1400,
+            "y": 834
           },
-          "config": {
-            "operation": "object",
-            "fields": {
-              "code": {
-                "source": "input",
-                "path": ["code"]
-              },
-              "message": {
-                "source": "input",
-                "path": ["message"]
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "string",
+                "binding": "input"
               }
-            }
-          }
-        },
-        {
-          "id": "serial_rx_error_write",
-          "kind": "write",
-          "label": "显示错误 / Show error",
-          "position": {
-            "x": 530,
-            "y": 500
-          },
-          "config": {
-            "variable": "serial_error"
-          }
-        },
-        {
-          "id": "serial_rx_stop_timer",
-          "kind": "write",
-          "label": "停止定时发送 / Stop periodic sends",
-          "position": {
-            "x": 775,
-            "y": 500
-          },
-          "config": {
-            "variable": "serial_tx",
-            "path": ["periodic"],
-            "value": false
-          }
-        }
-      ],
-      "edges": [
-        {
-          "id": "serial_rx_edge_0",
-          "source": "serial_rx_0",
-          "target": "serial_rx_1",
-          "sourceHandle": "output",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_rx_edge_1",
-          "source": "serial_rx_1",
-          "target": "serial_rx_2",
-          "sourceHandle": "success",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_rx_edge_2",
-          "source": "serial_rx_0",
-          "target": "serial_rx_3",
-          "sourceHandle": "output",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_rx_edge_3",
-          "source": "serial_rx_3",
-          "target": "serial_rx_4",
-          "sourceHandle": "success",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_rx_error_serial_rx_1",
-          "source": "serial_rx_1",
-          "target": "serial_rx_error_map",
-          "sourceHandle": "error",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_rx_error_serial_rx_2",
-          "source": "serial_rx_2",
-          "target": "serial_rx_error_map",
-          "sourceHandle": "error",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_rx_error_serial_rx_3",
-          "source": "serial_rx_3",
-          "target": "serial_rx_error_map",
-          "sourceHandle": "error",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_rx_error_show",
-          "source": "serial_rx_error_map",
-          "target": "serial_rx_error_write",
-          "sourceHandle": "success",
-          "targetHandle": "input"
-        },
-        {
-          "id": "serial_rx_error_stop",
-          "source": "serial_rx_error_write",
-          "target": "serial_rx_stop_timer",
-          "sourceHandle": "output",
-          "targetHandle": "input"
-        }
-      ]
-    },
-    {
-      "id": "serial_tx",
-      "name": "14 · 发送记录 / TX history",
-      "enabled": true,
-      "nodes": [
-        {
-          "id": "serial_tx_0",
-          "kind": "event",
-          "label": "TX 数据 / Data",
-          "config": {
-            "trigger": "serial",
-            "event": "data",
-            "direction": "tx",
-            "connectionId": "serial_port"
-          },
-          "position": {
-            "x": 40,
-            "y": 90
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "string",
+                "path": []
+              }
+            ]
           }
         },
         {
@@ -4932,8 +4039,27 @@
             }
           },
           "position": {
-            "x": 285,
-            "y": 90
+            "x": 1060,
+            "y": 1602
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "json",
+                "binding": "input"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "json",
+                "path": []
+              }
+            ]
           }
         },
         {
@@ -4953,8 +4079,27 @@
             "droppedPath": ["dropped"]
           },
           "position": {
-            "x": 530,
-            "y": 90
+            "x": 1400,
+            "y": 1066
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "json",
+                "binding": "input"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "json",
+                "path": []
+              }
+            ]
           }
         },
         {
@@ -4965,12 +4110,31 @@
             "operation": "value",
             "value": {
               "source": "input",
-              "path": ["timestampIso"]
+              "path": []
             }
           },
           "position": {
-            "x": 775,
-            "y": 90
+            "x": 1060,
+            "y": 1834
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "string",
+                "binding": "input"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "string",
+                "path": []
+              }
+            ]
           }
         },
         {
@@ -4981,65 +4145,364 @@
             "variable": "serial_last_tx"
           },
           "position": {
-            "x": 1020,
-            "y": 90
-          }
-        },
-        {
-          "id": "serial_tx_error_map",
-          "kind": "map",
-          "label": "错误字段 / Error fields",
-          "position": {
-            "x": 285,
-            "y": 500
+            "x": 1400,
+            "y": 1298
           },
-          "config": {
-            "operation": "object",
-            "fields": {
-              "code": {
-                "source": "input",
-                "path": ["code"]
-              },
-              "message": {
-                "source": "input",
-                "path": ["message"]
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "string",
+                "binding": "input"
               }
-            }
-          }
-        },
-        {
-          "id": "serial_tx_error_write",
-          "kind": "write",
-          "label": "显示错误 / Show error",
-          "position": {
-            "x": 530,
-            "y": 500
-          },
-          "config": {
-            "variable": "serial_error"
-          }
-        },
-        {
-          "id": "serial_tx_stop_timer",
-          "kind": "write",
-          "label": "停止定时发送 / Stop periodic sends",
-          "position": {
-            "x": 775,
-            "y": 500
-          },
-          "config": {
-            "variable": "serial_tx",
-            "path": ["periodic"],
-            "value": false
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "string",
+                "path": []
+              }
+            ]
           }
         }
       ],
       "edges": [
         {
-          "id": "serial_tx_edge_0",
-          "source": "serial_tx_0",
-          "target": "serial_tx_1",
+          "id": "serial_scan_edge_0",
+          "source": "serial_scan_0",
+          "target": "serial_scan_1",
           "sourceHandle": "output",
+          "targetHandle": "scan"
+        },
+        {
+          "id": "serial_scan_edge_1",
+          "source": "serial_scan_1",
+          "target": "serial_scan_2",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_scan_edge_2",
+          "source": "serial_scan_2",
+          "target": "serial_scan_3",
+          "sourceHandle": "output",
+          "targetHandle": "filter"
+        },
+        {
+          "id": "serial_scan_edge_3",
+          "source": "serial_scan_3",
+          "target": "serial_scan_4",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_scan_edge_4",
+          "source": "serial_scan_4",
+          "target": "serial_scan_5",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_scan_error_serial_scan_1",
+          "source": "serial_scan_1",
+          "target": "serial_errors_1",
+          "sourceHandle": "error",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_scan_error_serial_scan_3",
+          "source": "serial_scan_3",
+          "target": "serial_errors_1",
+          "sourceHandle": "error",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_scan_error_serial_scan_4",
+          "source": "serial_scan_4",
+          "target": "serial_errors_1",
+          "sourceHandle": "error",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_scan_error_show",
+          "source": "serial_errors_1",
+          "target": "serial_errors_2",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_scan_error_stop",
+          "source": "serial_errors_2",
+          "target": "serial_errors_3",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_devices_edge_0",
+          "source": "serial_scan_1",
+          "target": "serial_scan_2",
+          "sourceHandle": "changed",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_devices_watch",
+          "source": "serial_devices_startup",
+          "target": "serial_scan_1",
+          "targetHandle": "watch"
+        },
+        {
+          "id": "serial_filter_edge_0",
+          "source": "serial_filter_0",
+          "target": "serial_scan_3",
+          "sourceHandle": "output",
+          "targetHandle": "filter"
+        },
+        {
+          "id": "serial_open_edge_0",
+          "source": "serial_open_0",
+          "target": "serial_open_1",
+          "sourceHandle": "output",
+          "targetHandle": "open"
+        },
+        {
+          "id": "serial_open_edge_1",
+          "source": "serial_open_1",
+          "target": "serial_send_1",
+          "sourceHandle": "success",
+          "targetHandle": "listenStart"
+        },
+        {
+          "id": "serial_open_edge_2",
+          "source": "serial_send_1",
+          "target": "serial_open_3",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_open_error_serial_open_1",
+          "source": "serial_open_1",
+          "target": "serial_errors_1",
+          "sourceHandle": "error",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_open_error_serial_open_2",
+          "source": "serial_send_1",
+          "target": "serial_errors_1",
+          "sourceHandle": "error",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_close_edge_0",
+          "source": "serial_close_0",
+          "target": "serial_close_1",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_close_edge_1",
+          "source": "serial_close_1",
+          "target": "serial_send_1",
+          "sourceHandle": "output",
+          "targetHandle": "close"
+        },
+        {
+          "id": "serial_listen_start_edge_0",
+          "source": "serial_listen_start_0",
+          "target": "serial_send_1",
+          "sourceHandle": "output",
+          "targetHandle": "listenStart"
+        },
+        {
+          "id": "serial_listen_stop_edge_0",
+          "source": "serial_listen_stop_0",
+          "target": "serial_send_1",
+          "sourceHandle": "output",
+          "targetHandle": "listenStop"
+        },
+        {
+          "id": "serial_send_edge_0",
+          "source": "serial_send_0",
+          "target": "serial_send_1",
+          "sourceHandle": "output",
+          "targetHandle": "send"
+        },
+        {
+          "id": "serial_send_read_data_to_send",
+          "kind": "data",
+          "source": "serial_send_read_data",
+          "target": "serial_send_1",
+          "sourceHandle": "data-out:q",
+          "targetHandle": "data-in:p_data"
+        },
+        {
+          "id": "serial_send_read_encoding_to_send",
+          "kind": "data",
+          "source": "serial_send_read_encoding",
+          "target": "serial_send_1",
+          "sourceHandle": "data-out:q",
+          "targetHandle": "data-in:p_encoding"
+        },
+        {
+          "id": "serial_send_read_lineEnding_to_send",
+          "kind": "data",
+          "source": "serial_send_read_lineEnding",
+          "target": "serial_send_1",
+          "sourceHandle": "data-out:q",
+          "targetHandle": "data-in:p_lineEnding"
+        },
+        {
+          "id": "serial_periodic_edge_0",
+          "source": "serial_periodic_0",
+          "target": "serial_send_1",
+          "sourceHandle": "output",
+          "targetHandle": "send"
+        },
+        {
+          "id": "serial_reconnect_edge_0",
+          "source": "serial_reconnect_0",
+          "target": "serial_send_1",
+          "sourceHandle": "output",
+          "targetHandle": "setReconnect"
+        },
+        {
+          "id": "serial_state_edge_0",
+          "source": "serial_send_1",
+          "target": "serial_state_1",
+          "sourceHandle": "state",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_state_edge_1",
+          "source": "serial_send_1",
+          "target": "serial_state_2",
+          "sourceHandle": "state",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_state_edge_2",
+          "source": "serial_state_2",
+          "target": "serial_state_3",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_state_edge_3",
+          "source": "serial_state_3",
+          "target": "serial_state_4",
+          "sourceHandle": "true",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_state_error_serial_state_2",
+          "source": "serial_state_2",
+          "target": "serial_errors_1",
+          "sourceHandle": "error",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_clear_edge_0",
+          "source": "serial_clear_0",
+          "target": "serial_clear_1",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_reset_counters_edge_0",
+          "source": "serial_reset_counters_0",
+          "target": "serial_send_1",
+          "sourceHandle": "output",
+          "targetHandle": "resetCounters"
+        },
+        {
+          "id": "serial_rx_edge_0",
+          "source": "serial_send_1",
+          "target": "serial_rx_1",
+          "sourceHandle": "rx",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_rx_edge_1",
+          "source": "serial_rx_1",
+          "target": "serial_rx_2",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_rx_edge_2",
+          "source": "serial_send_1",
+          "target": "serial_rx_3",
+          "sourceHandle": "rx",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_rx_edge_3",
+          "source": "serial_rx_3",
+          "target": "serial_rx_4",
+          "sourceHandle": "success",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_rx_error_serial_rx_1",
+          "source": "serial_rx_1",
+          "target": "serial_errors_1",
+          "sourceHandle": "error",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_rx_error_serial_rx_2",
+          "source": "serial_rx_2",
+          "target": "serial_errors_1",
+          "sourceHandle": "error",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_rx_error_serial_rx_3",
+          "source": "serial_rx_3",
+          "target": "serial_errors_1",
+          "sourceHandle": "error",
+          "targetHandle": "input"
+        },
+        {
+          "id": "serial_rx_0_q_serial_rx_1_in",
+          "kind": "data",
+          "source": "serial_send_1",
+          "target": "serial_rx_1",
+          "sourceHandle": "data-out:q",
+          "targetHandle": "data-in:in"
+        },
+        {
+          "id": "serial_rx_0_time_serial_rx_3_in",
+          "kind": "data",
+          "source": "serial_send_1",
+          "target": "serial_rx_3",
+          "sourceHandle": "data-out:time",
+          "targetHandle": "data-in:in"
+        },
+        {
+          "id": "serial_rx_1_q_serial_rx_2_in",
+          "kind": "data",
+          "source": "serial_rx_1",
+          "target": "serial_rx_2",
+          "sourceHandle": "data-out:q",
+          "targetHandle": "data-in:in"
+        },
+        {
+          "id": "serial_rx_3_q_serial_rx_4_in",
+          "kind": "data",
+          "source": "serial_rx_3",
+          "target": "serial_rx_4",
+          "sourceHandle": "data-out:q",
+          "targetHandle": "data-in:in"
+        },
+        {
+          "id": "serial_tx_edge_0",
+          "source": "serial_send_1",
+          "target": "serial_tx_1",
+          "sourceHandle": "tx",
           "targetHandle": "input"
         },
         {
@@ -5051,9 +4514,9 @@
         },
         {
           "id": "serial_tx_edge_2",
-          "source": "serial_tx_0",
+          "source": "serial_send_1",
           "target": "serial_tx_3",
-          "sourceHandle": "output",
+          "sourceHandle": "tx",
           "targetHandle": "input"
         },
         {
@@ -5066,37 +4529,61 @@
         {
           "id": "serial_tx_error_serial_tx_1",
           "source": "serial_tx_1",
-          "target": "serial_tx_error_map",
+          "target": "serial_errors_1",
           "sourceHandle": "error",
           "targetHandle": "input"
         },
         {
           "id": "serial_tx_error_serial_tx_2",
           "source": "serial_tx_2",
-          "target": "serial_tx_error_map",
+          "target": "serial_errors_1",
           "sourceHandle": "error",
           "targetHandle": "input"
         },
         {
           "id": "serial_tx_error_serial_tx_3",
           "source": "serial_tx_3",
-          "target": "serial_tx_error_map",
+          "target": "serial_errors_1",
           "sourceHandle": "error",
           "targetHandle": "input"
         },
         {
-          "id": "serial_tx_error_show",
-          "source": "serial_tx_error_map",
-          "target": "serial_tx_error_write",
-          "sourceHandle": "success",
-          "targetHandle": "input"
+          "id": "serial_tx_0_q_serial_tx_1_in",
+          "kind": "data",
+          "source": "serial_send_1",
+          "target": "serial_tx_1",
+          "sourceHandle": "data-out:q",
+          "targetHandle": "data-in:in"
         },
         {
-          "id": "serial_tx_error_stop",
-          "source": "serial_tx_error_write",
-          "target": "serial_tx_stop_timer",
-          "sourceHandle": "output",
-          "targetHandle": "input"
+          "id": "serial_tx_0_time_serial_tx_3_in",
+          "kind": "data",
+          "source": "serial_send_1",
+          "target": "serial_tx_3",
+          "sourceHandle": "data-out:time",
+          "targetHandle": "data-in:in"
+        },
+        {
+          "id": "serial_tx_1_q_serial_tx_2_in",
+          "kind": "data",
+          "source": "serial_tx_1",
+          "target": "serial_tx_2",
+          "sourceHandle": "data-out:q",
+          "targetHandle": "data-in:in"
+        },
+        {
+          "id": "serial_tx_3_q_serial_tx_4_in",
+          "kind": "data",
+          "source": "serial_tx_3",
+          "target": "serial_tx_4",
+          "sourceHandle": "data-out:q",
+          "targetHandle": "data-in:in"
+        },
+        {
+          "id": "serial_discovery_error",
+          "source": "serial_scan_1",
+          "target": "serial_errors_1",
+          "sourceHandle": "error"
         }
       ]
     }
@@ -5214,6 +4701,5 @@
         "autoReconnect": false
       }
     }
-  ],
-  "windows": []
+  ]
 }

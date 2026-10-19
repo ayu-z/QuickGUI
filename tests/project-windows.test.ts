@@ -11,7 +11,7 @@ import type { Project, ProjectWindow } from '../src/core/types';
 
 function fixture(): Project {
   const project = createProject();
-  project.schemaVersion = 2;
+  project.schemaVersion = 5;
   project.locale = 'en';
   const panel = { ...createWidget('panel'), id: 'details-panel' };
   const value = { ...createWidget('text'), id: 'details-value', parentId: panel.id };
@@ -55,7 +55,7 @@ function freezeDeep(value: unknown): void {
 }
 
 describe('project window format and read-only helpers', () => {
-  it('keeps legacy v1 documents byte-equivalent and synthesizes only their main window', () => {
+  it('keeps current documents immutable and exposes their main window', () => {
     const project = createProject();
     const original = structuredClone(project);
     freezeDeep(project);
@@ -71,8 +71,8 @@ describe('project window format and read-only helpers', () => {
     expect(getProjectWindow(project)).toEqual(windows[0]);
     expect(projectForWindow(project)).toBe(project);
     expect(importProject(exportProject(project))).toEqual(original);
-    expect(Object.hasOwn(project, 'windows')).toBe(false);
-    expect(project.schemaVersion).toBe(1);
+    expect(project.windows).toEqual([]);
+    expect(project.schemaVersion).toBe(5);
   });
 
   it('retains every v2 scene, global reference and optional value through ZIP round trips', () => {
@@ -84,7 +84,7 @@ describe('project window format and read-only helpers', () => {
     expect(validateProject(project)).toEqual(original);
     const bytes = exportProject(project);
     expect(importProject(bytes)).toEqual(original);
-    expect(strFromU8(unzipSync(bytes)['README.txt'])).toContain('format v2');
+    expect(strFromU8(unzipSync(bytes)['README.txt'])).toContain('format v5');
     expect(project).toEqual(original);
   });
 
@@ -105,10 +105,11 @@ describe('project window format and read-only helpers', () => {
     expect(() => projectForWindow(project, 'missing')).toThrow('Unknown project window');
   });
 
-  it.each([[], undefined])('rejects a windows field on v1, including %s', (windows) => {
-    const project = { ...createProject(), windows };
-    expect(() => validateProject(project)).toThrow('$.windows');
-    expect(() => listProjectWindows(project)).toThrow('schemaVersion 1');
+  it('normalizes old window metadata and keeps current windows required', () => {
+    expect(
+      validateProject({ ...createProject(), schemaVersion: 1, windows: undefined }).windows,
+    ).toEqual([]);
+    expect(() => validateProject({ ...createProject(), windows: undefined })).toThrow();
   });
 
   it('requires an array on v2 and allows an empty one without silently downgrading', () => {
@@ -117,7 +118,7 @@ describe('project window format and read-only helpers', () => {
     expect(() => validateProject(project)).toThrow();
     expect(() => listProjectWindows(project)).toThrow('requires a windows array');
     project.windows = [];
-    expect(validateProject(project).schemaVersion).toBe(2);
+    expect(validateProject(project).schemaVersion).toBe(5);
     expect(importProject(exportProject(project)).windows).toEqual([]);
   });
 
@@ -334,10 +335,10 @@ describe('window action validation', () => {
     addAction(project, action, id);
     expect(() => validateProject(project)).toThrow(error);
   });
-  it('rejects window nodes in v1 and prevents deleting their target in v2', () => {
+  it('accepts current window nodes and prevents deleting their target', () => {
     const legacy = createProject();
     addAction(legacy, 'focus', 'main');
-    expect(() => validateProject(legacy)).toThrow('require schemaVersion 2');
+    expect(validateProject(legacy).schemaVersion).toBe(5);
     const project = fixture();
     addAction(project, 'open', 'details');
     project.windows = [];
@@ -381,21 +382,17 @@ describe('standalone source export window metadata', () => {
       expect(config.app.windows[0].url).toBe('index.html?runtime=1&windowId=main');
       expect(config.app.windows[0].title).toBe(project.window.title);
       expect(project).toEqual(original);
-      const unsupported = { ...project, schemaVersion: 5 } as unknown as Project;
+      const unsupported = { ...project, schemaVersion: 6 } as unknown as Project;
       await expect(
         exporter.exportProject(unsupported, path.join(directory, 'unsupported'), root),
-      ).rejects.toThrow('schemaVersion 1, 2, 3 or 4');
-      const disguised = { ...project, schemaVersion: 1 } as Project;
-      await expect(
-        exporter.exportProject(disguised, path.join(directory, 'disguised'), root),
-      ).rejects.toThrow('schemaVersion 1 cannot contain windows');
+      ).rejects.toThrow('schemaVersion 6');
       for (const [name, change, message] of [
         [
           'blank',
           (p: Project) => {
             p.windows![0].name = ' \ufeff ';
           },
-          'Invalid window definition',
+          'name',
         ],
         [
           'binding',

@@ -32,10 +32,10 @@ const printed = (value: Json) =>
         ? ''
         : JSON.stringify(value);
 
-describe('explicit widget migration', () => {
+describe('automatic widget normalization', () => {
   it('moves the legacy chart value binding to the first curve and canonicalizes names', () => {
     const source = createEmptyProject(),
-      old = createWidget('chart');
+      old = createWidget('chart', 0, 0, 1);
     old.props.value = 17.5;
     old.props.vendor = { nested: ['retained'] };
     old.bindings.value = { variable: 'reading', mode: 'once' };
@@ -55,7 +55,7 @@ describe('explicit widget migration', () => {
     expect(upgradeWidget(next.widgets[0], next)).toEqual(next.widgets[0]);
   });
   it('turns the first legacy table row into indexed columns and retains every body cell', () => {
-    const old = createWidget('table');
+    const old = createWidget('table', 0, 0, 1);
     old.props.rows = [
       ['Device', 'Value'],
       ['A', 12],
@@ -82,7 +82,7 @@ describe('explicit widget migration', () => {
   });
   it('keeps dynamically bound first-row headings out of table body data', () => {
     const p = project(),
-      old = createWidget('table');
+      old = createWidget('table', 0, 0, 1);
     old.bindings.rows = { variable: 'rows', mode: 'oneWay' };
     p.variables = [
       {
@@ -113,7 +113,7 @@ describe('explicit widget migration', () => {
     expect(validatePropertyPatch(next, {}, p)).toEqual([]);
   });
   it('preserves legacy select labels, formatted values, object options and duplicate values', () => {
-    const old = createWidget('select'),
+    const old = createWidget('select', 0, 0, 1),
       options: Json[] = [1234.5678, false, { label: 'raw object', value: 8 }, 1234.5678];
     old.props.options = options;
     old.props.value = options[0];
@@ -132,7 +132,7 @@ describe('explicit widget migration', () => {
     expect(html).toContain('raw object');
   });
   it('adapts dynamic legacy select options and keeps numeric source values selected', () => {
-    const old = createWidget('select'),
+    const old = createWidget('select', 0, 0, 1),
       p = project();
     old.bindings.options = { variable: 'choices', mode: 'oneWay' };
     old.bindings.value = { variable: 'selected', mode: 'oneWay' };
@@ -156,14 +156,14 @@ describe('explicit widget migration', () => {
     expect(validatePropertyPatch(next, {}, p)).toEqual([]);
   });
   it('preserves blur submission and protects conflicting legacy extension properties', () => {
-    const input = createWidget('input');
+    const input = createWidget('input', 0, 0, 1);
     input.props.value = 1234.5;
     input.events.submit = 'submit_flow';
     const next = upgradeWidget(input);
     expect(next.props.submitOn).toBe('blur');
     expect(next.props.value).toBe(printed(1234.5));
     expect(next.events).toEqual(input.events);
-    const chart = createWidget('chart');
+    const chart = createWidget('chart', 0, 0, 1);
     chart.props.series = { vendorExtension: true };
     const before = structuredClone(chart);
     expect(() => upgradeWidget(chart)).toThrow('Legacy extension props.series');

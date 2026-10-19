@@ -52,7 +52,7 @@ function flow(id: string, nodes: FlowNode[]): Flow {
   };
 }
 function project(id = 'source'): Project {
-  const p = upgradeProject(createEmptyProject(id), 4);
+  const p = upgradeProject(createEmptyProject(id));
   p.id = id;
   p.variables = [
     {
@@ -309,26 +309,26 @@ describe('shared v4 ValueRef and JSON operations', () => {
 });
 
 describe('v4 schemas, ports and version boundaries', () => {
-  it('keeps 1–3 documents unchanged, explicitly upgrades to 4 and rejects version 5', () => {
-    expect(createEmptyProject().schemaVersion).toBe(3);
+  it('normalizes known document versions to the latest and rejects future versions', () => {
+    expect(createEmptyProject().schemaVersion).toBe(5);
     for (const version of [1, 2, 3] as const) {
       const p = createProject();
       p.schemaVersion = version;
       if (version >= 2) p.windows = [];
       const before = structuredClone(p);
-      expect(importProject(exportProject(p))).toEqual(before);
-      const next = upgradeProject(p, 4);
-      expect(next.schemaVersion).toBe(4);
-      expect(upgradeProject(next).schemaVersion).toBe(4);
+      expect(importProject(exportProject(p))).toEqual(upgradeProject(before));
+      const next = upgradeProject(p);
+      expect(next.schemaVersion).toBe(5);
+      expect(upgradeProject(next).schemaVersion).toBe(5);
       expect(p).toEqual(before);
       expect(importProject(exportProject(next))).toEqual(next);
     }
-    expect(() => validateProject({ ...project(), schemaVersion: 5 })).toThrow(/schemaVersion 5/);
-    expect(() => upgradeProject({ ...project(), schemaVersion: 5 } as unknown as Project)).toThrow(
+    expect(() => validateProject({ ...project(), schemaVersion: 6 })).toThrow(/schemaVersion 6/);
+    expect(() => upgradeProject({ ...project(), schemaVersion: 6 } as unknown as Project)).toThrow(
       /Unsupported/,
     );
   });
-  it('allows new configs only in v4, rejects missing refs and keeps defaults out of saved data', () => {
+  it('accepts current configs after normalization, rejects missing refs and keeps defaults out of saved data', () => {
     const p = project();
     p.flows = [
       flow('data', [
@@ -341,13 +341,7 @@ describe('v4 schemas, ports and version boundaries', () => {
     expect(validateProject(p)).toEqual(before);
     expect(p).toEqual(before);
     for (const version of [1, 2, 3])
-      expect(() =>
-        validateProject({
-          ...p,
-          schemaVersion: version,
-          ...(version === 1 ? { windows: undefined } : {}),
-        }),
-      ).toThrow();
+      expect(validateProject({ ...p, schemaVersion: version }).schemaVersion).toBe(5);
     p.flows[0].nodes[1].config.value = variable('Settings');
     expect(() => validateProject(p)).toThrow(/stable variable ID/);
     p.flows[0].nodes[1].config.value = variable('settings');
@@ -366,7 +360,7 @@ describe('v4 schemas, ports and version boundaries', () => {
         }),
       ]),
     ];
-    expect(() => validateProject(legacy)).toThrow(/schemaVersion 4/);
+    expect(validateProject(legacy).schemaVersion).toBe(5);
   });
   it('validates action settings and controlled-interval literal types before execution', () => {
     const p = project();
@@ -428,7 +422,7 @@ describe('v4 schemas, ports and version boundaries', () => {
     expect(() => validateFlow(f, 4)).toThrow(/target port/);
     const old = flow('old', [node('e', 'event'), node('write', 'write')]);
     old.edges[0].sourceHandle = 'vendor';
-    expect(validateFlow(old, 3)).toHaveLength(2);
+    expect(() => validateFlow(old, 3)).toThrow(/source port/);
   });
   it('never downgrades v4 when adding windows and creates modern widgets in v4', () => {
     vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => {} });
@@ -437,7 +431,7 @@ describe('v4 schemas, ports and version boundaries', () => {
     store.addWindow('Extra');
     store.addWidget('text');
     const saved = store.getSnapshot().project!;
-    expect(saved.schemaVersion).toBe(4);
+    expect(saved.schemaVersion).toBe(5);
     expect(saved.windows?.[0].widgets[0].definitionVersion).toBe(2);
     store.dispose();
   });
@@ -649,7 +643,7 @@ describe('shared v4 dependency references', () => {
     const target = createEmptyProject('target');
     target.id = 'target';
     const plan = preparePaste(target, bundle, { kind: 'window', id: 'main' });
-    expect(plan.candidate.schemaVersion).toBe(4);
+    expect(plan.candidate.schemaVersion).toBe(5);
     expect(plan.candidate.flows).toHaveLength(2);
     expect(plan.candidate.connections).toHaveLength(1);
     const map = plan.candidate.flows.flatMap((f) => f.nodes).find((n) => n.kind === 'map')!;
@@ -667,6 +661,6 @@ describe('shared v4 dependency references', () => {
     expect(
       preparePaste(project('existing4'), simple, { kind: 'window', id: 'main' }).candidate
         .schemaVersion,
-    ).toBe(4);
+    ).toBe(5);
   });
 });

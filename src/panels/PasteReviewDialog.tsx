@@ -194,13 +194,6 @@ export function PasteReviewDialog({
             {bundle.source.projectName} → {project.name} · {bundle.widgets.length}{' '}
             {zh ? '个控件' : 'widgets'}
           </p>
-          {project.schemaVersion < 3 && (
-            <p className="paste-upgrade-note">
-              {zh
-                ? '此次粘贴将工作副本升级为 v3，原始文件不覆盖，现有控件保留旧版行为。'
-                : 'This paste upgrades the working copy to v3. Original files are preserved and existing widgets keep their behavior.'}
-            </p>
-          )}
           <label className="paste-choice">
             <input
               type="checkbox"

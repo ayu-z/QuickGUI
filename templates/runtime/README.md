@@ -4,6 +4,8 @@ This directory contains the complete project JSON, React renderer, Rust engine/n
 
 Prerequisites: Node.js 22+, Rust stable, a platform C/C++ toolchain, and the Tauri platform prerequisites. On macOS install Xcode Command Line Tools. On Windows install Visual Studio C++ Build Tools and WebView2. Build each package on its target operating system; cross-platform installers are not produced by renaming an output.
 
+Windows release packages use the system WebView2 runtime and do not bundle the runtime or its offline installer. If WebView2 is missing, the installer downloads and installs it using an internet connection. For offline installation or running the application EXE directly, install WebView2 on the target computer beforehand.
+
 ```sh
 npm ci
 npm run build
@@ -15,10 +17,10 @@ Runtime packages compile each project script ahead of time with CMake and Cargo.
 
 `npm run dev` runs the renderer in a browser; C execution requires `npm run desktop`. `npm run desktop:build` stages and tests native dependencies, regenerates icons, and invokes the standard Tauri build. `--target <rust-triple>` selects an installed Rust target. The host OS must match the target OS. CMake users may configure with `cmake -S . -B build` and build `web`, `engine`, or `desktop` targets.
 
-`project.json` is the unmodified source document, imported as JSON rather than interpolated into executable code. `project-scripts/*.c` files mirror project scripts for inspection; runtime uses the embedded JSON sources. Editing JSON does not execute a script during export. The installer uses `publish.appName`, `identifier`, `version`, `publisher`, and icon settings. macOS app icons use ICNS; Windows application/shortcut icons use ICO. Windows corner preferences require Windows 11; macOS retains native window decoration.
+`project.json` is the validated current v5 document, imported as JSON rather than interpolated into executable code. `project-scripts/*.c` files mirror project scripts for inspection; runtime uses the embedded JSON sources. Editing JSON does not execute a script during export. The installer uses `publish.appName`, `identifier`, `version`, `publisher`, and icon settings. macOS app icons use ICNS; Windows application/shortcut icons use ICO. Windows corner preferences require Windows 11; macOS retains native window decoration.
 
 Release builds are unsigned unless platform signing credentials are supplied to the normal Tauri toolchain. Distribution signing/notarization is a release step, not a property of a source export.
 
 Custom React component source packages are extracted to `components/<localId>/` and remain embedded in `project.json`. After editing a component, run `node scripts/build-component.mjs components/<localId> artifacts/<localId>.qgcomponent --project project.json --module <localId>` to rebuild the package and atomically replace that module's embedded implementation. The local module ID, original source identity and scoped resources are preserved. Omitting both flags only writes the package; it does not update the running project. The runtime preserves the component trust decision; a ShadowRoot isolates styles, not JavaScript authority.
 
-Schema v3 retains JSON variable paths, versioned widget properties, multiple windows and scoped resources. Browser previews and native applications use the exported renderer and flow semantics. Historical chart queries require the native SQLite host. C aliases resolve the original script's names to local numeric variable IDs without changing source code or ABI 2.
+All projects use schema v5 and widget definition v2. Known older documents are normalized once at import; historical runtime behavior is not retained. The current model includes JSON variable paths, multiple windows, scoped resources and versioned FB interfaces with named, typed data inputs and outputs, separate execution wires, on-demand evaluation and per-instance C state. Browser previews and native applications use the exported renderer and flow semantics. Historical chart queries require the native SQLite host. C aliases resolve the original script's names to local numeric variable IDs without changing source code or ABI 2.

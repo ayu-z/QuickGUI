@@ -65,7 +65,7 @@ async function selectSection(page: Page, name: string) {
   await page.locator('.workspace-tabs nav').getByRole('button', { name, exact: true }).click();
 }
 
-test('creating a project uses v3 and new widgets use definition version 2', async ({
+test('creating a project uses v5 and new widgets use definition version 2', async ({
   page,
 }, info) => {
   await page.goto('/');
@@ -87,45 +87,34 @@ test('creating a project uses v3 and new widgets use definition version 2', asyn
   await expect(page.locator('.qg-inspector').getByLabel('输入类型', { exact: true })).toBeVisible();
   await page.screenshot({ path: 'artifacts/v3-modern-properties.png', fullPage: true });
   const result = await exportProject(page, info, 'new-v3');
-  expect(result.schemaVersion).toBe(3);
+  expect(result.schemaVersion).toBe(5);
   expect(result.windows).toEqual([]);
   expect(result.widgets).toHaveLength(1);
   expect(result.widgets[0]).toMatchObject({ type: 'input', definitionVersion: 2 });
 });
 
-test('legacy property upgrade requires confirmation and is one reversible change', async ({
+test('opening an old document immediately uses current properties and undo stays current', async ({
   page,
 }, info) => {
-  const old = { ...createWidget('input'), id: 'legacy-input', name: 'Legacy Input' };
-  const project = legacyProject('Legacy Upgrade', [old]);
+  const old = { ...createWidget('input', 0, 0, 1), id: 'legacy-input', name: 'Legacy Input' };
   await page.goto('/');
-  await importProject(page, project);
+  await importProject(page, legacyProject('Automatic Upgrade', [old]));
   await designWidget(page, old.id).click();
-  await page.getByRole('button', { name: '升级控件属性', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: '升级工程与控件', exact: true });
-  await expect(dialog).toContainText('撤销');
-  await dialog.getByRole('button', { name: '取消', exact: true }).click();
-  const cancelled = await exportProject(page, info, 'upgrade-cancelled');
-  expect(cancelled.schemaVersion).toBe(1);
-  expect(cancelled.widgets).toEqual(project.widgets);
+  await expect(page.getByRole('button', { name: '升级控件属性', exact: true })).toHaveCount(0);
+  const type = page.locator('.qg-inspector').getByLabel('输入类型', { exact: true });
+  await expect(type).toBeVisible();
+  const opened = await exportProject(page, info, 'auto-upgraded');
+  expect(opened.schemaVersion).toBe(5);
+  expect(opened.widgets[0]).toMatchObject({ id: old.id, definitionVersion: 2 });
   await expect(undoButton(page)).toBeDisabled();
-  await page.getByRole('button', { name: '升级控件属性', exact: true }).click();
-  await dialog.getByRole('button', { name: '升级工作副本', exact: true }).click();
-  await expect(dialog).toHaveCount(0);
-  const inputType = page.locator('.qg-inspector').getByLabel('输入类型', { exact: true });
-  await expect(inputType).toBeVisible();
-  const upgraded = await exportProject(page, info, 'upgrade-confirmed');
-  expect(upgraded.schemaVersion).toBe(3);
-  expect(upgraded.widgets[0]).toMatchObject({ id: old.id, definitionVersion: 2 });
+  await type.selectOption('password');
   await undoButton(page).click();
-  await expect(page.getByRole('button', { name: '升级控件属性', exact: true })).toBeVisible();
-  const undone = await exportProject(page, info, 'upgrade-undone');
-  expect(undone.schemaVersion).toBe(1);
-  expect(undone.widgets).toEqual(project.widgets);
-  await expect(undoButton(page)).toBeDisabled();
+  const undone = await exportProject(page, info, 'undo-current');
+  expect(undone.schemaVersion).toBe(5);
+  expect(undone.widgets).toEqual(opened.widgets);
 });
 
-test('Ctrl+C and Ctrl+V keep legacy versions in the same document and undo once', async ({
+test('Ctrl+C and Ctrl+V keep current versions in the same document and undo once', async ({
   page,
 }, info) => {
   await useMemoryClipboard(page);
@@ -141,8 +130,8 @@ test('Ctrl+C and Ctrl+V keep legacy versions in the same document and undo once'
   await expect(page.locator('[data-design-widget]')).toHaveCount(2);
   await expect(page.getByRole('dialog', { name: '跨工程粘贴', exact: true })).toHaveCount(0);
   const pasted = await exportProject(page, info, 'same-document-paste');
-  expect(pasted.schemaVersion).toBe(1);
-  expect(pasted.widgets.map((widget) => widget.definitionVersion ?? 1)).toEqual([1, 1]);
+  expect(pasted.schemaVersion).toBe(5);
+  expect(pasted.widgets.map((widget) => widget.definitionVersion ?? 1)).toEqual([2, 2]);
   expect(new Set(pasted.widgets.map((widget) => widget.id)).size).toBe(2);
   expect(pasted.widgets[1].props).toEqual(original.props);
   await page.locator('.qg-canvas-viewport').focus();
@@ -203,7 +192,7 @@ test('cross-project fallback paste reviews mappings and code trust, then imports
   await page.keyboard.press('ControlOrMeta+v');
   const review = page.getByRole('dialog', { name: '跨工程粘贴', exact: true });
   await expect(review).toBeVisible();
-  await expect(review).toContainText('工作副本升级为 v3');
+  await expect(review).not.toContainText('工作副本升级');
   await expect(review).toContainText('系统剪贴板不可用');
   await expect(review.locator('.paste-summary')).toContainText('粘贴 1 个控件');
   const cancelIcon = review.getByRole('button', { name: '取消粘贴', exact: true });
@@ -232,10 +221,10 @@ test('cross-project fallback paste reviews mappings and code trust, then imports
   await expect(review).toHaveCount(0);
   await expect(page.locator('[data-design-widget]')).toHaveCount(1);
   const imported = await exportProject(page, info, 'cross-project-pasted');
-  expect(imported.schemaVersion).toBe(3);
+  expect(imported.schemaVersion).toBe(5);
   expect(imported.variables).toEqual(target.variables);
   expect(imported.widgets[0].bindings.text.variable).toBe('target-count');
-  expect(imported.widgets[0].definitionVersion ?? 1).toBe(1);
+  expect(imported.widgets[0].definitionVersion).toBe(2);
   expect(imported.flows).toHaveLength(1);
   expect(imported.flows[0].enabled).toBe(false);
   expect(imported.scripts).toHaveLength(1);
@@ -245,7 +234,12 @@ test('cross-project fallback paste reviews mappings and code trust, then imports
   );
   await undoButton(page).click();
   const undone = await exportProject(page, info, 'cross-project-undone');
-  expect({ ...undone, revision: 0 }).toEqual({ ...target, revision: 0 });
+  expect({ ...undone, revision: 0 }).toEqual({
+    ...target,
+    schemaVersion: 5,
+    windows: [],
+    revision: 0,
+  });
   await expect(undoButton(page)).toBeDisabled();
 });
 

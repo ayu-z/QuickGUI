@@ -38,12 +38,10 @@ export function ConnectionsPanel({
   project,
   onChange,
   notify,
-  onRequestV4,
 }: {
   project: Project;
   onChange: (mutator: (p: Project) => void) => void;
   notify: (text: string, error?: boolean) => void;
-  onRequestV4?: (apply: () => void) => void;
 }) {
   const zh = project.locale === 'zh-CN';
   const [response, setResponse] = useState<Record<string, string>>({});
@@ -97,8 +95,7 @@ export function ConnectionsPanel({
         connection.protocol = protocol;
         connection.config = { ...(protocol === 'serial' ? serialDefaults : defaults[protocol]) };
       });
-    if (protocol === 'serial' && project.schemaVersion < 4) onRequestV4?.(apply);
-    else apply();
+    apply();
   };
   const change = (id: string, key: string, value: Json) =>
     onChange((p) => {
@@ -283,26 +280,6 @@ export function ConnectionsPanel({
                     </select>
                   </label>
                 )}
-                {project.schemaVersion < 4 && (
-                  <button
-                    className="button"
-                    onClick={() =>
-                      onRequestV4?.(() =>
-                        onChange((next) => {
-                          const connection = next.connections.find((item) => item.id === c.id)!;
-                          connection.config = {
-                            ...serialDefaults,
-                            portName: String(connection.config.address ?? ''),
-                            baudRate: connection.config.baudRate ?? 115200,
-                            framing: connection.config.framing ?? 'raw',
-                          };
-                        }),
-                      )
-                    }
-                  >
-                    {zh ? '升级为完整串口配置（v4）' : 'Upgrade to full serial settings (v4)'}
-                  </button>
-                )}
               </>
             )}
             {c.protocol === 'http' && (
@@ -331,7 +308,7 @@ export function ConnectionsPanel({
                 />
               </label>
             )}
-            {c.protocol === 'serial' && project.schemaVersion >= 4 && (
+            {c.protocol === 'serial' && (
               <>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                   {(
@@ -397,7 +374,7 @@ export function ConnectionsPanel({
             )}
             {['tcp', 'serial'].includes(c.protocol) && (
               <label>
-                {c.protocol === 'serial' && project.schemaVersion >= 4
+                {c.protocol === 'serial'
                   ? zh
                     ? '接收组帧'
                     : 'Receive framing'
@@ -414,7 +391,7 @@ export function ConnectionsPanel({
                 </select>
               </label>
             )}
-            {c.protocol === 'serial' && project.schemaVersion >= 4 && (
+            {c.protocol === 'serial' && (
               <p style={{ color: 'var(--muted)', fontSize: 11, lineHeight: 1.6 }}>
                 {zh
                   ? 'v4 串口流程的组帧仅作用于接收；发送由编码和行尾决定。下方旧单次诊断仍按原有组帧规则收发。'
@@ -484,7 +461,7 @@ export function ConnectionsPanel({
                 ? zh
                   ? '连接中…'
                   : 'Connecting…'
-                : c.protocol === 'serial' && project.schemaVersion >= 4
+                : c.protocol === 'serial'
                   ? zh
                     ? '单次诊断（8N1 / 无流控）'
                     : 'One-shot diagnostic (8N1 / no flow control)'

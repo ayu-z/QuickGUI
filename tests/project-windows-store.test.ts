@@ -26,13 +26,13 @@ afterEach(() => {
 });
 
 describe('multiple-window editor state', () => {
-  it('adds a separate empty window, upgrades only on creation and keeps the main scene intact', () => {
+  it('adds a separate empty window, uses the current schema and keeps the main scene intact', () => {
     const editor = store(),
       original = structuredClone(editor.getSnapshot().project!);
     expect(editor.getSnapshot().activeWindowId).toBe('main');
     const id = editor.addWindow('  设备详情  ')!;
     const state = editor.getSnapshot();
-    expect(state.project!.schemaVersion).toBe(2);
+    expect(state.project!.schemaVersion).toBe(5);
     expect(state.project!.id).toBe(original.id);
     expect(state.project!.window).toEqual(original.window);
     expect(state.project!.widgets).toEqual(original.widgets);
@@ -167,7 +167,7 @@ describe('multiple-window editor state', () => {
     const editor = store(),
       id = editor.addWindow('Child')!;
     editor.undo();
-    expect(editor.getSnapshot().project!.schemaVersion).toBe(1);
+    expect(editor.getSnapshot().project!.schemaVersion).toBe(5);
     expect(editor.getSnapshot().activeWindowId).toBe('main');
     editor.redo();
     expect(getProjectWindow(editor.getSnapshot().project!, id).id).toBe(id);

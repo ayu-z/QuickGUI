@@ -7,7 +7,9 @@
 use super::*;
 
 static PTYS: OnceLock<Mutex<BTreeMap<String, SerialPortInfo>>> = OnceLock::new();
+#[cfg(unix)]
 static HANDLES: OnceLock<Mutex<BTreeMap<String, tokio_serial::SerialStream>>> = OnceLock::new();
+#[cfg(unix)]
 pub(super) fn take_registered_pty(name: &str) -> Option<tokio_serial::SerialStream> {
     HANDLES
         .get_or_init(Default::default)
@@ -48,8 +50,8 @@ async fn manual(engine: &SharedEngine, service: &SerialService, id: &str) {
     crate::flow_v4::run_shared(
         engine.clone(),
         Some(service.clone()),
-        id,
-        None,
+        "serial_scan",
+        Some(&format!("{id}_0")),
         Value::Null,
         CancellationToken::new(),
         None,
@@ -114,39 +116,55 @@ async fn deliver_demo_events(
         }
         for flow in project.flows.iter().filter(|flow| flow.enabled) {
             for node in &flow.nodes {
-                if node.kind != "event"
-                    || node.config.get("trigger").and_then(Value::as_str) != Some("serial")
-                    || node.config.get("event").and_then(Value::as_str)
-                        != Some(delivery.event.kind.as_str())
-                {
+                if node.kind != "serial" {
                     continue;
                 }
-                if delivery.event.kind != "devices"
-                    && node.config.get("connectionId").and_then(Value::as_str)
-                        != delivery.event.connection_id.as_deref()
-                {
-                    continue;
-                }
-                let direction = node
+                let action = node
                     .config
-                    .get("direction")
+                    .get("action")
                     .and_then(Value::as_str)
-                    .unwrap_or("rx");
-                if delivery.event.kind == "data"
-                    && direction != "both"
-                    && delivery.event.payload["direction"] != direction
+                    .unwrap_or("");
+                let port = match (action, delivery.event.kind.as_str()) {
+                    ("discover", "devices") if node.id == "serial_scan_1" => "changed",
+                    ("communicate", "data")
+                        if node.config.get("connectionId").and_then(Value::as_str)
+                            == delivery.event.connection_id.as_deref() =>
+                    {
+                        if delivery.event.payload["direction"] == "tx" {
+                            "tx"
+                        } else {
+                            "rx"
+                        }
+                    }
+                    ("communicate", "state" | "error")
+                        if node.config.get("connectionId").and_then(Value::as_str)
+                            == delivery.event.connection_id.as_deref() =>
+                    {
+                        delivery.event.kind.as_str()
+                    }
+                    _ => continue,
+                };
+                if !flow
+                    .edges
+                    .iter()
+                    .any(|e| e.source == node.id && e.source_handle.as_deref() == Some(port))
                 {
                     continue;
                 }
                 if !service.refresh_state_event(&mut delivery.event) {
                     break;
                 }
-                crate::flow_v4::run_shared(
+                crate::flow_v4::run_output_shared(
                     engine.clone(),
                     Some(service.clone()),
                     &flow.id,
-                    Some(&node.id),
-                    delivery.event.payload.clone(),
+                    &node.id,
+                    port,
+                    if port == "error" {
+                        delivery.event.payload.clone()
+                    } else {
+                        crate::usb::envelope(delivery.event.payload.clone(), port)
+                    },
                     CancellationToken::new(), // Finish an accepted batch when pausing this test pump.
                     None,
                 )
@@ -166,7 +184,7 @@ async fn actual_demo_opens_a_real_pty_and_routes_rx_tx_state_without_widget_code
     let fixture = std::env::var_os("QG_SERIAL_DEMO_FIXTURE")
         .expect("set QG_SERIAL_DEMO_FIXTURE to examples/serial-assistant/quickgui.json");
     let project: crate::Project = serde_json::from_slice(&std::fs::read(fixture).unwrap()).unwrap();
-    assert_eq!(project.schema_version, 4);
+    assert_eq!(project.schema_version, 5);
     let engine = Arc::new(tokio::sync::Mutex::new(
         crate::Engine::new(project.clone())
             .expect("actual demo must pass native schema validation"),

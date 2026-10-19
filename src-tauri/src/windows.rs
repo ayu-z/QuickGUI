@@ -155,10 +155,25 @@ pub(crate) fn broadcast_snapshot(
     owner_label: &str,
     snapshot: &RuntimeSnapshot,
 ) {
+    remember_snapshot(app, owner_label, snapshot);
+    publish_snapshot(app, owner_label, snapshot);
+}
+pub(crate) fn remember_snapshot(
+    app: &tauri::AppHandle,
+    owner_label: &str,
+    snapshot: &RuntimeSnapshot,
+) {
     let state = app.state::<HostState>();
     if let Ok(mut snapshots) = state.latest_snapshots.lock() {
         snapshots.insert(owner_label.into(), snapshot.clone());
-    }
+    };
+}
+pub(crate) fn publish_snapshot(
+    app: &tauri::AppHandle,
+    owner_label: &str,
+    snapshot: &RuntimeSnapshot,
+) {
+    let state = app.state::<HostState>();
     for (label, window) in app.webview_windows() {
         if owner(&label) != owner_label {
             continue;

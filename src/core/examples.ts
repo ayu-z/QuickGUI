@@ -1,5 +1,6 @@
 import { createProject } from './project';
 import { createSerialAssistantProject } from '../examples/serialAssistant';
+import { createUsbAssistantProject } from '../examples/usbAssistant';
 import type { Locale, Project } from './types';
 
 export const projectExamples: {
@@ -16,5 +17,10 @@ export const projectExamples: {
     id: 'serial-assistant',
     label: { 'zh-CN': '打开串口助手示例', en: 'Open serial assistant example' },
     create: createSerialAssistantProject,
+  },
+  {
+    id: 'usb-assistant',
+    label: { 'zh-CN': '打开 USB 助手示例', en: 'Open USB assistant example' },
+    create: createUsbAssistantProject,
   },
 ];

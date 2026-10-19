@@ -28,7 +28,10 @@ pub fn sources(project: &Project) -> Result<Vec<EventSource>, String> {
                 serial: None,
                 sends_serial: flow.nodes.iter().any(|n| {
                     n.kind == "serial"
-                        && n.config.get("action").and_then(Value::as_str) == Some("send")
+                        && n.config
+                            .get("action")
+                            .and_then(Value::as_str)
+                            .is_some_and(|a| ["send", "communicate"].contains(&a))
                 }),
             };
             match trigger {
@@ -45,9 +48,6 @@ pub fn sources(project: &Project) -> Result<Vec<EventSource>, String> {
                     source.interval = Some(Duration::from_millis(ms));
                 }
                 "controlledInterval" => {
-                    if project.schema_version < 4 {
-                        return Err("Controlled intervals require schema v4".into());
-                    }
                     source.controlled = Some((
                         node.config
                             .get("interval")
@@ -60,9 +60,6 @@ pub fn sources(project: &Project) -> Result<Vec<EventSource>, String> {
                     ));
                 }
                 "serial" => {
-                    if project.schema_version < 4 {
-                        return Err("Serial events require schema v4".into());
-                    }
                     source.serial = Some((
                         node.config
                             .get("event")
@@ -91,32 +88,17 @@ async fn run(session: &Session, source: &EventSource, input: Value, host: Option
     if session.cancellation.is_cancelled() {
         return;
     }
-    if session.engine.lock().await.project().schema_version >= 4 {
-        let _ = flow_v4::run_shared(
-            session.engine.clone(),
-            session.serial.clone(),
-            &source.flow,
-            Some(&source.node),
-            input,
-            session.cancellation.child_token(),
-            host,
-        )
-        .await;
-    } else {
-        let mut engine =
-            tokio::select! {_=session.cancellation.cancelled()=>return,e=session.engine.lock()=>e};
-        if !session.cancellation.is_cancelled() {
-            let _ = engine
-                .run_event(
-                    &source.flow,
-                    &source.node,
-                    input,
-                    session.cancellation.child_token(),
-                    host,
-                )
-                .await;
-        }
-    }
+
+    let _ = flow_v4::run_shared(
+        session.engine.clone(),
+        session.serial.clone(),
+        &source.flow,
+        Some(&source.node),
+        input,
+        session.cancellation.child_token(),
+        host,
+    )
+    .await;
 }
 async fn run_periodic(
     session: &Session,
@@ -142,10 +124,195 @@ async fn run_periodic(
     )
     .await;
 }
+async fn dispatch_serial_blocks(
+    session: &Session,
+    event: &quickgui_engine::serial::SerialEvent,
+    host: Option<&ScriptHost>,
+) {
+    let Some(serial) = &session.serial else {
+        return;
+    };
+    let targets = {
+        let engine = session.engine.lock().await;
+        let mut targets = Vec::new();
+        for flow in engine.project().flows.iter().filter(|f| f.enabled) {
+            for node in flow.nodes.iter().filter(|n| n.kind == "serial") {
+                let action = node
+                    .config
+                    .get("action")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                let port = match (action, event.kind.as_str()) {
+                    ("discover", "devices")
+                        if serial.watching_discovery(&flow.id, &node.id, event.sequence) =>
+                    {
+                        "changed"
+                    }
+                    ("discover", "error")
+                        if event.connection_id.is_none()
+                            && serial.watching_discovery(&flow.id, &node.id, event.sequence) =>
+                    {
+                        "error"
+                    }
+                    ("communicate", "data")
+                        if node.config.get("connectionId").and_then(Value::as_str)
+                            == event.connection_id.as_deref() =>
+                    {
+                        if event.payload["direction"] == "tx" {
+                            "tx"
+                        } else {
+                            "rx"
+                        }
+                    }
+                    ("communicate", "state" | "error")
+                        if node.config.get("connectionId").and_then(Value::as_str)
+                            == event.connection_id.as_deref() =>
+                    {
+                        event.kind.as_str()
+                    }
+                    _ => continue,
+                };
+                if !flow.edges.iter().any(|e| {
+                    !quickgui_engine::function_blocks::is_data(e)
+                        && e.source == node.id
+                        && e.source_handle.as_deref() == Some(port)
+                }) {
+                    continue;
+                }
+                let mut value = event.payload.clone();
+                if action == "discover" && port != "error" {
+                    let resolve = |key: &str| {
+                        flow_v4::resolve_ref(&engine, &event.payload, &node.config[key])
+                    };
+                    let filtered = (|| -> Result<Value, String> {
+                        let filter = quickgui_engine::serial::SerialFilter {
+                            vid: flow_v4::filter_id(&resolve("vid")?)?,
+                            pid: flow_v4::filter_id(&resolve("pid")?)?,
+                        };
+                        let ports: Vec<quickgui_engine::serial::SerialPortInfo> =
+                            serde_json::from_value(value["ports"].clone())
+                                .map_err(|e| e.to_string())?;
+                        value["ports"] = json!(ports
+                            .into_iter()
+                            .filter(|p| filter.matches(p))
+                            .collect::<Vec<_>>());
+                        Ok(value.clone())
+                    })();
+                    match filtered {
+                        Ok(v) => value = v,
+                        Err(e) => {
+                            targets.push((
+                                flow.id.clone(),
+                                node.id.clone(),
+                                "error".to_owned(),
+                                json!({"code":"INVALID_FILTER","message":e}),
+                            ));
+                            continue;
+                        }
+                    }
+                }
+                targets.push((
+                    flow.id.clone(),
+                    node.id.clone(),
+                    port.to_owned(),
+                    if port == "error" {
+                        value
+                    } else {
+                        quickgui_engine::usb::envelope(value, port)
+                    },
+                ));
+            }
+        }
+        targets
+    };
+    for (flow, node, port, value) in targets {
+        if session.cancellation.is_cancelled() || !serial.current_event(event) {
+            break;
+        }
+        let _ = flow_v4::run_output_shared(
+            session.engine.clone(),
+            session.serial.clone(),
+            &flow,
+            &node,
+            &port,
+            value,
+            session.cancellation.child_token(),
+            host,
+        )
+        .await;
+    }
+}
 pub fn start(session: Session, sources: Vec<EventSource>, runner: Option<PathBuf>) {
     let (serial_sources, sources): (Vec<_>, Vec<_>) =
         sources.into_iter().partition(|s| s.serial.is_some());
     if let Some(serial) = session.serial.clone() {
+        let owner = session.clone();
+        let usb = serial.usb().clone();
+        let usb_runner = runner.clone();
+        tauri::async_runtime::spawn(async move {
+            let host = usb_runner.map(ScriptHost::new);
+            while let Some(event) = usb.next_event(&owner.cancellation).await {
+                if !usb.current(&event) {
+                    continue;
+                }
+                let _gate = tokio::select! {_=owner.cancellation.cancelled()=>break,gate=owner.flow_gate.lock()=>gate};
+                if !usb.current(&event) {
+                    continue;
+                }
+                let targets = {
+                    let engine = owner.engine.lock().await;
+                    engine
+                        .project()
+                        .flows
+                        .iter()
+                        .filter(|f| f.enabled)
+                        .flat_map(|f| {
+                            f.nodes
+                                .iter()
+                                .filter(|n| {
+                                    n.kind == "usb"
+                                        && (event.target.as_ref().is_some_and(|(flow, node)| {
+                                            flow == &f.id && node == &n.id
+                                        }) || event.session_id.as_ref().is_some_and(|id| {
+                                            n.config.get("sessionId").and_then(Value::as_str)
+                                                == Some(id.as_str())
+                                        }))
+                                        && f.edges.iter().any(|e| {
+                                            !quickgui_engine::function_blocks::is_data(e)
+                                                && e.source == n.id
+                                                && e.source_handle.as_deref() == Some(&event.port)
+                                        })
+                                })
+                                .map(|n| (f.id.clone(), n.id.clone()))
+                                .collect::<Vec<_>>()
+                        })
+                        .collect::<Vec<_>>()
+                };
+                if event.port == "error" && targets.is_empty() {
+                    owner
+                        .engine
+                        .lock()
+                        .await
+                        .external_error(event.value.to_string());
+                }
+                for (flow, node) in targets {
+                    if !usb.current(&event) {
+                        break;
+                    }
+                    let _ = flow_v4::run_output_shared(
+                        owner.engine.clone(),
+                        owner.serial.clone(),
+                        &flow,
+                        &node,
+                        &event.port,
+                        event.value.clone(),
+                        owner.cancellation.child_token(),
+                        host.as_ref(),
+                    )
+                    .await;
+                }
+            }
+        });
         let owner = session.clone();
         let state_service = serial.clone();
         tauri::async_runtime::spawn(async move {
@@ -190,13 +357,14 @@ pub fn start(session: Session, sources: Vec<EventSource>, runner: Option<PathBuf
                                 || delivery.event.payload["direction"] == direction.as_str())
                     })
                     .collect();
-                if targets.is_empty() {
-                    continue;
-                }
                 let _gate = tokio::select! {_=owner.cancellation.cancelled()=>break,gate=owner.flow_gate.lock()=>gate};
                 if !serial.current_event(&delivery.event) {
                     continue;
                 }
+                if !serial.refresh_state_event(&mut delivery.event) {
+                    continue;
+                }
+                dispatch_serial_blocks(&owner, &delivery.event, host.as_ref()).await;
                 for source in targets {
                     if owner.cancellation.is_cancelled()
                         || !serial.refresh_state_event(&mut delivery.event)
@@ -305,24 +473,8 @@ pub fn start(session: Session, sources: Vec<EventSource>, runner: Option<PathBuf
                 ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                 loop {
                     tokio::select! {_=owner.cancellation.cancelled()=>break,_=ticks.tick()=>{}}
-                    let modern = match owner.engine.try_lock() {
-                        Ok(engine) => engine.project().schema_version >= 4,
-                        Err(_) => continue,
-                    };
-                    if modern {
-                        if let Ok(_gate) = owner.flow_gate.try_lock() {
-                            run_periodic(&owner, &source, host.as_ref(), pause_epoch).await;
-                        }
-                    } else if let Ok(mut e) = owner.engine.try_lock() {
-                        let _ = e
-                            .run_event(
-                                &source.flow,
-                                &source.node,
-                                Value::Null,
-                                owner.cancellation.child_token(),
-                                host.as_ref(),
-                            )
-                            .await;
+                    if let Ok(_gate) = owner.flow_gate.try_lock() {
+                        run_periodic(&owner, &source, host.as_ref(), pause_epoch).await;
                     }
                 }
             } else {
@@ -360,6 +512,62 @@ mod tests {
                 {"id":"write","kind":"write","label":"Write","config":{"variable":"v"}}
             ],"edges":[{"id":"a","source":"start","target":"read"},{"id":"b","source":"read","target":"add"},{"id":"c","source":"add","target":"write"}]}]
         })).unwrap()
+    }
+
+    #[tokio::test]
+    async fn usb_commands_deliver_native_state_back_through_the_communication_fb() {
+        let mut project = project("manual", 0);
+        project.variables = serde_json::from_value(
+            json!([{"id":"status","name":"status","type":"json","initial":null}]),
+        )
+        .unwrap();
+        project.flows=serde_json::from_value(json!([{"id":"usb","name":"USB","enabled":true,"nodes":[
+            {"id":"start","kind":"event","label":"Close","config":{"trigger":"manual"}},
+            {"id":"io","kind":"usb","label":"USB","config":{"action":"communicate","sessionId":"usb-main","device":{"source":"literal","value":null},"options":{"source":"literal","value":{}},"data":{"source":"literal","value":""},"encoding":{"source":"literal","value":"hex"},"reportId":{"source":"literal","value":0},"length":{"source":"literal","value":64}}},
+            {"id":"state","kind":"write","label":"State","config":{"variable":"status"}}
+        ],"edges":[{"id":"close","source":"start","target":"io","targetHandle":"close"},{"id":"state","source":"io","target":"state","sourceHandle":"state"}]}])).unwrap();
+        let cancellation = CancellationToken::new();
+        let serial = quickgui_engine::serial::SerialService::new(cancellation.child_token());
+        let session = Session {
+            engine: Arc::new(tokio::sync::Mutex::new(
+                Engine::new(project.clone()).unwrap(),
+            )),
+            cancellation,
+            booted: Arc::new(std::sync::Mutex::new(Default::default())),
+            project_id: project.id.clone(),
+            history: None,
+            epoch: 0,
+            revision: 1,
+            logic_key: String::new(),
+            flow_gate: Arc::new(tokio::sync::Mutex::new(())),
+            serial: Some(serial.clone()),
+        };
+        start(session.clone(), sources(&project).unwrap(), None);
+        flow_v4::run_shared(
+            session.engine.clone(),
+            session.serial.clone(),
+            "usb",
+            None,
+            Value::Null,
+            session.cancellation.child_token(),
+            None,
+        )
+        .await
+        .unwrap();
+        tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                if session.engine.lock().await.snapshot().values["status"].value["status"]
+                    == "closed"
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("native USB state should enter the FB STATE output");
+        session.cancellation.cancel();
+        serial.shutdown().await;
     }
 
     #[tokio::test]

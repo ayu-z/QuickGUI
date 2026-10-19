@@ -12,7 +12,53 @@ const fixture = JSON.parse(
 ) as Project;
 const values = (engine: RuntimeController, id: string) => engine.getSnapshot().values[id].value;
 const event = (engine: RuntimeController, id: string, payload: Json) =>
-  engine.runFlow(id, payload, `${id}_0`);
+  engine.runFlow('serial_scan', payload, `${id}_0`);
+const manual = (engine: RuntimeController, id: string) =>
+  engine.runFlow('serial_scan', null, `${id}_0`);
+// Exercise downstream data semantics with explicit test event adapters. Browser
+// production code never injects native USB/serial events or device responses.
+function semanticsProject() {
+  const project = createSerialAssistantProject();
+  const flow = project.flows[0];
+  for (const [id, sourceId, port] of [
+    ['serial_devices_0', 'serial_scan_1', 'changed'],
+    ['serial_rx_0', 'serial_send_1', 'rx'],
+    ['serial_tx_0', 'serial_send_1', 'tx'],
+    ['serial_state_0', 'serial_send_1', 'state'],
+    ['serial_errors_0', 'serial_send_1', 'error'],
+  ]) {
+    const source = flow.nodes.find((node) => node.id === sourceId)!;
+    const starts = flow.edges.filter(
+      (edge) => edge.kind !== 'data' && edge.source === sourceId && edge.sourceHandle === port,
+    );
+    const targets = new Set(
+      starts.flatMap((edge) => reachable(flow, edge.target).map((node) => node.id)),
+    );
+    flow.nodes.push({
+      id,
+      kind: 'event',
+      label: id,
+      config: { trigger: 'manual' },
+      position: { x: 0, y: 0 },
+      block: {
+        version: 1,
+        inputs: [],
+        outputs: source.block!.outputs.map((p) => ({ ...p, path: p.path.slice(1) })),
+      },
+    });
+    for (const edge of flow.edges) {
+      if (edge.source !== sourceId) continue;
+      if (edge.kind === 'data' && targets.has(edge.target)) edge.source = id;
+      if (starts.includes(edge)) {
+        edge.source = id;
+        edge.sourceHandle = 'output';
+      }
+    }
+  }
+  flow.nodes = flow.nodes.filter((node) => node.id !== 'serial_devices_startup');
+  flow.edges = flow.edges.filter((edge) => edge.id !== 'serial_devices_watch');
+  return project;
+}
 function reachable(flow: Flow, start: string) {
   const seen = new Set([start]),
     pending = [start];
@@ -32,10 +78,11 @@ describe('serial assistant project contract (no physical I/O)', () => {
     const generated = createSerialAssistantProject();
     expect({ ...generated, id: fixture.id }).toEqual(fixture);
     for (const project of [fixture, generated, createSerialAssistantProject('en')]) {
-      expect(validateProject(project).schemaVersion).toBe(4);
-      expect(project.flows).toHaveLength(16);
+      expect(validateProject(project).schemaVersion).toBe(5);
+      expect(project.flows).toHaveLength(1);
       expect(project.scripts).toEqual([]);
       expect(project.modules).toEqual([]);
+      expect(project.flows.flatMap((flow) => flow.nodes).every((node) => node.block)).toBe(true);
       expect(
         project.widgets.every(
           (widget) => widget.definitionVersion === 2 && widget.type !== 'module',
@@ -60,6 +107,39 @@ describe('serial assistant project contract (no physical I/O)', () => {
     }
   });
 
+  it('wires independent send parameters and separate packet/time outputs without triggering extra sends', () => {
+    const project = createSerialAssistantProject();
+    const flow = project.flows[0];
+    const send = flow.nodes.find((node) => node.id === 'serial_send_1')!;
+    for (const id of ['serial_send', 'serial_periodic']) {
+      expect(flow.edges).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ source: `${id}_0`, target: send.id, targetHandle: 'send' }),
+        ]),
+      );
+      expect(
+        flow.edges
+          .filter((edge) => edge.kind === 'data' && edge.target === send.id)
+          .map((edge) => edge.targetHandle),
+      ).toEqual(['data-in:p_data', 'data-in:p_encoding', 'data-in:p_lineEnding']);
+      for (const read of flow.nodes.filter((node) => node.kind === 'read'))
+        expect(flow.edges.some((edge) => edge.target === read.id)).toBe(false);
+    }
+    for (const direction of ['rx', 'tx']) {
+      expect(send.block!.outputs).toContainEqual({
+        id: 'time',
+        name: 'TIME',
+        type: 'string',
+        path: ['result', 'timestampIso'],
+      });
+      expect(
+        flow.edges.filter(
+          (edge) => edge.kind === 'data' && edge.target.startsWith(`serial_${direction}_`),
+        ),
+      ).toHaveLength(4);
+    }
+  });
+
   it('uses complete stable references and never opens or sends from an unconditional automatic entry', () => {
     const project = createSerialAssistantProject();
     for (const flow of project.flows)
@@ -76,11 +156,20 @@ describe('serial assistant project contract (no physical I/O)', () => {
                 : false,
           ).toBe(true);
         }
-        if (!isAutomaticEventSource(node)) continue;
+        if (!isAutomaticEventSource(node) || node.kind !== 'event') continue;
         const actions = reachable(flow, node.id).filter(
-          (node) => node.kind === 'serial' && ['open', 'send'].includes(String(node.config.action)),
+          (node) =>
+            node.kind === 'serial' &&
+            flow.edges.some(
+              (edge) =>
+                edge.target === node.id && ['open', 'send'].includes(String(edge.targetHandle)),
+            ),
         );
-        expect(actions.some((node) => node.config.action === 'open')).toBe(false);
+        expect(
+          actions.some((node) =>
+            flow.edges.some((edge) => edge.target === node.id && edge.targetHandle === 'open'),
+          ),
+        ).toBe(false);
         if (actions.length) {
           expect(node.config.trigger).toBe('controlledInterval');
           expect(node.config.enabled).toEqual({
@@ -99,7 +188,7 @@ describe('serial assistant project contract (no physical I/O)', () => {
   });
 
   it('projects native PortSnapshot fields into options and applies both USB filters without inventing metadata', async () => {
-    const engine = new RuntimeController(createSerialAssistantProject());
+    const engine = new RuntimeController(semanticsProject());
     try {
       const port = (name: string, vid: number | null, pid: number | null) => ({
         portName: name,
@@ -131,7 +220,7 @@ describe('serial assistant project contract (no physical I/O)', () => {
         ports.map((port) => ({ id: port.portName, label: port.displayName, value: port.portName })),
       );
       engine.setVariable('serial_filters', { vid: '1A86', pid: '0x7523' });
-      await engine.runFlow('serial_filter');
+      await manual(engine, 'serial_filter');
       expect(values(engine, 'serial_options')).toEqual([
         { id: '/dev/cu.alpha', label: '/dev/cu.alpha', value: '/dev/cu.alpha' },
       ]);
@@ -143,7 +232,7 @@ describe('serial assistant project contract (no physical I/O)', () => {
   });
 
   it('records each native RX/TX event without overwriting authoritative session counters', async () => {
-    const engine = new RuntimeController(createSerialAssistantProject());
+    const engine = new RuntimeController(semanticsProject());
     try {
       const rx = {
         kind: 'data',
@@ -195,12 +284,11 @@ describe('serial assistant project contract (no physical I/O)', () => {
       expect(values(engine, 'serial_last_rx')).toBe(rx.timestampIso);
       expect(values(engine, 'serial_last_tx')).toBe(tx.timestampIso);
       const project = engine.getProject();
-      for (const id of ['serial_send', 'serial_periodic'])
-        expect(
-          project.flows
-            .find((flow) => flow.id === id)!
-            .nodes.some((node) => node.kind === 'append'),
-        ).toBe(false);
+      const flow = project.flows[0];
+      for (const edge of flow.edges.filter(
+        (edge) => edge.source === 'serial_send_1' && edge.sourceHandle === 'success',
+      ))
+        expect(reachable(flow, edge.target).some((node) => node.kind === 'append')).toBe(false);
       // A counter reset is authoritative even if a previously queued data batch
       // still carries the pre-reset counter snapshot when it reaches the flow.
       await event(engine, 'serial_state', {
@@ -216,9 +304,9 @@ describe('serial assistant project contract (no physical I/O)', () => {
       expect(readJsonPath(values(engine, 'serial_history'), ['rows'])).toHaveLength(3);
       for (const id of ['serial_rx', 'serial_tx'])
         expect(
-          project.flows
-            .find((flow) => flow.id === id)!
-            .nodes.some((node) => node.kind === 'write' && node.config.variable === 'serial_state'),
+          reachable(flow, `${id}_0`).some(
+            (node) => node.kind === 'write' && node.config.variable === 'serial_state',
+          ),
         ).toBe(false);
     } finally {
       engine.dispose();
@@ -226,7 +314,7 @@ describe('serial assistant project contract (no physical I/O)', () => {
   });
 
   it('renders code/message faults and stops periodic sends on faults or non-open states', async () => {
-    const engine = new RuntimeController(createSerialAssistantProject());
+    const engine = new RuntimeController(semanticsProject());
     try {
       engine.setVariable('serial_tx', true, ['periodic']);
       await event(engine, 'serial_errors', {
@@ -272,7 +360,7 @@ describe('serial assistant project contract (no physical I/O)', () => {
   });
 
   it('keeps initial state disconnected and browser scanning reports capability failure without fake ports or traffic', async () => {
-    const engine = new RuntimeController(createSerialAssistantProject());
+    const engine = new RuntimeController(semanticsProject());
     try {
       expect(values(engine, 'serial_state')).toMatchObject({
         sessionId: null,
@@ -283,7 +371,7 @@ describe('serial assistant project contract (no physical I/O)', () => {
         canClose: false,
         listening: false,
       });
-      await engine.runFlow('serial_scan');
+      await manual(engine, 'serial_scan');
       expect(values(engine, 'serial_error')).toMatchObject({ code: 'NATIVE_SERIAL_REQUIRED' });
       expect(values(engine, 'serial_options')).toEqual([]);
       expect(values(engine, 'serial_history')).toEqual({ rows: [], dropped: 0 });

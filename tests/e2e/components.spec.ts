@@ -38,13 +38,13 @@ test('compiled TSX package imports with consent and renders reactive props and d
   await expect(design.locator('.reading strong')).toHaveText('12');
   await expect(design.getByRole('button', { name: /启动循环/ })).toBeDisabled();
   const inspector = page.locator('.qg-inspector');
-  await inspector.getByLabel('标签', { exact: true }).fill('Edited module');
-  await inspector.getByLabel('数值 / 内容', { exact: true }).fill('27');
+  await inspector.getByLabel('label', { exact: true }).fill('Edited module');
+  await inspector.getByLabel('value', { exact: true }).fill('27');
+  await inspector.getByLabel('value', { exact: true }).press('Tab');
   await expect(design.locator('header')).toContainText('Edited module');
   await expect(design.locator('.reading strong')).toHaveText('27');
-  await inspector
-    .getByRole('combobox', { name: 'onAdvance', exact: true })
-    .selectOption('start-cycle');
+  await inspector.getByRole('combobox', { name: /^onAdvance / }).selectOption('start-cycle');
+  await inspector.getByLabel('绑定属性', { exact: true }).selectOption('value');
   await inspector
     .locator('.qg-add-binding')
     .getByRole('button', { name: '绑定', exact: true })

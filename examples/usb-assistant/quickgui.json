@@ -1,0 +1,1164 @@
+{
+  "schemaVersion": 5,
+  "id": "usb-assistant-example",
+  "name": "USB 助手",
+  "revision": 0,
+  "locale": "zh-CN",
+  "theme": {
+    "mode": "dark",
+    "tokens": {
+      "color.primary": "#8b5cf6",
+      "color.primaryHover": "#a78bfa",
+      "color.text": "#edf0f7",
+      "color.muted": "#969eaf",
+      "color.surface": "#20232c",
+      "color.background": "#17191f",
+      "color.border": "#333743",
+      "color.success": "#48d5a0",
+      "color.warning": "#e9b66c"
+    }
+  },
+  "window": {
+    "title": "USB 助手",
+    "width": 1060,
+    "height": 740,
+    "minWidth": 640,
+    "minHeight": 420,
+    "resizable": true,
+    "alwaysOnTop": false,
+    "fullscreen": false,
+    "maximized": false,
+    "center": true,
+    "rememberPosition": true,
+    "background": "#17191f",
+    "contentRadius": 0,
+    "cornerPreference": "system"
+  },
+  "publish": {
+    "appName": "QuickGUI USB Assistant",
+    "identifier": "dev.quickgui.usbassistant",
+    "version": "1.0.0",
+    "publisher": "",
+    "desktopShortcut": true
+  },
+  "widgets": [
+    {
+      "id": "usb_title",
+      "name": "usb_title",
+      "type": "text",
+      "layout": {
+        "x": 30,
+        "y": 24,
+        "width": 900,
+        "height": 38
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "USB 设备发现与通信 FB",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "usb_note",
+      "name": "usb_note",
+      "type": "text",
+      "layout": {
+        "x": 30,
+        "y": 66,
+        "width": 980,
+        "height": 60
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "需要桌面运行时。选择精确设备后手动打开；HID 与 Windows USB Print 共用持久会话。HID Report ID 默认 0，编号输入报告请在通信 FB 的 options 中设置。",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "usb_select",
+      "name": "usb_select",
+      "type": "select",
+      "layout": {
+        "x": 30,
+        "y": 142,
+        "width": 740,
+        "height": 40
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "value": "自动",
+        "options": [],
+        "placeholder": "先扫描，再选择设备",
+        "legacyOptions": false,
+        "legacyValueFormat": false
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.surface",
+        "borderWidth": 1,
+        "borderStyle": "solid",
+        "borderColor": "$color.border",
+        "padding": 8
+      },
+      "states": {},
+      "bindings": {
+        "options": {
+          "variable": "usb_options",
+          "mode": "oneWay"
+        },
+        "value": {
+          "variable": "usb_device",
+          "mode": "twoWay"
+        }
+      },
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "usb_scan",
+      "name": "usb_scan",
+      "type": "button",
+      "layout": {
+        "x": 790,
+        "y": 142,
+        "width": 220,
+        "height": 40
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "扫描 / 监听",
+        "iconAssetId": "",
+        "iconPosition": "left",
+        "iconSize": 16
+      },
+      "style": {
+        "color": "#ffffff",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.primary",
+        "fontWeight": 600
+      },
+      "states": {},
+      "bindings": {},
+      "events": {
+        "click": {
+          "flowId": "usb_discovery",
+          "entryNodeId": "discover_trigger"
+        }
+      },
+      "definitionVersion": 2
+    },
+    {
+      "id": "usb_open",
+      "name": "usb_open",
+      "type": "button",
+      "layout": {
+        "x": 30,
+        "y": 202,
+        "width": 140,
+        "height": 40
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "打开",
+        "iconAssetId": "",
+        "iconPosition": "left",
+        "iconSize": 16
+      },
+      "style": {
+        "color": "#ffffff",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.primary",
+        "fontWeight": 600
+      },
+      "states": {},
+      "bindings": {},
+      "events": {
+        "click": {
+          "flowId": "usb_discovery",
+          "entryNodeId": "open_trigger"
+        }
+      },
+      "definitionVersion": 2
+    },
+    {
+      "id": "usb_close",
+      "name": "usb_close",
+      "type": "button",
+      "layout": {
+        "x": 185,
+        "y": 202,
+        "width": 140,
+        "height": 40
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "关闭",
+        "iconAssetId": "",
+        "iconPosition": "left",
+        "iconSize": 16
+      },
+      "style": {
+        "color": "#ffffff",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.primary",
+        "fontWeight": 600
+      },
+      "states": {},
+      "bindings": {},
+      "events": {
+        "click": {
+          "flowId": "usb_discovery",
+          "entryNodeId": "close_trigger"
+        }
+      },
+      "definitionVersion": 2
+    },
+    {
+      "id": "usb_tx",
+      "name": "usb_tx",
+      "type": "button",
+      "layout": {
+        "x": 790,
+        "y": 202,
+        "width": 220,
+        "height": 40
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "发送 HEX",
+        "iconAssetId": "",
+        "iconPosition": "left",
+        "iconSize": 16
+      },
+      "style": {
+        "color": "#ffffff",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.primary",
+        "fontWeight": 600
+      },
+      "states": {},
+      "bindings": {},
+      "events": {
+        "click": {
+          "flowId": "usb_discovery",
+          "entryNodeId": "send_trigger"
+        }
+      },
+      "definitionVersion": 2
+    },
+    {
+      "id": "usb_payload",
+      "name": "usb_payload",
+      "type": "input",
+      "layout": {
+        "x": 350,
+        "y": 202,
+        "width": 420,
+        "height": 40
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "value": "01 02 03",
+        "placeholder": "输入内容",
+        "inputType": "text",
+        "multiline": false,
+        "readOnly": false,
+        "maxLength": 0,
+        "submitOn": "enter"
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.surface",
+        "borderWidth": 1,
+        "borderStyle": "solid",
+        "borderColor": "$color.border",
+        "padding": 8
+      },
+      "states": {},
+      "bindings": {
+        "value": {
+          "variable": "usb_send",
+          "mode": "twoWay"
+        }
+      },
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "usb_state",
+      "name": "usb_state",
+      "type": "text",
+      "layout": {
+        "x": 30,
+        "y": 258,
+        "width": 980,
+        "height": 30
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "closed",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {
+        "text": {
+          "variable": "usb_status",
+          "mode": "oneWay",
+          "path": ["status"]
+        }
+      },
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "usb_diagnostic",
+      "name": "usb_diagnostic",
+      "type": "text",
+      "layout": {
+        "x": 30,
+        "y": 300,
+        "width": 980,
+        "height": 50
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {
+        "text": {
+          "variable": "usb_error",
+          "mode": "oneWay",
+          "path": ["message"]
+        }
+      },
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "usb_rx_heading",
+      "name": "usb_rx_heading",
+      "type": "text",
+      "layout": {
+        "x": 30,
+        "y": 370,
+        "width": 980,
+        "height": 30
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "最近接收（HEX）",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "usb_received",
+      "name": "usb_received",
+      "type": "input",
+      "layout": {
+        "x": 30,
+        "y": 410,
+        "width": 980,
+        "height": 90
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "value": "",
+        "placeholder": "输入内容",
+        "inputType": "text",
+        "multiline": true,
+        "readOnly": true,
+        "maxLength": 0,
+        "submitOn": "enter"
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8,
+        "background": "$color.surface",
+        "borderWidth": 1,
+        "borderStyle": "solid",
+        "borderColor": "$color.border",
+        "padding": 8
+      },
+      "states": {},
+      "bindings": {
+        "value": {
+          "variable": "usb_rx",
+          "mode": "oneWay",
+          "path": ["hex"]
+        }
+      },
+      "events": {},
+      "definitionVersion": 2
+    },
+    {
+      "id": "usb_safety",
+      "name": "usb_safety",
+      "type": "text",
+      "layout": {
+        "x": 30,
+        "y": 530,
+        "width": 980,
+        "height": 80
+      },
+      "props": {
+        "enabled": true,
+        "visible": true,
+        "title": "",
+        "text": "打开和发送由按钮显式触发。USB Print 直接使用 usbprint.sys，支持库提供的 ZLP；不支持通用 WinUSB/libusb Bulk。关闭或修改流程时释放资源。示例不会自动选择第一台设备或自动发送。",
+        "unit": "",
+        "wrap": true,
+        "overflow": "clip",
+        "verticalAlign": "center",
+        "selectable": false
+      },
+      "style": {
+        "color": "$color.text",
+        "fontSize": 14,
+        "borderRadius": 8
+      },
+      "states": {},
+      "bindings": {},
+      "events": {},
+      "definitionVersion": 2
+    }
+  ],
+  "variables": [
+    {
+      "id": "usb_devices",
+      "name": "USB devices",
+      "type": "json",
+      "initial": []
+    },
+    {
+      "id": "usb_options",
+      "name": "Device choices",
+      "type": "json",
+      "initial": []
+    },
+    {
+      "id": "usb_device",
+      "name": "Selected device identity",
+      "type": "string",
+      "initial": ""
+    },
+    {
+      "id": "usb_send",
+      "name": "TX hex",
+      "type": "string",
+      "initial": "01 02 03"
+    },
+    {
+      "id": "usb_rx",
+      "name": "Latest RX",
+      "type": "json",
+      "initial": {
+        "text": "",
+        "hex": "",
+        "reportId": 0
+      }
+    },
+    {
+      "id": "usb_status",
+      "name": "Session status",
+      "type": "json",
+      "initial": {
+        "status": "closed"
+      }
+    },
+    {
+      "id": "usb_error",
+      "name": "Diagnostic",
+      "type": "json",
+      "initial": {
+        "code": "",
+        "message": ""
+      }
+    }
+  ],
+  "flows": [
+    {
+      "id": "usb_discovery",
+      "name": "USB 助手 · 设备发现与通信",
+      "enabled": true,
+      "nodes": [
+        {
+          "id": "discover_trigger",
+          "kind": "event",
+          "label": "设备发现与热插拔",
+          "position": {
+            "x": 40,
+            "y": 90
+          },
+          "config": {
+            "trigger": "manual"
+          },
+          "block": {
+            "version": 1,
+            "inputs": [],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "VALUE",
+                "type": "json",
+                "path": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "discover",
+          "kind": "usb",
+          "label": "discover",
+          "position": {
+            "x": 380,
+            "y": 90
+          },
+          "config": {
+            "action": "discover",
+            "filter": {
+              "source": "literal",
+              "value": {
+                "transport": "any"
+              }
+            }
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "p_filter",
+                "name": "filter",
+                "type": "json",
+                "binding": "config",
+                "key": "filter"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "json",
+                "path": ["result"]
+              },
+              {
+                "id": "devices",
+                "name": "DEVICES",
+                "type": "json",
+                "path": ["devices"]
+              }
+            ]
+          }
+        },
+        {
+          "id": "device_options",
+          "kind": "map",
+          "label": "device_options",
+          "position": {
+            "x": 720,
+            "y": 90
+          },
+          "config": {
+            "operation": "array",
+            "items": {
+              "source": "input",
+              "path": ["devices"]
+            },
+            "fields": {
+              "id": {
+                "source": "input",
+                "path": ["id"]
+              },
+              "label": {
+                "source": "input",
+                "path": ["id"]
+              },
+              "value": {
+                "source": "input",
+                "path": ["id"]
+              }
+            }
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "json",
+                "binding": "input"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "json",
+                "path": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "save_options",
+          "kind": "write",
+          "label": "save_options",
+          "position": {
+            "x": 1060,
+            "y": 90
+          },
+          "config": {
+            "variable": "usb_options"
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "json",
+                "binding": "input"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "json",
+                "path": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "save_devices",
+          "kind": "write",
+          "label": "save_devices",
+          "position": {
+            "x": 720,
+            "y": 322
+          },
+          "config": {
+            "variable": "usb_devices"
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "json",
+                "binding": "input"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "json",
+                "path": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "open_trigger",
+          "kind": "event",
+          "label": "USB open",
+          "position": {
+            "x": 40,
+            "y": 298
+          },
+          "config": {
+            "trigger": "manual"
+          },
+          "block": {
+            "version": 1,
+            "inputs": [],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "VALUE",
+                "type": "json",
+                "path": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "close_trigger",
+          "kind": "event",
+          "label": "USB close",
+          "position": {
+            "x": 40,
+            "y": 506
+          },
+          "config": {
+            "trigger": "manual"
+          },
+          "block": {
+            "version": 1,
+            "inputs": [],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "VALUE",
+                "type": "json",
+                "path": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "send_trigger",
+          "kind": "event",
+          "label": "USB send",
+          "position": {
+            "x": 40,
+            "y": 714
+          },
+          "config": {
+            "trigger": "manual"
+          },
+          "block": {
+            "version": 1,
+            "inputs": [],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "VALUE",
+                "type": "json",
+                "path": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "usb_io",
+          "kind": "usb",
+          "label": "usb_io",
+          "position": {
+            "x": 380,
+            "y": 370
+          },
+          "config": {
+            "action": "communicate",
+            "sessionId": "usb-main",
+            "device": {
+              "source": "variable",
+              "variable": "usb_device"
+            },
+            "options": {
+              "source": "literal",
+              "value": {}
+            },
+            "data": {
+              "source": "variable",
+              "variable": "usb_send"
+            },
+            "encoding": {
+              "source": "literal",
+              "value": "hex"
+            },
+            "reportId": {
+              "source": "literal",
+              "value": 0
+            },
+            "length": {
+              "source": "literal",
+              "value": 64
+            }
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "p_device",
+                "name": "device",
+                "type": "json",
+                "binding": "config",
+                "key": "device"
+              },
+              {
+                "id": "p_options",
+                "name": "options",
+                "type": "json",
+                "binding": "config",
+                "key": "options"
+              },
+              {
+                "id": "p_data",
+                "name": "data",
+                "type": "json",
+                "binding": "config",
+                "key": "data"
+              },
+              {
+                "id": "p_encoding",
+                "name": "encoding",
+                "type": "string",
+                "binding": "config",
+                "key": "encoding"
+              },
+              {
+                "id": "p_reportId",
+                "name": "reportId",
+                "type": "number",
+                "binding": "config",
+                "key": "reportId"
+              },
+              {
+                "id": "p_length",
+                "name": "length",
+                "type": "number",
+                "binding": "config",
+                "key": "length"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "json",
+                "path": ["result"]
+              },
+              {
+                "id": "data",
+                "name": "DATA",
+                "type": "json",
+                "path": ["data"]
+              },
+              {
+                "id": "state",
+                "name": "STATE",
+                "type": "json",
+                "path": ["state"]
+              }
+            ]
+          }
+        },
+        {
+          "id": "usb_receive",
+          "kind": "write",
+          "label": "usb_receive",
+          "position": {
+            "x": 720,
+            "y": 554
+          },
+          "config": {
+            "variable": "usb_rx"
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "json",
+                "binding": "input"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "json",
+                "path": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "usb_state_output",
+          "kind": "write",
+          "label": "usb_state_output",
+          "position": {
+            "x": 720,
+            "y": 786
+          },
+          "config": {
+            "variable": "usb_status"
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "json",
+                "binding": "input"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "json",
+                "path": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "usb_tx_log",
+          "kind": "log",
+          "label": "usb_tx_log",
+          "position": {
+            "x": 720,
+            "y": 1018
+          },
+          "config": {
+            "message": "USB TX"
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "json",
+                "binding": "input"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "json",
+                "path": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "usb_io_error_output",
+          "kind": "write",
+          "label": "usb_io_error_output",
+          "position": {
+            "x": 1060,
+            "y": 322
+          },
+          "config": {
+            "variable": "usb_error"
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "json",
+                "binding": "input"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "json",
+                "path": []
+              }
+            ]
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "watch",
+          "source": "discover_trigger",
+          "target": "discover",
+          "targetHandle": "watch"
+        },
+        {
+          "id": "snapshot",
+          "source": "discover",
+          "target": "device_options",
+          "sourceHandle": "success"
+        },
+        {
+          "id": "hotplug",
+          "source": "discover",
+          "target": "device_options",
+          "sourceHandle": "changed"
+        },
+        {
+          "id": "options",
+          "source": "device_options",
+          "target": "save_options",
+          "sourceHandle": "success"
+        },
+        {
+          "id": "devices",
+          "source": "discover",
+          "target": "save_devices",
+          "sourceHandle": "success"
+        },
+        {
+          "id": "devices_changed",
+          "source": "discover",
+          "target": "save_devices",
+          "sourceHandle": "changed"
+        },
+        {
+          "id": "device_values",
+          "source": "discover",
+          "target": "save_devices",
+          "sourceHandle": "data-out:devices",
+          "targetHandle": "data-in:in",
+          "kind": "data"
+        },
+        {
+          "id": "discover_error",
+          "source": "discover",
+          "target": "usb_io_error_output",
+          "sourceHandle": "error"
+        },
+        {
+          "id": "device_options_error",
+          "source": "device_options",
+          "target": "usb_io_error_output",
+          "sourceHandle": "error"
+        },
+        {
+          "id": "open_command",
+          "source": "open_trigger",
+          "target": "usb_io",
+          "targetHandle": "open"
+        },
+        {
+          "id": "open_io_error",
+          "source": "usb_io",
+          "target": "usb_io_error_output",
+          "sourceHandle": "error"
+        },
+        {
+          "id": "close_command",
+          "source": "close_trigger",
+          "target": "usb_io",
+          "targetHandle": "close"
+        },
+        {
+          "id": "send_command",
+          "source": "send_trigger",
+          "target": "usb_io",
+          "targetHandle": "send"
+        },
+        {
+          "id": "rx",
+          "source": "usb_io",
+          "target": "usb_receive",
+          "sourceHandle": "rx"
+        },
+        {
+          "id": "state",
+          "source": "usb_io",
+          "target": "usb_state_output",
+          "sourceHandle": "state"
+        },
+        {
+          "id": "tx",
+          "source": "usb_io",
+          "target": "usb_tx_log",
+          "sourceHandle": "tx"
+        }
+      ]
+    }
+  ],
+  "scripts": [],
+  "modules": [],
+  "assets": [],
+  "connections": [],
+  "translations": {},
+  "windows": []
+}

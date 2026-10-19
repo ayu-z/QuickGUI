@@ -34,6 +34,7 @@ export class NativeRuntimeController extends RuntimeController {
     private readonly options: { attachOnly?: boolean } = {},
   ) {
     super(project, native.executeC);
+    project = this.project;
     this.revision = project.revision;
     this.requestedProjectId = project.id;
     this.ready = Promise.all([
@@ -64,6 +65,7 @@ export class NativeRuntimeController extends RuntimeController {
       .catch((error) => this.log(String(error), 'error'));
   };
   override applyProject = (project: Project) => {
+    project = validateProject(project);
     if (this.disposed || this.closing) return;
     if (
       this.options.attachOnly &&
@@ -89,7 +91,7 @@ export class NativeRuntimeController extends RuntimeController {
       .then(async () => {
         if (this.disposed || this.closing) return;
         const previous = this.project;
-        if (project.schemaVersion >= 4) validateProject(project);
+
         for (const script of project.scripts) {
           const old =
             previous.id === project.id
@@ -142,11 +144,11 @@ export class NativeRuntimeController extends RuntimeController {
     this.accept(await native.snapshot());
     return response;
   };
-  override runFlow = async (id: string, input: Json = null) => {
+  override runFlow = async (id: string, input: Json = null, entryNode?: string) => {
     await this.ready;
     if (this.disposed || this.closing) throw new Error('Project is closed or closing');
     try {
-      this.accept(await native.runFlow(id, input));
+      this.accept(await native.runFlow(id, input, entryNode));
     } catch (error) {
       this.log(String(error), 'error');
       throw error;

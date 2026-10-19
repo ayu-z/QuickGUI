@@ -1,6 +1,7 @@
 import type { Project, Widget, WindowConfig } from './types';
 import { cloneSubtree, createProject, createWidget, uid } from './project';
 import { validateProject } from './validation';
+import { upgradeProject } from './migration';
 import { getProjectWindow, listProjectWindows, MAX_ADDITIONAL_WINDOWS } from './windows';
 
 export type Section = 'design' | 'flows' | 'scripts' | 'data' | 'connections';
@@ -117,7 +118,9 @@ export class EditorStore {
     dirty: boolean;
   };
   constructor(project?: Project) {
-    const recovered = project ? { project, drafts: {}, activeWindowId: 'main' } : loadRecovery();
+    const recovered = project
+      ? { project: validateProject(project), drafts: {}, activeWindowId: 'main' }
+      : loadRecovery();
     const activeWidgets = recovered.project
       ? getProjectWindow(recovered.project, recovered.activeWindowId).widgets
       : [];
@@ -239,7 +242,6 @@ export class EditorStore {
       throw new Error('窗口名称应为 1–200 个有效字符 / Enter a valid window name');
     const id = uid('window');
     this.update((project) => {
-      if (project.schemaVersion < 2) project.schemaVersion = 2;
       const config: WindowConfig = {
         ...structuredClone(project.window),
         title: trimmed,
@@ -323,8 +325,9 @@ export class EditorStore {
   };
   update = (mutator: (project: Project) => void) => {
     if (!this.state.project || this.state.closing) return;
-    const next = structuredClone(this.state.project);
+    let next = structuredClone(this.state.project);
     mutator(next);
+    next = upgradeProject(next);
     if (equalValue(next, this.state.project)) return;
     next.revision = this.state.project.revision + 1;
     const activeWindowId = validWindowId(next, this.state.activeWindowId);
@@ -349,7 +352,7 @@ export class EditorStore {
     });
   addWidget = (type: Widget['type'], x = 48, y = 48) => {
     if (!this.state.project || this.state.closing) return;
-    const widget = createWidget(type, x, y, this.state.project.schemaVersion >= 3 ? 2 : 1);
+    const widget = createWidget(type, x, y);
     this.update((p) => {
       getProjectWindow(p, this.state.activeWindowId).widgets.push(widget);
     });

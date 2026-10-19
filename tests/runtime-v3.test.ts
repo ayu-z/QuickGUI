@@ -6,7 +6,8 @@ import { RuntimeController } from '../src/runtime/engine';
 
 function project(): Project {
   const p = createProject();
-  p.schemaVersion = 3;
+  p.schemaVersion = 5;
+  p.widgets = [];
   p.windows = [];
   p.flows = [];
   p.scripts = [];
@@ -127,7 +128,7 @@ describe('v3 runtime contract', () => {
     expect(e.getSnapshot().values.data.value).toBe(17);
     e.dispose();
   });
-  it('preserves legacy coercion and constant write forwarding', async () => {
+  it('normalizes old input to strict math and current write forwarding', async () => {
     const p = project();
     p.schemaVersion = 1;
     delete p.windows;
@@ -140,8 +141,8 @@ describe('v3 runtime contract', () => {
       config: { operation: 'add', operand: 1 },
     });
     const old = new RuntimeController(p);
-    await old.runFlow('f', '2');
-    expect(old.getSnapshot().values.data.value).toBe(3);
+    await expect(old.runFlow('f', '2')).rejects.toThrow(/numeric/);
+    expect(old.getSnapshot().values.data.value).toBe(0);
     old.dispose();
     flow(p, {
       id: 'constant',
@@ -152,7 +153,7 @@ describe('v3 runtime contract', () => {
     });
     const next = new RuntimeController(p);
     await next.runFlow('f', 7);
-    expect(next.getSnapshot().values.data.value).toBe(7);
+    expect(next.getSnapshot().values.data.value).toBe(42);
     next.dispose();
   });
   it('commits numeric C writes and state together; excludes numeric JSON variables', async () => {

@@ -1,5 +1,114 @@
 # 变动日志
 
+## 2026-10-19 — 借鉴 SerialWatch 的通信缓冲与界面批处理
+
+- 审阅 `mini-berry/serialwatch` 修订 `24f8404e0dd1edd6acde4b9daa3f5d393418d9c8` 的接收缓冲与显示批处理。独立实现容量为一个最新快照的后台界面发布器，首次更新立即调度，后续以 16ms 间隔合并显示；WebView 序列化和广播移出 Engine 锁与异步 I/O 工作线程，慢界面不积压旧快照，最后一次更新在无新事件时仍会发出。发布前校验工程、修订、会话与工程代次。
+- 数据事件、协议分帧、原始时间戳、历史与报警记录、最新状态查询和窗口生命周期继续即时处理，不将参考项目的 40ms 显示空闲等待用作通信或协议帧的等待。本轮未复制参考项目源码。
+- 接收缓冲使用消费游标和行扫描游标，粘包逐帧消费时不搬移剩余数据，长行分批到达时只扫描新增字节；每次原生读取至多整理一次缓冲，复用分配并减少一次载荷复制。保留 raw/line/length16 的现有边界、空帧、UTF-8、线缆字节计数、监听代次和 256 批/1MiB 过载保护。
+- 新增 `src-tauri/src/snapshot_publisher.rs`，修改 `src-tauri/src/lib.rs`、`src-tauri/src/windows.rs`、`src-tauri/src/source_export.rs`、`crates/quickgui-engine/src/serial.rs`、`crates/quickgui-engine/src/serial_tests.rs`、`docs/architecture.md` 和本文件。无源文件删除或重命名，无 C SDK、进程协议或编译路径改动。
+- 新增 5 项回归，覆盖阻塞发布者下的生产者进度、有界内存与最终排空、过时代次过滤、所有读取切分位置的空帧与半帧、长行增量扫描，以及生产 I/O actor 中的 length16、UTF-8、线缆字节计数和预算回收；源码导出测试确认包含新增发布模块。
+- 验证：`cargo test --workspace` 的 115 项常规测试及文档测试、`npm run check -- --maxWorkers=1` 的 TypeScript 检查与 260 项单测、`npm run build` 全部通过，13 项条件 Rust 测试默认忽略。`npm run test:e2e -- --config .toolchain/playwright-verification.config.ts` 的 58 项 Chromium E2E 在隔离的 1421 服务上一次全部通过，保持正式用例与标准超时，保留原有 1420 开发环境。Prettier、`cargo fmt --all -- --check` 与 Git 差异检查通过，保留既有桥接混合导入和 Monaco 大包提示。
+- 本轮未打开实体串口，缓冲算法和内存传输测试不作为实体 USB 转串口性能验收；原记录的 41ms 改善幅度仍需原设备复测。参考源码、构建和测试产物均在忽略的生成物目录，不纳入源码提交。
+
+## 2026-10-19 — USB 转串口小报文调度
+
+- Windows 在 IOCP 注册及首个异步读取前配置首字节返回模式，缓冲区已有数据立即读取，空闲时等待首字节，避免字节间隔超时造成的小报文等待；保留写超时、独占、设备身份校验、关闭取消与原始收发时间戳。
+- 引擎加载有效工程时缓存流程和拓扑顺序，重复收发激活复用不可变执行计划；热更新仍先完整校验，逻辑变更继续使旧执行失效。连续计算节点高亮通知按 16ms 采样，从通知完成时计算间隔，避免慢订阅者使采样失效；等待节点、变量写入、日志、错误、最终快照与通信事件保持即时通知。
+- 修改 `crates/quickgui-engine/Cargo.toml`、`Cargo.lock`、`crates/quickgui-engine/src/serial.rs`、`crates/quickgui-engine/src/serial_tests.rs`、`crates/quickgui-engine/src/serial_demo_test.rs`、`crates/quickgui-engine/src/lib.rs`、`crates/quickgui-engine/src/flow_v4.rs`、`crates/quickgui-engine/src/flow_v4_tests.rs`、`crates/quickgui-engine/src/function_blocks.rs`、`docs/architecture.md` 和本文件；无源文件新增、删除或重命名，无 C SDK、进程协议或编译路径改动。
+- 新增跨平台生产 I/O actor 的内存回环与队列过载回归，覆盖小缓冲拆包、连续收发、原始时间戳、空闲读取取消和预算回收；新增执行计划复用/失效、无效修订保留，以及慢订阅者下高亮采样、等待节点可见、写入/事件/日志/错误/最终清理即时可见回归。本轮未打开实体串口，内存回环不作为实体 USB 转串口性能验收；原记录的 41ms 改善幅度需原设备复测。
+- 验证：`cargo test --workspace` 的 110 项常规测试及文档测试、`npm run check -- --maxWorkers=1` 的 TypeScript 检查与 260 项单测、`npm run build` 全部通过；13 项条件测试默认忽略。`npm run test:e2e -- --config .toolchain/playwright-verification.config.ts` 在隔离的 1421 服务上沿用正式用例与标准超时，58 项 Chromium E2E 全部通过，保留原有 1420 开发服务。Prettier、`cargo fmt --all -- --check` 与 Git 差异检查通过，保留既有 Monaco 大包与桥接混合导入提示。
+
+## 2026-10-19 — 组件与流程块拖动性能
+
+- 画布拖动按动画帧合并更新，仅对选中根控件设置临时 transform；调整大小仅更新当前控件的几何样式。松手后统一写入工程并严格校验，避免每次移动完整克隆、升级、校验模型和重渲染设计器。保留网格吸附、缩放坐标、多选移动、八向缩放、单次撤销与自动保存；释放时使用最新坐标，取消、失焦及卸载清理待执行帧与临时样式，并隔离其他触点。
+- 流程块移动使用局部位置草稿，松手才提交模型与撤销记录；缓存节点和连线映射，移动时复用未改变的节点与卡片内容，减少整合流程图中的重复渲染。
+- 修改 `src/designer/CanvasEditor.tsx`、`src/designer/FlowEditor.tsx`、`tests/e2e/canvas-interactions.spec.ts`、`docs/architecture.md` 和本文件；无源文件新增、删除或重命名，无 C SDK、进程协议或编译路径改动。浏览器性能测量脚本和结果位于忽略的 `.toolchain` 与 `artifacts`，不纳入源码提交。
+- 本机隔离开发服务上的 Chromium 对 64 控件串口示例执行 90 步相同拖动，各测三次：工程修订增加量从 48 降至 1，布局计算从 97–98 次降至 2 次，帧间隔 P95 从约 200–333ms 降至 16.8ms。统计包含松手提交，优化后单次最大帧间隔仍为 233–267ms；此为浏览器开发环境测量，不作为原生实机性能验收。
+- 验证：`npm run check -- --maxWorkers=1` 的 TypeScript 检查与 260 项单测、`npm run build`、`cargo test --workspace` 的 105 项常规测试及文档测试通过，13 项条件测试默认忽略。隔离 1421 服务上的 13 项拖动/设计器专项及最终完整 58 项 Chromium E2E 全部通过，保持正式超时设置和用户原有 1420 开发环境。新增回归覆盖 64 控件拖动中模型不变与最终持久化、松手最新坐标、待执行帧取消、多触点隔离、失焦和撤销取消，以及流程块单次提交与撤销/重做。Prettier 与 Git 差异检查通过；保留既有构建体积、混合导入与 Rust 未使用可变绑定提示。
+
+## 2026-10-19 — 多流程整合与精确事件入口
+
+- 串口助手由 16 条流程整合为一张图，共享发送参数、通信异步输出、端口筛选与错误处理，保留手动打开后开始监听的执行顺序；USB 助手由 5 条流程整合为一张图，使用一个发现 FB 和一个通信 FB。按钮分别绑定自己的入口，保留工程及可复用节点 ID，默认连接与发送策略不变。流程画布支持缩小至 10% 查看整图。
+- 控件事件支持 `{flowId, entryNodeId}` 精确绑定；UI 可选择手动入口，浏览器、桌面桥接和独立运行共用相同入口语义，原始载荷不变。日志栏增加运行入口选择，未指定入口时拒绝多入口手动运行，避免同时启动全部操作。严格拒绝多入口歧义、无效与自动入口绑定；增加入口保留原关联，删除入口清理关联，跨工程复制同步重映射节点 ID。
+- 新增 `src/core/flowBindings.ts`、`src/designer/FlowBindingSelect.tsx`、`src/examples/communicationFlow.ts`；修改 `src/core/types.ts`、`src/core/validation.ts`、`src/core/clipboard.ts`、`src/App.tsx`、`src/styles.css`、`src/designer/Inspector.tsx`、`src/designer/FlowEditor.tsx`、`src/runtime/RuntimeWindows.tsx`、`src/runtime/engine.ts`、`src/runtime/controller.ts`、`src/native/bridge.ts`、`src-tauri/src/lib.rs`、`crates/quickgui-engine/src/windows.rs`、`crates/quickgui-engine/src/flow_v4.rs`、`crates/quickgui-engine/src/flow_v4_tests.rs`、`scripts/export-project.mjs`。
+- 修改 `src/examples/serialAssistant.ts`、`src/examples/usbAssistant.ts`、`examples/serial-assistant/quickgui.json`、`examples/usb-assistant/quickgui.json`、各示例 README、主 `README.md`、`docs/function-blocks.md`、`docs/architecture.md`；新增 `tests/flow-bindings.test.ts`、`tests/e2e/flow-bindings.spec.ts`，修改 `tests/serial-demo.test.ts`、`tests/communication-blocks.test.ts`、`tests/native-serial-bridge.test.ts`、`tests/e2e/serial-assistant.spec.ts`、`tests/e2e/usb-assistant.spec.ts`、`crates/quickgui-engine/src/serial_demo_test.rs`。更新本文件；无源文件删除或重命名，无 C SDK、工作进程协议或编译路径改动。
+- 验证：`npm run check -- --maxWorkers=1` 的 TypeScript 检查与 260 项单测、`npm run build`、`cargo test --workspace` 的 105 项常规测试及文档测试通过，13 项条件测试默认忽略。原生编译并发期间既有组件重建单测曾超时，编译结束后串行完整重跑通过，未放宽超时。
+- `npm run test:e2e -- --config .toolchain/playwright-verification.config.ts` 在隔离的 1421 服务上使用正式用例与标准超时，最终 55 项 Chromium E2E 全部通过；已目视检查两个整合流程图，保留用户原有 1420 开发环境。Prettier、`cargo fmt --all -- --check` 与 Git 差异检查通过；保留既有 Monaco 大包、桥接混合导入与 Rust 未使用可变绑定提示。
+- 实际 Rust 引擎审计覆盖泵站计算、串口共享 FB 的 RX/TX/TIME、错误与清空入口、USB 系统枚举和精确设备选择，以及多手动入口的歧义拒绝；三个示例实际源码导出后与源工程逐字段一致，分别保留泵站 2 条流程 / 12 条数据线、串口 1 条流程 / 11 条数据线、USB 1 条流程 / 1 条数据线。本轮未进行实体 USB 或串口收发验收。审计程序、导出目录、日志与截图均保留在忽略的生成物目录，不纳入源码提交。
+
+## 2026-10-19 — USB 原生通信与双 FB 接口
+
+- USB 直接依赖 `dev-zuihong/usb_comm_rs` 当前修订 `830f6f4393014f6f6c98898956fb818b312cfb22`；设备发现与通信各提供一个 FB，串口面板同步收敛为两个 FB。命令执行线保留目标端口，原生异步收发、状态与错误从对应 FB 输出继续运行。
+- USB 发现保留原始 HID 路径、接口与连接代次，支持精确设备选择、筛选和热插拔；HID 报告、Feature、描述符及 Windows USB Print 复用库会话。浏览器返回明确原生能力诊断；关闭、修订与取消负责资源回收和陈旧事件隔离。
+- 修改模型与编辑器：`src/core/types.ts`、`src/core/validation.ts`、`src/core/flowV4.ts`、`src/core/functionBlocks.ts`、`src/designer/FlowEditor.tsx`；修改浏览器运行器：`src/runtime/engine.ts`、`src/runtime/flowV4Runtime.ts`、`src/runtime/functionBlockRuntime.ts`。
+- 修改原生宿主：`crates/quickgui-engine/Cargo.toml`、`Cargo.lock`、`crates/quickgui-engine/src/lib.rs`、`crates/quickgui-engine/src/flow_v4.rs`、`crates/quickgui-engine/src/function_blocks.rs`、`crates/quickgui-engine/src/serial.rs`、`src-tauri/src/scheduler.rs`；新增 `crates/quickgui-engine/src/usb.rs`。无源文件删除或重命名。
+- 串口 Demo 的全部串口节点收敛为两类 FB，原生设备变化、RX、TX、状态、错误均从 FB 输出，保留 64 个普通控件、16 条流程与稳定工程 ID；扩展后的端口按拓扑分列并预留高度，避免节点重叠。新增 USB 助手并注册欢迎页，提供 5 条流程、精确设备选择、共享会话、手动命令与异步输出分流，默认不打开或发送。跨工程粘贴将 USB 会话重新分配 ID，并携带关联的异步观察流程。同步示例说明与主 README 的双 FB 操作步骤、USB 原生能力及 Rust 1.88+ 要求。
+- 修改 `src/core/examples.ts`、`src/core/clipboard.ts`、`src/examples/serialAssistant.ts`、`examples/serial-assistant/quickgui.json`、`examples/serial-assistant/README.md`、`README.md`、`docs/function-blocks.md`、`tests/serial-demo.test.ts`、`tests/e2e/serial-assistant.spec.ts`、`tests/e2e/function-blocks.spec.ts`、`crates/quickgui-engine/src/serial_demo_test.rs`；新增 `src/examples/usbAssistant.ts`、`examples/usb-assistant/quickgui.json`、`examples/usb-assistant/README.md`、`tests/communication-blocks.test.ts`、`tests/e2e/usb-assistant.spec.ts`、`crates/quickgui-engine/src/usb_tests.rs`。更新本文件记录；无 SDK、进程协议或编译路径改动。
+- 验证：`npm run check -- --maxWorkers=2` 的 TypeScript 与 254 项单测、`npm run build`、`cargo test --workspace` 的 103 项常规测试及文档测试通过，13 项条件测试默认忽略。检查期间保留用户原有 1420 开发环境；后台原生编译曾使默认并发的既有组件构建单测超时，因此仅降低检查并发，未放宽超时。
+- `npm run test:e2e -- --config .toolchain/playwright-verification.config.ts` 使用隔离的 1421 服务，沿用正式用例和标准超时，54 项 Chromium E2E 一次全部通过；USB 预览截图已目视检查。Prettier、`cargo fmt --all -- --check` 与 Git 差异检查通过，保留既有 Monaco 大包、桥接混合导入和 Rust 未使用可变绑定提示。
+- 实际 Rust 引擎执行三个示例，覆盖泵站调速与计数、串口 FB 收发数据及错误/清空语义、USB 系统发现与精确设备选择。三个示例实际源码导出后与源工程逐字段一致，保留全部流程和数据线，并包含 USB 服务及 Git 依赖。真实系统枚举与流程事件测试不等同于实体 USB 或串口收发验收；本轮未进行实体通信。审计程序、导出目录、日志和截图均保留在忽略的生成物目录，不纳入源码提交。
+
+## 2026-10-19 — 更新 Demo 展示 FB 多路端口
+
+- 泵站示例直接以 v5 / v2 定义控件和趋势绑定；循环计数显式区分执行线与数据线。增加可在浏览器和桌面运行的调速示例、额定转速输入及转速/余量结果：默认 65% × 3000 rpm 得到 1950 rpm，余量 35%。新流程展示双输入数学、双输入双输出结果块、按需读取和输出分接。
+- 串口示例的全部节点显式定义 FB 接口，手动/定时发送分别接入数据、编码与行尾；收发事件将报文和时间分别输出至历史与最近收发显示。固定写入值通过端口默认值保留，错误/断开继续停止定时发送，清空操作不复制上游报文。保留 64 个普通控件、16 条流程与原有安全默认值。
+- 修改 `src/core/project.ts`、`src/examples/serialAssistant.ts`、`examples/pump-station/quickgui.json`、`examples/serial-assistant/quickgui.json`、`examples/serial-assistant/README.md`、`README.md`、`docs/function-blocks.md`、`tests/serial-demo.test.ts`、`tests/e2e/designer.spec.ts`、`tests/e2e/function-blocks.spec.ts`、`tests/e2e/multi-window.spec.ts`、`CHANGELOG.md`；新增 `src/examples/pumpSpeed.ts`、`examples/pump-station/README.md`、`tests/pump-demo.test.ts`。保留两个源文件示例的工程 ID，无源文件删除或重命名，无 C SDK、进程协议或编译路径变更。
+- 验证：`npm run check` 的 TypeScript 与 247 项单测、`npm run build`、`cargo test --workspace` 的 98 项常规测试及文档测试通过，13 项条件测试默认忽略。52 项 Chromium E2E 中首轮 49 项通过；修正千位分隔符与旧 Demo 控件/连线数量断言后，剩余 3 项全部重跑通过，未放宽超时。E2E 使用隔离的 1421 服务，用户原有 1420 开发进程保持运行。
+- 实际 Rust 引擎读取两个更新后的 Demo，验证 5 组调速输入、次数累加、RX/TX 报文与时间分流、错误停止定时发送及清空记录；这属于流程语义验证，未进行实体串口通信。调速日志直接显示输入数值，浏览器与 Rust 均验证通过。两个 Demo 实际导出为独立源码，逐字段核对导出工程与源文件相同，泵站保留 2 条流程/12 条数据线，串口保留 16 条流程/14 条数据线。
+- 已目视检查泵站预览截图；Prettier 与 Git 差异检查通过。保留既有 Monaco 大包、桥接混合导入和 Rust 未使用可变绑定提示；临时审计程序、导出源码、日志和截图均位于忽略的生成物目录，不纳入源代码提交。
+
+## 2026-10-19 — 默认使用最新工程模型
+
+- 按当前需求统一工作副本为 schema v5、控件属性为 definitionVersion 2。新建、打开、恢复、复制、保存和导出直接使用当前模型；已知旧文件仅在入口一次性转换，移除版本升级弹窗与旧版运行分支。撤销/重做不再回退工程版本；新建流程和示例节点默认显示 FB 端口。
+- 浏览器与 Rust 统一使用 FB 图执行器、严格数值运算和 JSON 结构比较、实际写入值转发及持续事件域。逻辑编辑取消旧工作，纯外观更新保留有效执行；C 仍在独立进程执行，SDK ABI 与进程协议未变。
+- 命令行源码导出和组件重建复用工程校验器并写入规范化结果；原生源码导出要求设计器当前 v5 文档。未知版本、无效引用、结构和草稿继续严格拒绝。
+- 修改核心：`src/core/types.ts`、`src/core/migration.ts`、`src/core/project.ts`、`src/core/validation.ts`、`src/core/store.ts`、`src/core/archive.ts`、`src/core/clipboard.ts`、`src/core/windows.ts`。
+- 修改界面：`src/App.tsx`、`src/designer/FlowEditor.tsx`、`src/designer/CanvasEditor.tsx`、`src/designer/Inspector.tsx`、`src/panels/ConnectionsPanel.tsx`、`src/panels/PasteReviewDialog.tsx`；删除未再使用的 `src/designer/LegacyInspector.tsx`。
+- 修改运行器：`src/runtime/engine.ts`、`src/runtime/controller.ts`、`src/runtime/WidgetRenderer.tsx`、`src/runtime/RuntimeWindows.tsx`、`src/runtime/windowState.ts`、`src/runtime/flowV4Runtime.ts`、`crates/quickgui-engine/src/lib.rs`、`crates/quickgui-engine/src/flow_v4.rs`、`crates/quickgui-engine/src/function_blocks.rs`、`src-tauri/src/lib.rs`、`src-tauri/src/scheduler.rs`。
+- 修改导出和示例：`scripts/export-project.mjs`、`scripts/build-component.mjs`、`src-tauri/src/source_export.rs`、`src/examples/serialAssistant.ts`、`examples/serial-assistant/quickgui.json`。
+- 修改回归：`tests/project-v3.test.ts`、`tests/project-compatibility.test.ts`、`tests/project-windows.test.ts`、`tests/project-windows-store.test.ts`、`tests/core.test.ts`、`tests/runtime-v3.test.ts`、`tests/multi-window-runtime.test.ts`、`tests/flow-v4.test.ts`、`tests/function-blocks.test.ts`、`tests/clipboard.test.ts`、`tests/widget-definitions.test.ts`、`tests/widget-migration.test.ts`、`tests/serial-demo.test.ts`、`tests/component-rebuild.test.ts`、`tests/e2e/function-blocks.spec.ts`、`tests/e2e/v3-integration.spec.ts`、`tests/e2e/serial-assistant.spec.ts`、`tests/e2e/widget-properties.spec.ts`、`tests/e2e/components.spec.ts`、`tests/e2e/designer.spec.ts`、`tests/e2e/multi-window.spec.ts`、`crates/quickgui-engine/src/flow_v4_tests.rs`、`crates/quickgui-engine/src/function_blocks_tests.rs`、`crates/quickgui-engine/src/serial_demo_test.rs`、`crates/quickgui-engine/src/windows.rs`。
+- 修改说明：`README.md`、`docs/architecture.md`、`docs/project-compatibility.md`、`docs/function-blocks.md`、`templates/runtime/README.md`、`CHANGELOG.md`。本轮无源文件新增或重命名。
+- 最终验证：`npm run check` 的 TypeScript 检查与 244 项单测、`npm run build`、`cargo test --workspace` 的 98 项常规测试与文档测试全部通过；13 项条件测试默认忽略。保留既有 Monaco 大包、桥接混合导入与 Rust 未使用可变绑定提示。
+- 完整 51 项 Chromium E2E 在隔离的 1421 服务一次通过，沿用正式配置、全部用例和标准超时；用户原有 1420 开发服务保持运行。实际命令行导出 v4 串口工程，确认输出为 v5、全部控件 definitionVersion 2，16 条流程完整保留。
+- 真实 C 验证：`npm run test:c` 的 13 项、FB 命名输入/多输出/实例状态隔离 JIT/AOT 等价 1 项、变量别名/原子写入 JIT/AOT 等价 1 项全部通过。Prettier、`cargo fmt --all -- --check` 与 Git 差异检查通过；验证日志、导出工程和临时配置均位于忽略的生成物目录。
+
+## 2026-10-19 — PLC 风格流程功能块与多路数据端口
+
+- 增加显式 v5 工作副本升级和版本化 FB 接口。执行端口与命名数据端口分开，输入支持类型、参数/字段绑定和默认值，输出支持类型化 JSON 路径；每侧最多 16 路，输出可分接，输入禁止重复数据源或类型不兼容连接。
+- 流程卡片按端口逐行布局，显示 EN/ENO、条件/错误分支和各路参数/结果；C 脚本可编辑多路接口。稳定端口 ID 保证改名保留连线，移除端口清理对应数据线，无效草稿不覆盖接口。切换串口操作同步参数接口，保留匹配端口身份、默认值、输出与执行连线，仅清理已移除参数的数据线。
+- 浏览器和 Rust 运行器共用相同数据契约：按本次执行采样，未接 EN 的依赖按需求值、多输出共享一次调用；已接 EN 但未触发的源不能提供旧值。C FB 的状态按流程/节点/脚本实例隔离，保留原脚本语义，不修改 SDK ABI 或进程协议。
+- 修改 `src/core/types.ts`、`src/core/validation.ts`、`src/core/migration.ts`、`src/core/flowV4.ts`、`src/core/clipboard.ts`、`src/runtime/engine.ts`、`src/designer/FlowEditor.tsx`、`src/designer/designer.css`、`src/App.tsx`；新增 `src/core/functionBlocks.ts`、`src/runtime/functionBlockRuntime.ts`、`src/designer/FunctionBlockEditor.tsx`。
+- 修改 `crates/quickgui-engine/src/types.rs`、`crates/quickgui-engine/src/lib.rs`、`crates/quickgui-engine/src/flow_v4.rs`、`crates/quickgui-engine/src/windows.rs`、`src-tauri/src/source_export.rs`、`scripts/export-project.mjs`；新增 `crates/quickgui-engine/src/function_blocks.rs`、`crates/quickgui-engine/src/function_blocks_tests.rs`、`crates/quickgui-engine/tests/fixtures/function-blocks.json`、`crates/quickgui-c-runner/tests/function_block.rs`、`sdk/tests/function-block.c`。
+- 修改 `tests/flow-v4.test.ts`、`tests/project-windows.test.ts`、`tests/project-compatibility.test.ts`、`crates/quickgui-engine/src/flow_v4_tests.rs`；新增 `tests/function-blocks.test.ts`、`tests/e2e/function-blocks.spec.ts`，验证多输入、多输出、分接、严格校验、旧版本隔离、可撤销升级、草稿、复制、错误和执行隔离。修改 `README.md`、`docs/architecture.md`、`docs/project-compatibility.md`、`templates/runtime/README.md`、`CHANGELOG.md`，新增 `docs/function-blocks.md`。无源文件删除或重命名。
+- 验证：`npm run check` 的 TypeScript 与 245 项单元测试、`npm run build`、`cargo test --workspace` 的 98 项常规测试与文档测试通过，13 项条件测试默认忽略。51 项 Chromium E2E 中 48 项首轮通过；3 项导航超时在原生编译结束后通过 `npm run test:e2e -- --last-failed` 全部重跑通过。首次并发检查中的既有组件构建测试超时、原生文档测试缓存暂时缺失均在重跑后消失，未放宽测试超时。
+- 真实 C 专项：`npm run test:c` 的 13 项、同源 aliases JIT/AOT 等价 1 项、FB 命名输入/多输出/共享调用与实例状态隔离 JIT/AOT 等价 1 项全部通过。FB AOT 使用本机 MSVC 工具链编译，SDK ABI 和进程协议未改动。
+- 实际命令行导出 v5 源码并核对数据线和双端运行器；Rust 原生导出回归同时验证接口完整保留。FB 界面截图已目视检查；Prettier、Cargo fmt 与 Git 差异检查通过。源码导出审计、截图和 AOT worker 均位于忽略的生成物目录，不纳入源码提交。
+
+## 2026-10-19 — Windows 发布包不内置 WebView2
+
+- 将 Windows WebView2 安装策略从 `offlineInstaller` 改为 `downloadBootstrapper`，发布包不再携带运行时离线安装器。设计器和两条独立源码导出路径共用该配置；目标电脑优先使用已安装的 WebView2，缺失时由安装器联网下载并静默安装。
+- 在发布及独立源码说明中明确离线安装或直接运行 EXE 需预先安装 WebView2。
+- 修改 `src-tauri/tauri.conf.json`、`README.md`、`templates/runtime/README.md`、`CHANGELOG.md`；无源文件新增、删除或重命名，无 C SDK、进程协议或编译路径变更。
+- 实际通过命令行导出串口助手独立源码，核对设计器及导出配置均为 `downloadBootstrapper`；Rust 原生源码导出回归通过。`npm run check`（233 项）、`npm run build`、`npm run test:e2e`（48 项）、`cargo test --workspace`（89 项常规测试）通过，12 项条件测试默认忽略；格式及 Git 差异检查通过。本轮未生成或安装完整发布包。
+
+## 2026-10-19 — Windows 独立运行应用导出过程输出
+
+- 构建开始自动展开设计器控制台，持续显示源码导出、工具链、依赖安装、编译打包与错误输出；结束后保留最近 1000 条构建记录，不受原生运行快照覆盖，支持滚动和清空。
+- Windows 构建及取消进程使用无控制台窗口标志，标准输出/错误通过管道返回设计器；支持 CR、LF、CRLF、无换行尾部及含非 UTF-8 字节的工具输出，限制单条输出大小，失败退出时先读取最终诊断再返回错误。
+- 修改 `src/App.tsx`、`src/styles.css`、`src-tauri/src/build_runtime.rs`、`CHANGELOG.md`；新增 `tests/e2e/build-output.spec.ts`。无源文件删除或重命名，无 C SDK、工作进程协议或编译命令变更。
+- Rust 新增 5 项输出/进程回归，覆盖实时 CR 输出、CRLF、非法 UTF-8、跨读取 UTF-8、长行限制、失败尾部诊断、取消进程树及含空格路径的 Windows 批处理。2 项浏览器用例以受控原生事件验证自动展开、快照刷新后保留、结束/失败/取消、去重、清空与监听释放，不作为真实打包验收。
+- `cargo test --workspace` 的 89 项常规测试通过；固定版本 TinyCC 在本机准备后，`npm run test:c` 的 13 项测试及同源 JIT/AOT 别名/原子写入等价测试 1 项通过。实际执行 `node scripts/build-aot.mjs sdk/tests/aliases.c .toolchain/aot-aliases` 生成 Windows AOT worker；生成物不提交。
+- 隔离的 Windows 原生调试宿主实际导出源码、运行 Node/Cargo 工具链检查并在依赖阶段取消，确认真实标准输出通过 `build-progress` 返回，取消正常收敛。未完成本轮安装包产出、签名或性能验收。
+- 常规检查：最终默认 `npm run check` 的 TypeScript 检查及 233 项单测、`npm run build` 通过；48 项 Chromium E2E 中首轮 47 项通过，1 项画布用例在并行编译时超时，构建结束后定向重跑通过。组件重建测试期间的 5 秒超时亦在最终默认检查中消除，无相关源码改动。Prettier、Cargo fmt 与 Git 差异检查通过；保留已有 Monaco 大包、桥接混合导入及 Rust 未使用可变绑定提示。
+
+## 2026-10-19 — 标题栏跟随设计器主题
+
+- 修复主题切换只更新网页样式、原生标题栏仍使用系统主题的问题：通过 Tauri 原生窗口接口同步亮/暗主题，保留系统标题栏与窗口按钮。
+- 设计器统一管理主题状态，启动时恢复保存的选择；关闭工程进入欢迎页、刷新及重新打开工程时保持一致。浏览器仅应用网页主题，原生同步失败输出明确错误。
+- 修改 `src/App.tsx`、`src/panels/WelcomeScreen.tsx`、`src/native/bridge.ts`；新增 `src-tauri/capabilities/designer-theme.json`，仅向设计器主窗口授予设置主题权限。
+- 修改 `tests/e2e/project-close.spec.ts`，覆盖亮/暗切换、刷新、关闭工程、欢迎页及恢复工程的主题保持；修改 `CHANGELOG.md` 记录本次变更。无源文件删除或重命名，无 C SDK、进程协议或编译路径变更。
+- Windows 原生调试宿主使用独立应用标识与 WebView 数据目录，实际读取 Tauri 有效主题及 DWM 深色标题栏属性，8 项初始主题、亮/暗切换、刷新、关闭工程、欢迎页与恢复工程检查一致；测试进程已清理。浏览器回归不作为原生标题栏验收。
+
 ## 2026-10-19 — 串口助手 Demo 与可复用 v4 流程组件
 
 ### 目的与行为

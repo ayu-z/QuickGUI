@@ -1,9 +1,11 @@
 //! Portable QuickGUI graph execution. UI documents remain in the project model.
 mod connections;
 pub mod flow_v4;
+pub mod function_blocks;
 mod history;
 mod json_value;
 pub mod serial;
+pub mod usb;
 pub use json_value::{read_path, replace_path, validate_json, validate_path};
 mod types;
 mod windows;
@@ -48,6 +50,7 @@ pub fn validate_flow(flow: &Flow) -> Result<Vec<usize>, String> {
         "emit",
         "connection",
         "serial",
+        "usb",
         "map",
         "append",
         "window",
@@ -98,16 +101,30 @@ pub fn validate_flow(flow: &Flow) -> Result<Vec<usize>, String> {
     if order.len() != flow.nodes.len() {
         return Err("Flow contains a cycle; use explicit events for repeated work".into());
     }
-    if !flow.nodes.iter().any(|n| n.kind == "event") {
+    if !flow.nodes.iter().any(|n| {
+        n.kind == "event"
+            || ["serial", "usb"].contains(&n.kind.as_str())
+                && n.config.get("action").and_then(Value::as_str) == Some("communicate")
+    }) {
         return Err("Flow needs an event entry node".into());
     }
     Ok(order)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum ScriptStateKey {
+    Script(String),
+    Block {
+        flow: String,
+        node: String,
+        script: String,
+    },
+}
 pub struct Engine {
     project: Project,
+    flow_plans: BTreeMap<String, (std::sync::Arc<Flow>, std::sync::Arc<Vec<usize>>)>,
     snapshot: RuntimeSnapshot,
-    script_state: BTreeMap<String, BTreeMap<String, f64>>,
+    script_state: BTreeMap<ScriptStateKey, BTreeMap<String, f64>>,
     script_locks:
         std::sync::Arc<std::sync::Mutex<BTreeMap<String, std::sync::Arc<tokio::sync::Mutex<()>>>>>,
     v4_runs: BTreeMap<u64, String>,
@@ -117,15 +134,27 @@ pub struct Engine {
     snapshot_sequence: std::sync::atomic::AtomicU64,
     observer: Option<std::sync::Arc<dyn Fn(RuntimeSnapshot) + Send + Sync>>,
     event_observer: Option<std::sync::Arc<dyn Fn(RuntimeEvent) + Send + Sync>>,
+    activity_notified_at: Option<std::time::Instant>,
 }
 
 impl Engine {
-    pub fn new(project: Project) -> Result<Self, String> {
+    pub fn new(mut project: Project) -> Result<Self, String> {
+        if !(1..=5).contains(&project.schema_version) {
+            return Err(format!(
+                "Unsupported project schemaVersion {}",
+                project.schema_version
+            ));
+        }
+        if project.schema_version < 5 {
+            project.windows.get_or_insert_with(Vec::new);
+        }
+        project.schema_version = 5;
         windows::validate(&project)?;
+        function_blocks::validate_project(&project)?;
         flow_v4::validate_project(&project)?;
         let mut snapshot = RuntimeSnapshot {
             revision: project.revision,
-            running: project.schema_version >= 4,
+            running: true,
             window_state: windows::initial(&project),
             ..Default::default()
         };
@@ -134,9 +163,6 @@ impl Engine {
         for variable in &project.variables {
             if !ids.insert(&variable.id) || !names.insert(&variable.name) {
                 return Err("Duplicate variable ID or name".into());
-            }
-            if variable.value_type == "json" && project.schema_version < 3 {
-                return Err("JSON variables require schemaVersion 3".into());
             }
             validate_value(variable, &variable.initial)?;
             snapshot.values.insert(
@@ -149,16 +175,21 @@ impl Engine {
             );
         }
         let mut flow_ids = BTreeSet::new();
+        let mut flow_plans = BTreeMap::new();
         for flow in &project.flows {
             if !flow_ids.insert(&flow.id) {
                 return Err("Duplicate flow ID".into());
             }
-            validate_flow(flow)?;
+            let order = validate_flow(flow)?;
+            flow_plans.insert(
+                flow.id.clone(),
+                (
+                    std::sync::Arc::new(flow.clone()),
+                    std::sync::Arc::new(order),
+                ),
+            );
             for node in &flow.nodes {
                 if let Some(path) = node.config.get("path") {
-                    if project.schema_version < 3 {
-                        return Err("JSON paths require schemaVersion 3".into());
-                    }
                     validate_path(path.as_array().ok_or("JSON path must be an array")?)?;
                 }
             }
@@ -166,9 +197,6 @@ impl Engine {
         let mut script_ids = BTreeSet::new();
         for script in &project.scripts {
             if let Some(aliases) = &script.variable_aliases {
-                if project.schema_version < 3 {
-                    return Err("C aliases require schemaVersion 3".into());
-                }
                 for target in aliases.values() {
                     if !project
                         .variables
@@ -187,6 +215,7 @@ impl Engine {
         }
         Ok(Self {
             project,
+            flow_plans,
             snapshot,
             script_state: BTreeMap::new(),
             script_locks: Default::default(),
@@ -197,6 +226,7 @@ impl Engine {
             snapshot_sequence: std::sync::atomic::AtomicU64::new(0),
             observer: None,
             event_observer: None,
+            activity_notified_at: None,
         })
     }
     pub fn update_serial_state(&mut self, states: BTreeMap<String, Value>) {
@@ -243,6 +273,21 @@ impl Engine {
             observer(self.snapshot());
         }
     }
+    fn notify_activity(&mut self, waiting: bool) {
+        // Node highlights are visual samples. Values, logs, errors and final
+        // snapshots still notify immediately and must never be coalesced here.
+        let now = std::time::Instant::now();
+        if waiting
+            || self
+                .activity_notified_at
+                .is_none_or(|last| now.duration_since(last) >= Duration::from_millis(16))
+        {
+            self.notify();
+            // A slow UI callback must not make the very next node broadcast
+            // again just because the callback itself consumed the sample window.
+            self.activity_notified_at = Some(std::time::Instant::now());
+        }
+    }
     pub fn project(&self) -> &Project {
         &self.project
     }
@@ -257,9 +302,7 @@ impl Engine {
         next.event_observer = self.event_observer.clone();
         if next.project.id == self.project.id {
             next.script_locks = self.script_locks.clone();
-            if self.project.schema_version >= 4
-                && flow_v4::execution_key(&self.project) == flow_v4::execution_key(&next.project)
-            {
+            if flow_v4::execution_key(&self.project) == flow_v4::execution_key(&next.project) {
                 next.v4_runs = self.v4_runs.clone();
                 next.v4_next_run = self.v4_next_run;
                 next.snapshot.running = self.snapshot.running;
@@ -284,7 +327,22 @@ impl Engine {
             next.script_state = self
                 .script_state
                 .iter()
-                .filter(|(id, _)| next.project.scripts.iter().any(|s| s.id == **id))
+                .filter(|(key, _)| match key {
+                    ScriptStateKey::Script(id) => next.project.scripts.iter().any(|s| s.id == *id),
+                    ScriptStateKey::Block { flow, node, script } => {
+                        next.project.scripts.iter().any(|s| s.id == *script)
+                            && next.project.flows.iter().any(|f| {
+                                f.id == *flow
+                                    && f.nodes.iter().any(|n| {
+                                        n.id == *node
+                                            && n.block.is_some()
+                                            && n.kind == "script"
+                                            && n.config.get("scriptId").and_then(Value::as_str)
+                                                == Some(script)
+                                    })
+                            })
+                    }
+                })
                 .map(|(id, state)| (id.clone(), state.clone()))
                 .collect();
             next.snapshot.logs = self.snapshot.logs.clone();
@@ -308,10 +366,8 @@ impl Engine {
         self.notify();
     }
     pub fn start_domain(&mut self) {
-        if self.project.schema_version >= 4 {
-            self.snapshot.running = true;
-            self.notify();
-        }
+        self.snapshot.running = true;
+        self.notify();
     }
     pub fn window_action(&mut self, action: &str, window_id: &str) -> Result<(), String> {
         windows::validate_action(&self.project, action, window_id)?;
@@ -361,9 +417,6 @@ impl Engine {
         };
         if path.is_empty() {
             return self.set_variable(name, value);
-        }
-        if self.project.schema_version < 3 {
-            return Err("JSON paths require schemaVersion 3".into());
         }
         let variable = self
             .resolve_variable(name)
@@ -453,6 +506,28 @@ impl Engine {
         self.execute_script_context(script_id, input, cancel, host, None, None)
             .await
     }
+    fn script_state_key(
+        &self,
+        script_id: &str,
+        flow_id: Option<&str>,
+        node_id: Option<&str>,
+    ) -> ScriptStateKey {
+        if let (Some(flow), Some(node)) = (flow_id, node_id) {
+            if self.project.flows.iter().any(|f| {
+                f.id == flow
+                    && f.nodes
+                        .iter()
+                        .any(|n| n.id == node && n.block.is_some() && n.kind == "script")
+            }) {
+                return ScriptStateKey::Block {
+                    flow: flow.into(),
+                    node: node.into(),
+                    script: script_id.into(),
+                };
+            }
+        }
+        ScriptStateKey::Script(script_id.into())
+    }
     async fn execute_script_context(
         &mut self,
         script_id: &str,
@@ -477,7 +552,7 @@ impl Engine {
                     variables: self.script_variables(),
                     state: self
                         .script_state
-                        .get(script_id)
+                        .get(&self.script_state_key(script_id, flow_id, node_id))
                         .cloned()
                         .unwrap_or_default(),
                     timeout_ms: script.timeout_ms,
@@ -540,8 +615,10 @@ impl Engine {
                 },
             );
         }
-        self.script_state
-            .insert(script_id.to_owned(), response.state.clone());
+        self.script_state.insert(
+            self.script_state_key(script_id, flow_id, node_id),
+            response.state.clone(),
+        );
         self.notify();
         for message in &response.logs {
             self.log("info", message.clone(), flow_id, node_id);
@@ -591,100 +668,13 @@ impl Engine {
         cancel: CancellationToken,
         host: Option<&ScriptHost>,
     ) -> Result<RuntimeSnapshot, String> {
-        let flow = self
-            .project
-            .flows
-            .iter()
-            .find(|f| f.id == flow_id)
-            .cloned()
-            .ok_or_else(|| format!("Unknown flow: {flow_id}"))?;
-        if !flow.enabled {
-            return Err(format!("Flow {} is disabled", flow.name));
-        }
-        let order = validate_flow(&flow)?;
-        if let Some(entry) = entry {
-            if !flow
-                .nodes
-                .iter()
-                .any(|n| n.id == entry && n.kind == "event")
-            {
-                return Err(format!("Event entry node does not exist: {entry}"));
-            }
-        }
-        self.snapshot.running = true;
-        self.notify();
-        let result = tokio::select! {
-            _=cancel.cancelled()=>Err("Flow cancelled".to_owned()),
-            result=tokio::time::timeout(Duration::from_secs(60),self.execute_nodes(&flow,order,entry,input,cancel.clone(),host))=>result.map_err(|_|"Flow exceeded 60 second deadline".to_owned()).and_then(|r|r),
-        };
-        self.stop();
-        if let Err(error) = result {
-            self.log("error", error.clone(), Some(flow_id), None);
-            return Err(error);
-        }
-        Ok(self.snapshot())
-    }
-    async fn execute_nodes(
-        &mut self,
-        flow: &Flow,
-        order: Vec<usize>,
-        entry: Option<&str>,
-        input: Value,
-        cancel: CancellationToken,
-        host: Option<&ScriptHost>,
-    ) -> Result<(), String> {
-        let mut pending: BTreeMap<String, Vec<Value>> = flow
-            .nodes
-            .iter()
-            .filter(|n| n.kind == "event" && entry.map_or(true, |id| n.id == id))
-            .map(|n| (n.id.clone(), vec![input.clone()]))
-            .collect();
-        let mut scheduled = pending.len();
-        for i in order {
-            if cancel.is_cancelled() {
-                return Err("Flow cancelled".into());
-            }
-            let node = &flow.nodes[i];
-            let Some(inputs) = pending.remove(&node.id) else {
-                continue;
-            };
-            for input in inputs {
-                if cancel.is_cancelled() {
-                    return Err("Flow cancelled".into());
-                }
-                self.snapshot.active_nodes = vec![node.id.clone()];
-                self.notify();
-                let original = input.clone();
-                let result = self
-                    .execute_node(flow, node, input, cancel.clone(), host)
-                    .await
-                    .map_err(|e| format!("{} ({}): {e}", node.label, node.id))?;
-                for edge in flow.edges.iter().filter(|e| e.source == node.id) {
-                    if node.kind == "condition" {
-                        let branch = if result.as_bool().unwrap_or(false) {
-                            "true"
-                        } else {
-                            "false"
-                        };
-                        if edge.source_handle.as_deref().unwrap_or("true") != branch {
-                            continue;
-                        }
-                    }
-                    scheduled += 1;
-                    if scheduled > 10_000 {
-                        return Err("Flow exceeded 10000 node activations".into());
-                    }
-                    pending.entry(edge.target.clone()).or_default().push(
-                        if node.kind == "condition" && self.project.schema_version >= 3 {
-                            original.clone()
-                        } else {
-                            result.clone()
-                        },
-                    );
-                }
-            }
-        }
-        Ok(())
+        let placeholder = Self::new(self.project.clone())?;
+        let owned = std::mem::replace(self, placeholder);
+        let shared = std::sync::Arc::new(tokio::sync::Mutex::new(owned));
+        let result =
+            flow_v4::run_shared(shared.clone(), None, flow_id, entry, input, cancel, host).await;
+        std::mem::swap(self, &mut *shared.lock().await);
+        result
     }
     async fn execute_node(
         &mut self,
@@ -748,20 +738,8 @@ impl Engine {
             "condition" => {
                 let rhs = node.config.get("value").unwrap_or(&Value::Null);
                 let result = match text("operator") {
-                    "eq" => {
-                        if self.project.schema_version >= 3 {
-                            equal_json(&input, rhs)
-                        } else {
-                            equal_values(&input, rhs)
-                        }
-                    }
-                    "neq" => {
-                        if self.project.schema_version >= 3 {
-                            !equal_json(&input, rhs)
-                        } else {
-                            !equal_values(&input, rhs)
-                        }
-                    }
+                    "eq" => equal_json(&input, rhs),
+                    "neq" => !equal_json(&input, rhs),
                     op => {
                         let (a, b) = (
                             input.as_f64().ok_or("Comparison input must be numeric")?,
@@ -942,7 +920,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(s.values["v"].value, json!(12.0));
-        assert!(!s.running);
+        assert!(s.running);
         assert!(e.set_variable("count", json!(true)).is_err());
     }
     #[test]
@@ -954,6 +932,7 @@ mod tests {
             target: "b".into(),
             source_handle: None,
             target_handle: None,
+            kind: None,
         });
         assert!(Engine::new(p.clone()).err().unwrap().contains("cycle"));
         p.flows[0].edges[0].source = "missing".into();
@@ -976,14 +955,14 @@ mod tests {
             .await
             .unwrap_err()
             .contains("cancelled"));
-        assert!(!e.snapshot.running);
+        assert!(e.snapshot.running);
         assert!(e.snapshot.active_nodes.is_empty());
         assert_eq!(e.snapshot.values["v"].value, json!(2));
     }
     #[test]
     fn unknown_schema_and_readonly_writes_fail() {
         let mut p = fixture();
-        p.schema_version = 5;
+        p.schema_version = 6;
         assert!(Engine::new(p).is_err());
         let mut p = fixture();
         p.variables[0].read_only = true;
@@ -1056,9 +1035,10 @@ mod tests {
         let project = multi_window_fixture();
         let mut engine = Engine::new(project.clone()).unwrap();
         let mut invalid = project.clone();
-        invalid.schema_version = 1;
+        invalid.schema_version = 6;
         assert!(engine.apply_project(invalid).is_err());
         let mut invalid = project.clone();
+        invalid.schema_version = 5;
         invalid.windows = None;
         assert!(engine.apply_project(invalid).is_err());
         let mut invalid = project.clone();
@@ -1071,7 +1051,7 @@ mod tests {
             ("windowId".into(), json!("main")),
         ]);
         assert!(engine.apply_project(invalid).is_err());
-        assert_eq!(engine.project().schema_version, 2);
+        assert_eq!(engine.project().schema_version, 5);
         assert_eq!(engine.snapshot().window_state.open, ["main"]);
     }
     #[test]
@@ -1151,7 +1131,7 @@ mod tests {
         assert!(!e.snapshot.values.contains_key("renamed"));
         p.schema_version = 42;
         assert!(e.apply_project(p).is_err());
-        assert_eq!(e.project.schema_version, 1);
+        assert_eq!(e.project.schema_version, 5);
         assert_eq!(e.snapshot.values["v"].value, json!(21));
         let mut p = fixture();
         p.id = "another".into();
@@ -1172,7 +1152,7 @@ mod tests {
             .unwrap_err()
             .contains("zero"));
         assert_eq!(e.snapshot.values["v"].value, json!(2));
-        assert!(!e.snapshot.running);
+        assert!(e.snapshot.running);
     }
     #[tokio::test]
     async fn joins_process_each_incoming_and_emit_observable_events() {
@@ -1190,6 +1170,7 @@ mod tests {
                 target: "d".into(),
                 source_handle: None,
                 target_handle: None,
+                kind: None,
             },
             FlowEdge {
                 id: "dc".into(),
@@ -1197,6 +1178,7 @@ mod tests {
                 target: "c".into(),
                 source_handle: None,
                 target_handle: None,
+                kind: None,
             },
         ]);
         let mut e = Engine::new(p).unwrap();
@@ -1226,8 +1208,15 @@ mod tests {
             .lock()
             .unwrap()
             .iter()
-            .any(|s| s.running && s.active_nodes == vec!["b"]));
-        assert!(!snapshots.lock().unwrap().last().unwrap().running);
+            .any(|s| s.running && !s.active_nodes.is_empty()));
+        assert!(snapshots.lock().unwrap().last().unwrap().running);
+        assert!(snapshots
+            .lock()
+            .unwrap()
+            .last()
+            .unwrap()
+            .active_nodes
+            .is_empty());
     }
     #[test]
     fn numeric_comparison_matches_javascript_numbers() {
@@ -1278,6 +1267,7 @@ mod tests {
                 label: "Other".into(),
                 position: Value::Null,
                 config: Default::default(),
+                block: None,
             },
             FlowNode {
                 id: "other-log".into(),
@@ -1285,6 +1275,7 @@ mod tests {
                 label: "Other log".into(),
                 position: Value::Null,
                 config: BTreeMap::from([("message".into(), json!("other branch"))]),
+                block: None,
             },
         ]);
         p.flows[0].edges.push(FlowEdge {
@@ -1293,6 +1284,7 @@ mod tests {
             target: "other-log".into(),
             source_handle: None,
             target_handle: None,
+            kind: None,
         });
         let mut e = Engine::new(p).unwrap();
         let snapshot = e

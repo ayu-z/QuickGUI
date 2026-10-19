@@ -58,6 +58,31 @@ test('unapplied CODE drafts survive close, reload and restore', async ({ page })
   await expect(page.locator('[data-widget="start_button"] button')).toHaveText('启动循环');
 });
 
+test('designer theme survives reload, project close and restore', async ({ page }) => {
+  await page.getByRole('button', { name: 'Theme', exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await page.reload();
+  await expect(page.getByTestId('design-canvas')).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+
+  const dialog = await askToClose(page);
+  await dialog.getByRole('button', { name: '保留恢复副本并关闭', exact: true }).click();
+  await expect(page.getByTestId('no-project')).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await page.reload();
+  await expect(page.getByTestId('no-project')).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+
+  await page.getByRole('button', { name: /恢复上次关闭的工程/ }).click();
+  await expect(page.getByTestId('design-canvas')).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await page.getByRole('button', { name: 'Theme', exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await page.reload();
+  await expect(page.getByTestId('design-canvas')).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+});
+
 test('save and close downloads a project and does not silently create another project', async ({
   page,
 }) => {

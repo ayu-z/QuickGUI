@@ -35,7 +35,7 @@ function project(id = 'source'): Project {
   return p;
 }
 function widget(type: Widget['type'], id: string, parentId?: string): Widget {
-  return { ...createWidget(type, 10, 20, 1), id, name: id, ...(parentId ? { parentId } : {}) };
+  return { ...createWidget(type, 10, 20, 2), id, name: id, ...(parentId ? { parentId } : {}) };
 }
 function flow(
   id: string,
@@ -437,23 +437,23 @@ describe('dependency-aware project clipboard', () => {
       again.candidate.assets.find((entry) => entry.id === againScope.assetAliases!.logo)?.data,
     ).toBe(embedded.data);
   });
-  it('keeps legacy same-document copies on their original schema and defaults', () => {
+  it('keeps same-document copies on current schema and defaults', () => {
     const legacy = createProject();
     legacy.widgets = [widget('text', 'legacy')];
     legacy.flows = [];
     legacy.scripts = [];
     legacy.variables = [];
-    expect(legacy.schemaVersion).toBe(1);
-    expect(Object.hasOwn(legacy.widgets[0], 'definitionVersion')).toBe(false);
+    expect(legacy.schemaVersion).toBe(5);
+    expect(legacy.widgets[0].definitionVersion).toBe(2);
     const bundle = copySelection(legacy, main, ['legacy'], 'legacy-session');
     const plan = preparePaste(legacy, bundle, main, undefined, {
       sameDocument: true,
       sessionKey: 'legacy-session',
     });
-    expect(plan.candidate.schemaVersion).toBe(1);
-    expect(Object.hasOwn(plan.candidate, 'windows')).toBe(false);
+    expect(plan.candidate.schemaVersion).toBe(5);
+    expect(plan.candidate.windows).toEqual([]);
     expect(Object.hasOwn(plan.candidate, 'resourceScopes')).toBe(false);
-    expect(Object.hasOwn(plan.candidate.widgets[1], 'definitionVersion')).toBe(false);
+    expect(plan.candidate.widgets[1].definitionVersion).toBe(2);
     expect(plan.candidate.scripts).toEqual(legacy.scripts);
     validateProject(plan.candidate);
   });

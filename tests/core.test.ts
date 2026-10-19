@@ -61,7 +61,7 @@ describe('portable project contract', () => {
   it('rejects malformed and incompatible source files', () => {
     expect(() => importProject(strToU8('{ invalid'))).toThrow();
     const p = createProject();
-    expect(() => validateProject({ ...p, schemaVersion: 2 })).toThrow();
+    expect(() => validateProject({ ...p, schemaVersion: 6 })).toThrow();
     expect(() => validateProject({ ...p, widgets: [...p.widgets, p.widgets[0]] })).toThrow(
       /Duplicate/,
     );
@@ -176,6 +176,8 @@ describe('flow execution', () => {
         ],
       },
     ];
+    p.widgets = [];
+    p.widgets = [];
     const engine = new RuntimeController(p);
     await engine.runFlow('conditional', 1);
     expect(engine.getSnapshot().values.cycles.value).toBe(-1);
@@ -185,7 +187,7 @@ describe('flow execution', () => {
   });
   it('rejects cycles before execution and validates variable types', () => {
     const p = createProject();
-    p.flows[0].edges.push({ id: 'cycle', source: 'log-cycle', target: 'trigger' });
+    p.flows[0].edges.push({ id: 'cycle', source: 'log-cycle', target: 'read-cycles' });
     expect(() => validateFlow(p.flows[0])).toThrow(/cycle/i);
     const engine = new RuntimeController(createProject());
     expect(() => engine.setVariable('running', 1)).toThrow(/boolean/);
@@ -215,10 +217,14 @@ describe('flow execution', () => {
         ],
       },
     ];
+    p.widgets = [];
     const engine = new RuntimeController(p);
     const task = engine.runFlow('slow');
     await new Promise((r) => setTimeout(r, 20));
-    engine.applyProject({ ...p, revision: 1 });
+    const changed = structuredClone(p);
+    changed.revision = 1;
+    changed.flows[0].nodes[1].config.ms = 1;
+    engine.applyProject(changed);
     await task;
     expect(engine.getSnapshot().values.cycles.value).toBe(0);
     engine.dispose();
@@ -243,6 +249,7 @@ describe('flow execution', () => {
         edges: [{ id: 'start-c', source: 'start', target: 'c' }],
       },
     ];
+    p.widgets = [];
     const engine = new RuntimeController(p);
     await expect(engine.runFlow('c', 0)).rejects.toThrow(/desktop runtime/);
     engine.dispose();
@@ -267,13 +274,17 @@ describe('flow execution', () => {
         edges: [{ id: 'start-c', source: 'start', target: 'c' }],
       },
     ];
+    p.widgets = [];
     const engine = new RuntimeController(p, async () => {
       await new Promise((r) => setTimeout(r, 30));
       return { output: 5, writes: { cycles: 5 }, state: {}, logs: [] };
     });
     const task = engine.runFlow('c');
     await new Promise((r) => setTimeout(r, 5));
-    engine.applyProject({ ...p, revision: 1 });
+    const changed = structuredClone(p);
+    changed.revision = 1;
+    changed.scripts[0].source += '\n// updated';
+    engine.applyProject(changed);
     await task;
     expect(engine.getSnapshot().values.cycles.value).toBe(0);
     engine.dispose();

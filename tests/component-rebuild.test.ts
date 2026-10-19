@@ -269,7 +269,7 @@ describe('strict component rebuild and project integration', () => {
       compiler.buildComponent(input.source, output, { project: filename, module: 'original.card' }),
     ).rejects.toThrow(/No local module/);
   });
-  it('requires an explicit designer upgrade before inserting v2 metadata into a legacy project', async () => {
+  it('normalizes the project before inserting current component metadata', async () => {
     const input = await fixture(1),
       project = createProject();
     project.modules = [input.module];
@@ -300,11 +300,12 @@ describe('strict component rebuild and project integration', () => {
         },
       }),
     );
-    await expect(
-      compiler.buildComponent(input.source, output, { project: filename, module: 'original.card' }),
-    ).rejects.toThrow(/upgrade.*designer/);
-    expect(await readFile(filename)).toEqual(before);
-    expect(await exists(output)).toBe(false);
+    await compiler.buildComponent(input.source, output, {
+      project: filename,
+      module: 'original.card',
+    });
+    expect(JSON.parse(await readFile(filename, 'utf8')).schemaVersion).toBe(5);
+    expect(await exists(output)).toBe(true);
   });
   it('continues to build standalone v1 and v2 packages without editing source files or requiring a project', async () => {
     for (const version of [1, 2] as const) {

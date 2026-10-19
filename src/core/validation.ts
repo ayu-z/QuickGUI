@@ -4,7 +4,16 @@ import { reactImplementationSchema } from './componentPackage';
 import { assertJsonPath, assertJsonValue, validateJsonPath } from './jsonValue';
 import { validatePropertyPatch } from './widgetDefinitions';
 import { propertyDefinitionSchema } from './propertySchema';
+import { upgradeProject } from './migration';
+import { flowBindingId, validFlowBinding } from './flowBindings';
+import { LATEST_PROJECT_VERSION } from './types';
 import { flowConfigRecordSchema, flowNodePorts, isV4Node, validateV4NodeConfig } from './flowV4';
+import {
+  blockInterfaceSchema,
+  isDataEdge,
+  validateBlockInterface,
+  validateDataEdges,
+} from './functionBlocks';
 import {
   listProjectWindows,
   MAIN_WINDOW_ID,
@@ -143,7 +152,12 @@ const widget = z
     bindings: z.record(
       z.object({ variable: z.string(), mode: z.enum(['oneWay', 'twoWay', 'once']) }).strict(),
     ),
-    events: z.record(z.string()),
+    events: z.record(
+      z.union([
+        z.string(),
+        z.object({ flowId: z.string().min(1), entryNodeId: z.string().min(1) }).strict(),
+      ]),
+    ),
   })
   .strict();
 export const windowConfigSchema = z
@@ -439,6 +453,7 @@ const flowV4Schema = projectBaseSchema.shape.flows.element
             'map',
             'append',
             'serial',
+            'usb',
           ]),
           config: flowConfigRecordSchema,
         })
@@ -446,17 +461,27 @@ const flowV4Schema = projectBaseSchema.shape.flows.element
     ),
   })
   .strict();
-export const projectSchema = z.discriminatedUnion('schemaVersion', [
-  projectBaseSchema,
-  projectBaseSchema
-    .extend({
-      schemaVersion: z.literal(2),
-      windows: z.array(projectWindowSchema).max(MAX_ADDITIONAL_WINDOWS),
-    })
-    .strict(),
-  modernProject,
-  modernProject.extend({ schemaVersion: z.literal(4), flows: z.array(flowV4Schema) }).strict(),
-]);
+export const projectSchema = modernProject
+  .extend({
+    schemaVersion: z.literal(LATEST_PROJECT_VERSION),
+    flows: z.array(
+      flowV4Schema
+        .extend({
+          nodes: z.array(
+            flowV4Schema.shape.nodes.element
+              .extend({ block: blockInterfaceSchema.optional() })
+              .strict(),
+          ),
+          edges: z.array(
+            projectBaseSchema.shape.flows.element.shape.edges.element
+              .extend({ kind: z.literal('data').optional() })
+              .strict(),
+          ),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
 
 export function validateProject(raw: unknown): Project {
   const input =
@@ -467,15 +492,16 @@ export function validateProject(raw: unknown): Project {
   if (!input || !Object.hasOwn(input, 'schemaVersion') || input.schemaVersion === undefined) {
     throw new Error(
       english
-        ? 'The project is missing schemaVersion. This designer supports schemaVersion 1, 2, 3 and 4. The original file has not been modified.'
-        : '工程缺少 schemaVersion，当前设计器支持 schemaVersion 1、2、3 和 4。原文件未修改。',
+        ? 'The project is missing schemaVersion. The current schemaVersion is 5. The original file has not been modified.'
+        : '工程缺少 schemaVersion，当前工程版本为 5。原文件未修改。',
     );
   }
   if (
     input.schemaVersion !== 1 &&
     input.schemaVersion !== 2 &&
     input.schemaVersion !== 3 &&
-    input.schemaVersion !== 4
+    input.schemaVersion !== 4 &&
+    input.schemaVersion !== 5
   ) {
     const version =
       ['string', 'number', 'boolean'].includes(typeof input.schemaVersion) ||
@@ -484,13 +510,20 @@ export function validateProject(raw: unknown): Project {
         : '(invalid value)';
     throw new Error(
       english
-        ? `Unsupported project schemaVersion ${version}. This designer supports schemaVersion 1, 2, 3 and 4. Do not save over the original file. The original file has not been modified.`
-        : `不支持工程 schemaVersion ${version}，当前设计器支持 schemaVersion 1、2、3 和 4。请勿保存覆盖原件；原文件未修改。`,
+        ? `Unsupported project schemaVersion ${version}. The current schemaVersion is 5; known older documents are automatically upgraded. Do not save over the original file. The original file has not been modified.`
+        : `不支持工程 schemaVersion ${version}，当前工程版本为 5，已知旧文档会自动升级。请勿保存覆盖原件；原文件未修改。`,
     );
   }
   let project: Project;
   try {
-    project = projectSchema.parse(raw) as Project;
+    const normalized = {
+      ...input,
+      schemaVersion: LATEST_PROJECT_VERSION,
+      ...(input.schemaVersion !== LATEST_PROJECT_VERSION && input.windows === undefined
+        ? { windows: [] }
+        : {}),
+    };
+    project = upgradeProject(projectSchema.parse(normalized) as Project);
   } catch (error) {
     if (error instanceof z.ZodError) {
       const paths = error.issues.flatMap((issue) =>
@@ -579,11 +612,9 @@ export function validateProject(raw: unknown): Project {
     validateFlow(flow, project.schemaVersion);
     for (const node of flow.nodes) {
       if (isV4Node(node)) {
-        if (project.schemaVersion < 4) throw new Error(`Node ${node.id} requires schemaVersion 4`);
         validateV4NodeConfig(node, project);
       }
       if (node.config.path === undefined) continue;
-      if (project.schemaVersion < 3) throw new Error('JSON paths require schemaVersion 3');
       const path = node.config.path;
       validateJsonPath(path);
       if (['read', 'write'].includes(node.kind) && path.length > 0) {
@@ -595,8 +626,6 @@ export function validateProject(raw: unknown): Project {
       }
     }
     for (const node of flow.nodes.filter((node) => node.kind === 'window')) {
-      if (project.schemaVersion === 1)
-        throw new Error('Window flow nodes require schemaVersion 2 or later');
       const { action, windowId } = node.config;
       if (typeof action !== 'string' || !['open', 'close', 'focus'].includes(action))
         throw new Error(`Invalid window action: ${node.id}`);
@@ -623,7 +652,12 @@ export function validateProject(raw: unknown): Project {
       });
       if (w.resourceScopeId && !scopes.has(w.resourceScopeId))
         throw new Error(`Missing resource scope: ${w.resourceScopeId}`);
-      if (w.definitionVersion === 2) {
+      if (w.type === 'module' && !modules.has(w.moduleId ?? ''))
+        throw new Error(`Missing module: ${w.moduleId}`);
+      for (const binding of Object.values(w.bindings))
+        if (!variableIds.has(binding.variable))
+          throw new Error(`Missing variable: ${binding.variable}`);
+      {
         const issues = validatePropertyPatch(
           w,
           { props: w.props, style: w.style, states: w.states, bindings: w.bindings },
@@ -646,8 +680,12 @@ export function validateProject(raw: unknown): Project {
             throw new Error(`JSON paths require a json variable: ${w.id}`);
         }
       }
-      for (const flowId of Object.values(w.events))
-        if (!flowIds.has(flowId)) throw new Error(`Missing flow: ${flowId}`);
+      for (const binding of Object.values(w.events)) {
+        if (!flowIds.has(flowBindingId(binding)))
+          throw new Error(`Missing flow: ${flowBindingId(binding)}`);
+        if (!validFlowBinding(binding, project.flows))
+          throw new Error(`Missing or ambiguous manual event entry: ${w.id}`);
+      }
       if (w.type === 'module') {
         if (w.moduleId === undefined || !modules.has(w.moduleId))
           throw new Error(`Missing module: ${w.moduleId}`);
@@ -705,17 +743,21 @@ export function validateProject(raw: unknown): Project {
 
 export function validateFlow(
   flow: Project['flows'][number],
-  schemaVersion?: Project['schemaVersion'],
+  _schemaVersion?: Project['schemaVersion'],
 ): string[] {
   const ids = new Set(flow.nodes.map((n) => n.id));
   if (ids.size !== flow.nodes.length) throw new Error(`Duplicate node IDs: ${flow.name}`);
   if (new Set(flow.edges.map((e) => e.id)).size !== flow.edges.length)
     throw new Error('Duplicate edge IDs');
   const indegree = new Map(flow.nodes.map((n) => [n.id, 0]));
+  for (const node of flow.nodes) {
+    validateBlockInterface(node);
+  }
+  validateDataEdges(flow);
   for (const e of flow.edges) {
     if (!ids.has(e.source) || !ids.has(e.target))
       throw new Error('Flow edge references a missing node');
-    if (schemaVersion === 4 || (schemaVersion === undefined && flow.nodes.some(isV4Node))) {
+    if (!isDataEdge(e)) {
       const source = flow.nodes.find((node) => node.id === e.source)!,
         target = flow.nodes.find((node) => node.id === e.target)!;
       const ports = flowNodePorts(source);
@@ -738,7 +780,13 @@ export function validateFlow(
     }
   }
   if (order.length !== flow.nodes.length) throw new Error(`Flow contains a cycle: ${flow.name}`);
-  if (!flow.nodes.some((node) => node.kind === 'event'))
+  if (
+    !flow.nodes.some(
+      (node) =>
+        node.kind === 'event' ||
+        (['serial', 'usb'].includes(node.kind) && node.config.action === 'communicate'),
+    )
+  )
     throw new Error('Flow needs an event entry node');
   if (
     flow.edges.some((edge) => flow.nodes.find((node) => node.id === edge.target)?.kind === 'event')

@@ -4,6 +4,8 @@ import { cloneJson, readJsonPath, replaceJsonPath, validateJsonPath } from './js
 
 export const JSON_VALUE_LIMIT = 1024 * 1024;
 export const SERIAL_ACTIONS = [
+  'discover',
+  'communicate',
   'scan',
   'filter',
   'open',
@@ -98,6 +100,26 @@ export const appendConfigSchema = z
   .strict();
 const connectionId = z.string().min(1);
 export const serialConfigSchema = z.discriminatedUnion('action', [
+  z
+    .object({
+      action: z.literal('discover'),
+      ports: valueRefSchema,
+      vid: valueRefSchema,
+      pid: valueRefSchema,
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal('communicate'),
+      connectionId,
+      settings: valueRefSchema,
+      data: valueRefSchema,
+      encoding: valueRefSchema,
+      lineEnding: valueRefSchema,
+      timeoutMs: valueRefSchema,
+      enabled: valueRefSchema,
+    })
+    .strict(),
   z.object({ action: z.literal('scan') }).strict(),
   z
     .object({
@@ -121,6 +143,47 @@ export const serialConfigSchema = z.discriminatedUnion('action', [
       encoding: valueRefSchema,
       lineEnding: valueRefSchema,
       timeoutMs: valueRefSchema.optional(),
+    })
+    .strict(),
+]);
+export const usbFilterSchema = z
+  .object({
+    transport: z.enum(['any', 'hid', 'usbPrint']).optional(),
+    vendorId: z.number().int().min(0).max(65535).optional(),
+    productId: z.number().int().min(0).max(65535).optional(),
+    serialNumber: z.string().optional(),
+    usagePage: z.number().int().min(0).max(65535).optional(),
+    usage: z.number().int().min(0).max(65535).optional(),
+  })
+  .strict();
+export const usbOptionsSchema = z
+  .object({
+    numberedInputReports: z.boolean().optional(),
+    bulkMaxPacketSize: z
+      .union([
+        z.literal(8),
+        z.literal(16),
+        z.literal(32),
+        z.literal(64),
+        z.literal(512),
+        z.literal(1024),
+      ])
+      .optional(),
+    sendZeroLengthPacket: z.boolean().optional(),
+  })
+  .strict();
+export const usbConfigSchema = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('discover'), filter: valueRefSchema }).strict(),
+  z
+    .object({
+      action: z.literal('communicate'),
+      sessionId: z.string().min(1).max(128),
+      device: valueRefSchema,
+      options: valueRefSchema,
+      data: valueRefSchema,
+      encoding: valueRefSchema,
+      reportId: valueRefSchema,
+      length: valueRefSchema,
     })
     .strict(),
 ]);
@@ -166,7 +229,7 @@ export const serialSettingsOverrideSchema = z
 
 export function isV4Node(node: Pick<FlowNode, 'kind' | 'config'>): boolean {
   return (
-    ['map', 'append', 'serial'].includes(node.kind) ||
+    ['map', 'append', 'serial', 'usb'].includes(node.kind) ||
     (node.kind === 'event' &&
       ['serial', 'controlledInterval'].includes(String(node.config.trigger)))
   );
@@ -174,23 +237,26 @@ export function isV4Node(node: Pick<FlowNode, 'kind' | 'config'>): boolean {
 export const requiresFlowV4 = isV4Node;
 export function isAutomaticEventSource(node: Pick<FlowNode, 'kind' | 'config'>): boolean {
   return (
-    node.kind === 'event' &&
-    ['startup', 'interval', 'serial', 'controlledInterval'].includes(String(node.config.trigger))
+    (['serial', 'usb'].includes(node.kind) && node.config.action === 'communicate') ||
+    (node.kind === 'event' &&
+      ['startup', 'interval', 'serial', 'controlledInterval'].includes(String(node.config.trigger)))
   );
 }
 function parsedConfig(node: Pick<FlowNode, 'kind' | 'config'>): Record<string, Json> {
   const schema =
-    node.kind === 'map'
-      ? mapConfigSchema
-      : node.kind === 'append'
-        ? appendConfigSchema
-        : node.kind === 'serial'
-          ? serialConfigSchema
-          : node.kind === 'event' && node.config.trigger === 'serial'
-            ? serialEventConfigSchema
-            : node.kind === 'event' && node.config.trigger === 'controlledInterval'
-              ? controlledIntervalConfigSchema
-              : undefined;
+    node.kind === 'usb'
+      ? usbConfigSchema
+      : node.kind === 'map'
+        ? mapConfigSchema
+        : node.kind === 'append'
+          ? appendConfigSchema
+          : node.kind === 'serial'
+            ? serialConfigSchema
+            : node.kind === 'event' && node.config.trigger === 'serial'
+              ? serialEventConfigSchema
+              : node.kind === 'event' && node.config.trigger === 'controlledInterval'
+                ? controlledIntervalConfigSchema
+                : undefined;
   if (!schema) return structuredClone(node.config);
   try {
     return schema.parse(node.config) as Record<string, Json>;
@@ -254,18 +320,28 @@ export function getFlowNodeReferences(
     ref(c.item, ['item']);
   }
   if (node.kind === 'serial') {
-    if (!['scan', 'filter'].includes(String(c.action))) direct('connection', 'connectionId');
-    for (const key of c.action === 'filter'
-      ? ['ports', 'vid', 'pid']
-      : c.action === 'open'
-        ? ['settings']
-        : c.action === 'setReconnect'
-          ? ['enabled']
-          : c.action === 'send'
-            ? ['data', 'encoding', 'lineEnding', 'timeoutMs']
-            : [])
+    if (!['scan', 'filter', 'discover'].includes(String(c.action)))
+      direct('connection', 'connectionId');
+    for (const key of c.action === 'communicate'
+      ? ['settings', 'data', 'encoding', 'lineEnding', 'timeoutMs', 'enabled']
+      : c.action === 'discover'
+        ? ['ports', 'vid', 'pid']
+        : c.action === 'filter'
+          ? ['ports', 'vid', 'pid']
+          : c.action === 'open'
+            ? ['settings']
+            : c.action === 'setReconnect'
+              ? ['enabled']
+              : c.action === 'send'
+                ? ['data', 'encoding', 'lineEnding', 'timeoutMs']
+                : [])
       ref(c[key], [key]);
   }
+  if (node.kind === 'usb')
+    for (const key of c.action === 'discover'
+      ? ['filter']
+      : ['device', 'options', 'data', 'encoding', 'reportId', 'length'])
+      ref(c[key], [key]);
   if (node.kind === 'event' && c.trigger === 'serial') direct('connection', 'connectionId');
   if (node.kind === 'event' && c.trigger === 'controlledInterval') {
     ref(c.interval, ['interval']);
@@ -319,18 +395,18 @@ export function validateV4NodeConfig(
     );
   }
   if (node.kind === 'serial') {
-    if (c.action === 'filter')
+    if (c.action === 'filter' || c.action === 'discover')
       for (const key of ['vid', 'pid']) {
         const value = literalValue(key);
         if (value !== undefined) parseUsbId(value);
       }
-    if (c.action === 'setReconnect')
+    if (c.action === 'setReconnect' || c.action === 'communicate')
       checkLiteral(
         'enabled',
         (value) => typeof value === 'boolean',
         'Auto reconnect enabled must be boolean',
       );
-    if (c.action === 'send') {
+    if (c.action === 'send' || c.action === 'communicate') {
       checkLiteral('data', (value) => typeof value === 'string', 'Send data must be a string');
       checkLiteral(
         'encoding',
@@ -349,10 +425,46 @@ export function validateV4NodeConfig(
         'Send timeout must be an integer from 1 to 15000 ms',
       );
     }
-    if (c.action === 'open' && literalValue('settings') !== undefined) {
+    if (
+      ['open', 'communicate'].includes(String(c.action)) &&
+      literalValue('settings') !== undefined
+    ) {
       const result = serialSettingsOverrideSchema.safeParse(literalValue('settings'));
       if (!result.success) throw new FlowV4Error('INVALID_CONFIG', result.error.message, 'serial');
     }
+  }
+  if (node.kind === 'usb') {
+    for (const [key, schema] of [
+      ['filter', usbFilterSchema],
+      ['options', usbOptionsSchema],
+    ] as const) {
+      const v = literalValue(key);
+      if (v !== undefined) schema.parse(v);
+    }
+    checkLiteral('data', (v) => typeof v === 'string', 'USB data must be a string');
+    checkLiteral(
+      'encoding',
+      (v) => v === 'utf8' || v === 'hex',
+      'USB encoding must be utf8 or hex',
+    );
+    checkLiteral(
+      'reportId',
+      (v) => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 255,
+      'Report ID must be 0..255',
+    );
+    checkLiteral(
+      'length',
+      (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 65535,
+      'Feature length must be 1..65535',
+    );
+    checkLiteral(
+      'device',
+      (v) =>
+        v === null ||
+        typeof v === 'string' ||
+        (typeof v === 'object' && !Array.isArray(v) && typeof v.id === 'string'),
+      'Select an exact discovered USB device',
+    );
   }
   if (node.kind === 'append') {
     const path = (c.path ?? []) as JsonPath;
@@ -610,15 +722,54 @@ export interface FlowNodePorts {
   outputs: string[];
   defaultOutput: string;
 }
-export function flowNodePorts(node: Pick<FlowNode, 'kind' | 'config'>): FlowNodePorts {
+export function flowNodePorts(node: Pick<FlowNode, 'kind' | 'config' | 'block'>): FlowNodePorts {
   if (node.kind === 'event') return { inputs: [], outputs: ['output'], defaultOutput: 'output' };
-  if (['serial', 'map', 'append'].includes(node.kind))
+  if (['serial', 'usb'].includes(node.kind) && node.config.action === 'discover')
+    return {
+      inputs:
+        node.kind === 'serial'
+          ? ['input', 'scan', 'filter', 'watch', 'unwatch']
+          : ['input', 'scan', 'watch', 'unwatch'],
+      outputs: ['success', 'changed', 'error'],
+      defaultOutput: 'success',
+    };
+  if (['serial', 'usb'].includes(node.kind) && node.config.action === 'communicate')
+    return {
+      inputs:
+        node.kind === 'serial'
+          ? [
+              'input',
+              'open',
+              'close',
+              'send',
+              'listenStart',
+              'listenStop',
+              'setReconnect',
+              'resetCounters',
+            ]
+          : ['input', 'open', 'close', 'send', 'featureSend', 'featureGet', 'descriptor'],
+      outputs:
+        node.kind === 'serial'
+          ? ['success', 'rx', 'tx', 'state', 'error']
+          : ['success', 'rx', 'tx', 'state', 'feature', 'descriptor', 'error'],
+      defaultOutput: 'success',
+    };
+  if (['serial', 'usb', 'map', 'append'].includes(node.kind))
     return { inputs: ['input'], outputs: ['success', 'error'], defaultOutput: 'success' };
   if (node.kind === 'condition')
-    return { inputs: ['input'], outputs: ['true', 'false'], defaultOutput: 'true' };
-  return { inputs: ['input'], outputs: ['output'], defaultOutput: 'output' };
+    return {
+      inputs: ['input'],
+      outputs: node.block ? ['true', 'false', 'error'] : ['true', 'false'],
+      defaultOutput: 'true',
+    };
+  return {
+    inputs: ['input'],
+    outputs: node.block ? ['output', 'error'] : ['output'],
+    defaultOutput: 'output',
+  };
 }
 const labels: Record<NodeKind, { zh: string; en: string }> = {
+  usb: { zh: 'USB 通信', en: 'USB communication' },
   event: { zh: '事件入口', en: 'Event' },
   read: { zh: '读取变量', en: 'Read' },
   write: { zh: '写入变量', en: 'Write' },
@@ -633,12 +784,12 @@ const labels: Record<NodeKind, { zh: string; en: string }> = {
   window: { zh: '窗口操作', en: 'Window' },
   map: { zh: 'JSON 映射', en: 'JSON map' },
   append: { zh: '追加记录', en: 'Append' },
-  serial: { zh: '串口操作', en: 'Serial' },
+  serial: { zh: '串口通信', en: 'Serial communication' },
 };
 export function createFlowNodeConfig(
   kind: NodeKind,
   project?: Project,
-  action: SerialAction = 'scan',
+  action: SerialAction = 'communicate',
 ): Record<string, Json> {
   const variable = project?.variables[0]?.id ?? '',
     connection = project?.connections.find((entry) => entry.protocol === 'serial')?.id ?? '';
@@ -653,7 +804,38 @@ export function createFlowNodeConfig(
       maxBytes: 524288,
       order: 'oldestFirst',
     };
+  if (kind === 'usb')
+    return action === 'discover'
+      ? { action, filter: literal({ transport: 'any' }) }
+      : {
+          action: 'communicate',
+          sessionId: 'usb-main',
+          device: literal(null),
+          options: literal({}),
+          data: literal(''),
+          encoding: literal('hex'),
+          reportId: literal(0),
+          length: literal(64),
+        };
   if (kind === 'serial') {
+    if (action === 'discover')
+      return {
+        action,
+        ports: { source: 'input', path: ['ports'] },
+        vid: literal(''),
+        pid: literal(''),
+      };
+    if (action === 'communicate')
+      return {
+        action,
+        connectionId: connection,
+        settings: literal({}),
+        data: literal(''),
+        encoding: literal('utf8'),
+        lineEnding: literal('none'),
+        timeoutMs: literal(5000),
+        enabled: literal(false),
+      };
     if (action === 'scan') return { action };
     if (action === 'filter')
       return {
@@ -696,8 +878,11 @@ export function getFlowNodeDefinition(kind: NodeKind) {
   return {
     kind,
     label: labels[kind],
-    minimumVersion: (['map', 'append', 'serial'].includes(kind) ? 4 : kind === 'window' ? 2 : 1) as
-      1 | 2 | 4,
+    minimumVersion: (['map', 'append', 'serial', 'usb'].includes(kind)
+      ? 4
+      : kind === 'window'
+        ? 2
+        : 1) as 1 | 2 | 4,
     ports: flowNodePorts({ kind, config: {} }),
     defaultConfig: createFlowNodeConfig(kind),
   };

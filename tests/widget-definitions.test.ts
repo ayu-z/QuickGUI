@@ -213,7 +213,7 @@ describe('JSON property and binding paths', () => {
 });
 
 describe('versioned render semantics', () => {
-  it('hides and disables modern subtrees while preserving legacy visibility semantics', () => {
+  it('hides and disables subtrees consistently', () => {
     const p = project(),
       parent = modern('panel'),
       child = modern('button');
@@ -223,25 +223,17 @@ describe('versioned render semantics', () => {
     expect(renderToStaticMarkup(h(Scene, { project: p }))).not.toContain(
       'data-widget="' + child.id + '"',
     );
-    parent.definitionVersion = 1;
-    expect(renderToStaticMarkup(h(Scene, { project: p }))).toContain(
-      'data-widget="' + child.id + '"',
-    );
     parent.definitionVersion = 2;
     parent.props.visible = true;
     parent.props.enabled = false;
     expect(renderToStaticMarkup(h(Scene, { project: p }))).toContain('disabled=""');
   });
-  it('applies step, image fit and state style only in the new definition', () => {
+  it('applies current step, image fit and state style', () => {
     const p = project(),
       number = modern('number');
     number.props.step = 0.25;
     expect(renderToStaticMarkup(h(WidgetView, { widget: number, project: p }))).toContain(
       'step="0.25"',
-    );
-    number.definitionVersion = 1;
-    expect(renderToStaticMarkup(h(WidgetView, { widget: number, project: p }))).not.toContain(
-      'step=',
     );
     const image = modern('image');
     image.props.assetId = 'img';

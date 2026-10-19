@@ -1,0 +1,526 @@
+{
+  "schemaVersion": 5,
+  "id": "function-blocks",
+  "name": "Function blocks",
+  "revision": 0,
+  "locale": "en",
+  "theme": {
+    "mode": "dark",
+    "tokens": {
+      "color.primary": "#7c5cff",
+      "color.primaryHover": "#a78bfa",
+      "color.text": "#eef0f8",
+      "color.muted": "#9aa3ba",
+      "color.surface": "#20232e",
+      "color.background": "#141720",
+      "color.border": "#33394b",
+      "color.success": "#48d5a0",
+      "color.warning": "#e9b66c"
+    }
+  },
+  "window": {
+    "title": "Function blocks",
+    "width": 1200,
+    "height": 940,
+    "minWidth": 900,
+    "minHeight": 700,
+    "resizable": true,
+    "alwaysOnTop": false,
+    "fullscreen": false,
+    "maximized": false,
+    "center": true,
+    "rememberPosition": true,
+    "background": "#141720",
+    "contentRadius": 0,
+    "cornerPreference": "system"
+  },
+  "publish": {
+    "appName": "QuickGUI Serial Assistant",
+    "identifier": "dev.quickgui.serialassistant",
+    "version": "1.0.0",
+    "publisher": "",
+    "desktopShortcut": true
+  },
+  "widgets": [],
+  "variables": [
+    {
+      "id": "a",
+      "name": "a",
+      "type": "number",
+      "initial": 10
+    },
+    {
+      "id": "b",
+      "name": "b",
+      "type": "number",
+      "initial": 4
+    },
+    {
+      "id": "sum",
+      "name": "sum",
+      "type": "number",
+      "initial": 0
+    },
+    {
+      "id": "copy",
+      "name": "copy",
+      "type": "number",
+      "initial": 0
+    },
+    {
+      "id": "flag",
+      "name": "flag",
+      "type": "boolean",
+      "initial": false
+    },
+    {
+      "id": "error",
+      "name": "error",
+      "type": "json",
+      "initial": null
+    }
+  ],
+  "flows": [
+    {
+      "id": "fb",
+      "name": "FB parameters and fan-out",
+      "enabled": true,
+      "nodes": [
+        {
+          "id": "start",
+          "kind": "event",
+          "label": "start",
+          "config": {
+            "trigger": "manual"
+          },
+          "position": {
+            "x": 48,
+            "y": 120
+          },
+          "block": {
+            "version": 1,
+            "inputs": [],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "VALUE",
+                "type": "json",
+                "path": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "left",
+          "kind": "read",
+          "label": "left",
+          "config": {
+            "variable": "a"
+          },
+          "position": {
+            "x": 48,
+            "y": 280
+          },
+          "block": {
+            "version": 1,
+            "inputs": [],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "number",
+                "path": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "right",
+          "kind": "read",
+          "label": "right",
+          "config": {
+            "variable": "b"
+          },
+          "position": {
+            "x": 48,
+            "y": 455
+          },
+          "block": {
+            "version": 1,
+            "inputs": [],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "number",
+                "path": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "add",
+          "kind": "math",
+          "label": "add",
+          "config": {
+            "operation": "add",
+            "operand": 1
+          },
+          "position": {
+            "x": 380,
+            "y": 280
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "a",
+                "name": "A",
+                "type": "number",
+                "binding": "input"
+              },
+              {
+                "id": "b",
+                "name": "B",
+                "type": "number",
+                "binding": "config",
+                "key": "operand"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "number",
+                "path": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "save",
+          "kind": "write",
+          "label": "save",
+          "config": {
+            "variable": "sum"
+          },
+          "position": {
+            "x": 760,
+            "y": 120
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "number",
+                "binding": "input"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "number",
+                "path": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "save-copy",
+          "kind": "write",
+          "label": "save-copy",
+          "config": {
+            "variable": "copy"
+          },
+          "position": {
+            "x": 1100,
+            "y": 120
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "number",
+                "binding": "input"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "number",
+                "path": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "compare",
+          "kind": "condition",
+          "label": "compare",
+          "config": {
+            "operator": "gt",
+            "value": 0
+          },
+          "position": {
+            "x": 380,
+            "y": 510
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "a",
+                "name": "A",
+                "type": "number",
+                "binding": "input"
+              },
+              {
+                "id": "b",
+                "name": "B",
+                "type": "number",
+                "binding": "config",
+                "key": "value"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "boolean",
+                "path": ["Q"]
+              },
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "number",
+                "path": ["IN"]
+              }
+            ]
+          }
+        },
+        {
+          "id": "save-flag",
+          "kind": "write",
+          "label": "save-flag",
+          "config": {
+            "variable": "flag"
+          },
+          "position": {
+            "x": 760,
+            "y": 510
+          },
+          "block": {
+            "version": 1,
+            "inputs": [
+              {
+                "id": "in",
+                "name": "IN",
+                "type": "boolean",
+                "binding": "input"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "q",
+                "name": "Q",
+                "type": "boolean",
+                "path": []
+              }
+            ]
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "e1",
+          "source": "start",
+          "target": "save",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        },
+        {
+          "id": "e2",
+          "source": "save",
+          "target": "save-copy",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        },
+        {
+          "id": "e3",
+          "source": "start",
+          "target": "compare",
+          "sourceHandle": "output",
+          "targetHandle": "input"
+        },
+        {
+          "id": "e4",
+          "source": "compare",
+          "target": "save-flag",
+          "sourceHandle": "true",
+          "targetHandle": "input"
+        },
+        {
+          "id": "e5",
+          "source": "left",
+          "target": "add",
+          "sourceHandle": "data-out:q",
+          "targetHandle": "data-in:a",
+          "kind": "data"
+        },
+        {
+          "id": "e6",
+          "source": "right",
+          "target": "add",
+          "sourceHandle": "data-out:q",
+          "targetHandle": "data-in:b",
+          "kind": "data"
+        },
+        {
+          "id": "e7",
+          "source": "add",
+          "target": "save",
+          "sourceHandle": "data-out:q",
+          "targetHandle": "data-in:in",
+          "kind": "data"
+        },
+        {
+          "id": "e8",
+          "source": "add",
+          "target": "save-copy",
+          "sourceHandle": "data-out:q",
+          "targetHandle": "data-in:in",
+          "kind": "data"
+        },
+        {
+          "id": "e9",
+          "source": "left",
+          "target": "compare",
+          "sourceHandle": "data-out:q",
+          "targetHandle": "data-in:a",
+          "kind": "data"
+        },
+        {
+          "id": "e10",
+          "source": "right",
+          "target": "compare",
+          "sourceHandle": "data-out:q",
+          "targetHandle": "data-in:b",
+          "kind": "data"
+        },
+        {
+          "id": "e11",
+          "source": "compare",
+          "target": "save-flag",
+          "sourceHandle": "data-out:q",
+          "targetHandle": "data-in:in",
+          "kind": "data"
+        }
+      ]
+    }
+  ],
+  "translations": {
+    "zh-CN": {
+      "page_title": "串口助手",
+      "page_note": "原生串口 · 可视化流程 · 工程可独立运行",
+      "connection_heading": "01  设备与连接",
+      "port_label": "端口",
+      "port_hint": "扫描后选择串口",
+      "scan_ports": "扫描",
+      "vid_label": "VID（十六进制，可留空）",
+      "pid_label": "PID（十六进制，可留空）",
+      "baud_label": "波特率",
+      "bits_label": "数据位",
+      "parity_label": "校验",
+      "stop_label": "停止位",
+      "flow_label": "流控",
+      "framing_label": "接收组帧",
+      "open_port": "手动打开",
+      "close_port": "断开",
+      "listen_start": "开始监听",
+      "listen_stop": "停止监听",
+      "reconnect_text": "严格同设备自动重连",
+      "reconnect_note": "默认关闭。VID、PID、端口与物理拓扑必须完全一致；缺少标识须手动打开。",
+      "state_label": "状态",
+      "connection_state": "",
+      "listening_label": "监听",
+      "overflow_note": "接收队列过载将断开并锁存；排除故障后点击“手动打开”恢复。",
+      "traffic_heading": "02  收发记录",
+      "clear_history": "清空记录",
+      "reset_counters": "重置计数",
+      "tx_bytes_label": "发送字节",
+      "rx_bytes_label": "接收字节",
+      "tx_packets_label": "发送批次",
+      "rx_packets_label": "接收批次",
+      "history_empty": "打开串口后，真实收发数据将在这里显示",
+      "history_limit": "保留最近 500 条 / 512 KiB，淘汰旧记录数：",
+      "rx_time_label": "最近接收",
+      "rx_time": "",
+      "tx_time_label": "最近发送",
+      "tx_time": "",
+      "send_heading": "03  发送",
+      "payload_hint": "输入 UTF-8 文本，或完整 HEX 字节（例如 01 A0 FF）",
+      "send_once": "发送",
+      "periodic_text": "定时发送",
+      "send_note": "写入完成不代表设备应答。断开、错误、重连后均停止定时发送。",
+      "error_code": "",
+      "error_message": ""
+    },
+    "en": {
+      "page_title": "Serial Assistant",
+      "page_note": "Native serial · Visual flows · Standalone project",
+      "connection_heading": "01  DEVICE & CONNECTION",
+      "port_label": "Port",
+      "port_hint": "Scan and choose a port",
+      "scan_ports": "Scan",
+      "vid_label": "VID (hex, optional)",
+      "pid_label": "PID (hex, optional)",
+      "baud_label": "Baud rate",
+      "bits_label": "Data bits",
+      "parity_label": "Parity",
+      "stop_label": "Stop bits",
+      "flow_label": "Flow control",
+      "framing_label": "Receive framing",
+      "open_port": "Open manually",
+      "close_port": "Disconnect",
+      "listen_start": "Start listening",
+      "listen_stop": "Stop listening",
+      "reconnect_text": "Reconnect only to the same device",
+      "reconnect_note": "Off by default. VID, PID, port and physical topology must match. Missing identity requires manual open.",
+      "state_label": "Status",
+      "connection_state": "",
+      "listening_label": "Listening",
+      "overflow_note": "RX overload disconnects and latches the fault. Resolve it, then open manually.",
+      "traffic_heading": "02  TRAFFIC",
+      "clear_history": "Clear history",
+      "reset_counters": "Reset counters",
+      "tx_bytes_label": "TX bytes",
+      "rx_bytes_label": "RX bytes",
+      "tx_packets_label": "TX batches",
+      "rx_packets_label": "RX batches",
+      "history_empty": "Open a serial port to receive real traffic",
+      "history_limit": "Latest 500 records / 512 KiB; evicted:",
+      "rx_time_label": "Last RX",
+      "rx_time": "",
+      "tx_time_label": "Last TX",
+      "tx_time": "",
+      "send_heading": "03  TRANSMIT",
+      "payload_hint": "UTF-8 text, or complete HEX bytes such as 01 A0 FF",
+      "send_once": "Send",
+      "periodic_text": "Periodic send",
+      "send_note": "Write completion is not device acknowledgement. Disconnects, errors and reconnects stop periodic sends.",
+      "error_code": "",
+      "error_message": ""
+    }
+  },
+  "scripts": [],
+  "modules": [],
+  "assets": [],
+  "connections": [],
+  "windows": []
+}

@@ -1,5 +1,6 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import type {
   Connection,
   HistoryRangeQuery,
@@ -15,6 +16,7 @@ import type {
 } from '../core/types';
 
 export const isDesktop = (): boolean => isTauri();
+export const setDesignerTheme = (theme: 'light' | 'dark') => getCurrentWindow().setTheme(theme);
 let generationRequest: Promise<number> | undefined;
 let observedGeneration: number | undefined;
 let bridgeEpoch = 0;
@@ -100,8 +102,12 @@ export const runtimeStart = (project: Project) =>
 export const attachRuntime = () => invokeProject<RuntimeSnapshot>('runtime_attach');
 export const windowAction = (action: 'open' | 'close' | 'focus', windowId: string) =>
   invokeProject<RuntimeSnapshot>('runtime_window_action', { action, windowId });
-export const runFlow = (flowId: string, input: Json = null) =>
-  invokeProject<RuntimeSnapshot>('runtime_run_flow', { flowId, input });
+export const runFlow = (flowId: string, input: Json = null, entryNodeId?: string) =>
+  invokeProject<RuntimeSnapshot>('runtime_run_flow', {
+    flowId,
+    input,
+    ...(entryNodeId ? { entryNodeId } : {}),
+  });
 export const setVariable = (name: string, value: Json, path?: JsonPath) =>
   invokeProject<RuntimeSnapshot>('runtime_set_variable', { name, value, path });
 export const runScript = (scriptId: string, input: Json = null) =>

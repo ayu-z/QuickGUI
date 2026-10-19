@@ -7,7 +7,7 @@ export interface V4NodeResult {
 }
 
 export function isV4Action(node: FlowNode): boolean {
-  return ['map', 'append', 'serial'].includes(node.kind);
+  return ['map', 'append', 'serial', 'usb'].includes(node.kind);
 }
 
 export function executeV4DataNode(
@@ -16,17 +16,20 @@ export function executeV4DataNode(
   project: Project,
   values: Record<string, RuntimeValue>,
   write: (variableId: string, value: Json) => void,
+  port?: string,
 ): V4NodeResult {
   const config = node.config;
   try {
-    if (project.schemaVersion < 4) throw new Error('This node requires schemaVersion 4');
     let value: Json;
     if (node.kind === 'map') value = mapNodeValue(config, input, values);
     else if (node.kind === 'append') {
       const result = appendNodeValue(config, input, project, values);
       write(result.variableId, result.value);
       value = result.output;
-    } else if (node.kind === 'serial' && config.action === 'filter') {
+    } else if (
+      node.kind === 'serial' &&
+      (config.action === 'filter' || (config.action === 'discover' && port === 'filter'))
+    ) {
       value = filterSerialPorts(
         resolveValueRef(config.ports ?? { source: 'input', path: ['ports'] }, input, values),
         resolveValueRef(config.vid ?? { source: 'literal', value: '' }, input, values),
@@ -35,11 +38,13 @@ export function executeV4DataNode(
     } else {
       throw Object.assign(
         new Error(
-          'Serial ports require the QuickGUI desktop runtime. No simulated data was produced.',
+          `${node.kind === 'usb' ? 'USB devices' : 'Serial ports'} require the QuickGUI desktop runtime. No simulated data was produced.`,
         ),
-        { code: 'NATIVE_SERIAL_REQUIRED' },
+        { code: node.kind === 'usb' ? 'NATIVE_USB_REQUIRED' : 'NATIVE_SERIAL_REQUIRED' },
       );
     }
+    if (node.kind === 'serial' && config.action === 'discover')
+      value = { result: value, devices: value, data: null, state: null };
     return { value, port: 'success' };
   } catch (error) {
     const detail = error && typeof error === 'object' ? (error as Record<string, unknown>) : {};

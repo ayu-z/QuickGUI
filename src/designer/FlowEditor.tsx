@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ReactFlow,
   Background,
@@ -7,11 +7,13 @@ import {
   Handle,
   Position,
   BackgroundVariant,
+  useUpdateNodeInternals,
   type Node,
   type NodeProps,
   type Connection as FlowConnection,
   type NodeChange,
   type EdgeChange,
+  type ReactFlowInstance,
 } from '@xyflow/react';
 import {
   Activity,
@@ -37,6 +39,16 @@ import { assertJsonPath } from '../core/jsonValue';
 import type { JsonPath } from '../core/types';
 import { createFlowNodeConfig, flowNodePorts, type SerialAction } from '../core/flowV4';
 import { FlowMapFieldsEditor, FlowValueRefEditor } from './FlowValueRefEditor';
+import { FunctionBlockEditor } from './FunctionBlockEditor';
+import {
+  createBlockInterface,
+  dataInputHandle,
+  dataOutputHandle,
+  isDataEdge,
+  validateDataEdges,
+  withBlockInterface,
+  withBlockNodeConfig,
+} from '../core/functionBlocks';
 import '@xyflow/react/dist/style.css';
 import './designer.css';
 
@@ -53,11 +65,14 @@ const nodeInfo: Record<NodeKind, { icon: typeof Zap; zh: string; en: string; col
   emit: { icon: Radio, zh: '发送事件', en: 'Emit', color: '#f472b6' },
   connection: { icon: Globe, zh: '设备请求', en: 'Device request', color: '#2dd4bf' },
   window: { icon: PanelsTopLeft, zh: '窗口操作', en: 'Window', color: '#a78bfa' },
-  serial: { icon: Radio, zh: '串口操作', en: 'Serial', color: '#2dd4bf' },
+  usb: { icon: Radio, zh: 'USB 通信', en: 'USB communication', color: '#22d3ee' },
+  serial: { icon: Radio, zh: '串口通信', en: 'Serial communication', color: '#2dd4bf' },
   map: { icon: Binary, zh: '数据映射', en: 'Map data', color: '#60a5fa' },
   append: { icon: ArrowDownToLine, zh: '有界追加', en: 'Bounded append', color: '#34d399' },
 };
 const serialActions = [
+  ['discover', '设备发现', 'Discovery'],
+  ['communicate', '串口通信', 'Communication'],
   ['scan', '扫描串口', 'Scan serial ports'],
   ['filter', 'VID/PID 过滤', 'VID/PID filter'],
   ['open', '打开串口', 'Open serial port'],
@@ -69,88 +84,138 @@ const serialActions = [
   ['resetCounters', '重置串口计数', 'Reset serial counters'],
 ] as const;
 type QuickNode = Node<{ model: FlowNode; active: boolean; locale: Locale }, 'quickgui'>;
-function FlowCard({ data, selected }: NodeProps<QuickNode>) {
-  const { model, active, locale } = data,
-    info = nodeInfo[model.kind],
-    Icon = info.icon,
-    ports = flowNodePorts(model);
-  const detail =
-    model.kind === 'event'
-      ? model.config.trigger === 'serial'
-        ? `Serial · ${model.config.event} ${model.config.connectionId ?? ''}`
-        : model.config.trigger === 'controlledInterval'
-          ? locale === 'zh-CN'
-            ? '受控定时 · 动态间隔'
-            : 'Controlled interval'
-          : model.config.trigger === 'interval'
-            ? `${model.config.intervalMs ?? 1000} ms`
-            : model.config.trigger === 'startup'
-              ? locale === 'zh-CN'
-                ? '运行时启动'
-                : 'Runtime startup'
-              : locale === 'zh-CN'
-                ? '等待 UI 事件'
-                : 'Waiting for UI event'
-      : model.kind === 'serial'
-        ? `${serialActions.find((action) => action[0] === model.config.action)?.[locale === 'zh-CN' ? 1 : 2] ?? model.config.action} · ${model.config.connectionId ?? ''}`
-        : model.kind === 'map'
-          ? String(model.config.operation ?? 'value')
-          : model.kind === 'append'
-            ? `${model.config.variable ?? '—'} · ${model.config.maxItems ?? 500}`
-            : model.kind === 'read' || model.kind === 'write'
-              ? String(model.config.variable || '—')
-              : model.kind === 'delay'
-                ? `${model.config.ms ?? 250} ms`
-                : model.kind === 'condition'
-                  ? `${model.config.operator ?? 'gt'} ${model.config.value ?? 0}`
-                  : model.kind === 'math'
-                    ? `${model.config.operation ?? 'add'} ${model.config.operand ?? 1}`
-                    : model.kind === 'window'
-                      ? `${model.config.action} · ${model.config.windowId}`
-                      : String(
-                          model.config.message ||
-                            model.config.scriptId ||
-                            model.config.connectionId ||
-                            model.config.url ||
-                            model.config.event ||
-                            (locale === 'zh-CN' ? '点击配置' : 'Click to configure'),
-                        );
-  return (
-    <div
-      className={`qg-flow-card ${selected ? 'selected' : ''} ${active ? 'running' : ''}`}
-      style={{ '--node-color': info.color } as React.CSSProperties}
-    >
-      {ports.inputs.map((port) => (
-        <Handle key={port} type="target" position={Position.Left} id={port} />
-      ))}
-      <div className="qg-flow-card-header">
-        <span className="qg-node-icon">
-          <Icon size={16} />
-        </span>
-        <span>{model.label}</span>
-        {active && <Activity size={13} className="qg-node-active" />}
+const FlowCard = memo(
+  function FlowCard({ id, data, selected }: NodeProps<QuickNode>) {
+    const { model, active, locale } = data,
+      info = nodeInfo[model.kind],
+      Icon = info.icon,
+      ports = flowNodePorts(model);
+    const updateInternals = useUpdateNodeInternals();
+    const inputPins = [
+      ...ports.inputs.map((id) => ({
+        id,
+        label: id === 'input' ? 'EN' : id.toUpperCase(),
+        type: 'execution',
+      })),
+      ...(model.block?.inputs ?? []).map((p) => ({
+        id: dataInputHandle(p.id),
+        label: p.name,
+        type: p.type,
+      })),
+    ];
+    const outputPins = [
+      ...ports.outputs.map((id) => ({
+        id,
+        label:
+          (
+            {
+              output: 'ENO',
+              success: 'DONE',
+              error: 'ERR',
+              true: 'TRUE',
+              false: 'FALSE',
+            } as Record<string, string>
+          )[id] ?? id.toUpperCase(),
+        type: 'execution',
+      })),
+      ...(model.block?.outputs ?? []).map((p) => ({
+        id: dataOutputHandle(p.id),
+        label: p.name,
+        type: p.type,
+      })),
+    ];
+    const signature = JSON.stringify([inputPins, outputPins]);
+    useEffect(() => {
+      updateInternals(id);
+    }, [id, signature, updateInternals]);
+    const detail =
+      model.kind === 'event'
+        ? model.config.trigger === 'serial'
+          ? `Serial · ${model.config.event} ${model.config.connectionId ?? ''}`
+          : model.config.trigger === 'controlledInterval'
+            ? locale === 'zh-CN'
+              ? '受控定时 · 动态间隔'
+              : 'Controlled interval'
+            : model.config.trigger === 'interval'
+              ? `${model.config.intervalMs ?? 1000} ms`
+              : model.config.trigger === 'startup'
+                ? locale === 'zh-CN'
+                  ? '运行时启动'
+                  : 'Runtime startup'
+                : locale === 'zh-CN'
+                  ? '等待 UI 事件'
+                  : 'Waiting for UI event'
+        : model.kind === 'serial'
+          ? `${serialActions.find((action) => action[0] === model.config.action)?.[locale === 'zh-CN' ? 1 : 2] ?? model.config.action} · ${model.config.connectionId ?? ''}`
+          : model.kind === 'map'
+            ? String(model.config.operation ?? 'value')
+            : model.kind === 'append'
+              ? `${model.config.variable ?? '—'} · ${model.config.maxItems ?? 500}`
+              : model.kind === 'read' || model.kind === 'write'
+                ? String(model.config.variable || '—')
+                : model.kind === 'delay'
+                  ? `${model.config.ms ?? 250} ms`
+                  : model.kind === 'condition'
+                    ? `${model.config.operator ?? 'gt'} ${model.config.value ?? 0}`
+                    : model.kind === 'math'
+                      ? `${model.config.operation ?? 'add'} ${model.config.operand ?? 1}`
+                      : model.kind === 'window'
+                        ? `${model.config.action} · ${model.config.windowId}`
+                        : String(
+                            model.config.message ||
+                              model.config.scriptId ||
+                              model.config.connectionId ||
+                              model.config.url ||
+                              model.config.event ||
+                              (locale === 'zh-CN' ? '点击配置' : 'Click to configure'),
+                          );
+    return (
+      <div
+        className={`qg-flow-card ${model.block ? 'fb' : ''} ${selected ? 'selected' : ''} ${active ? 'running' : ''}`}
+        style={{ '--node-color': info.color } as React.CSSProperties}
+      >
+        <div className="qg-flow-card-header">
+          <span className="qg-node-icon">
+            <Icon size={16} />
+          </span>
+          <span>{model.label}</span>
+          {active && <Activity size={13} className="qg-node-active" />}
+        </div>
+        <div className="qg-flow-card-detail">{detail}</div>
+        <div className="qg-fb-pins">
+          {Array.from({ length: Math.max(inputPins.length, outputPins.length) }, (_, index) => (
+            <div className="qg-fb-row" key={index}>
+              {(['input', 'output'] as const).map((side) => {
+                const pin = (side === 'input' ? inputPins : outputPins)[index];
+                return (
+                  <div key={side} className={`qg-fb-pin ${side}`}>
+                    {pin && (
+                      <>
+                        <Handle
+                          type={side === 'input' ? 'target' : 'source'}
+                          position={side === 'input' ? Position.Left : Position.Right}
+                          id={pin.id}
+                          className={`qg-fb-handle ${pin.type}`}
+                          style={{ top: '50%' }}
+                          title={`${pin.label} · ${pin.type}`}
+                          aria-label={`${model.label} ${side} ${pin.label}`}
+                        />
+                        <span title={pin.label}>{pin.label}</span>
+                        {pin.type !== 'execution' && <small>{pin.type}</small>}
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
       </div>
-      <div className="qg-flow-card-detail">{detail}</div>
-      {ports.outputs.map((port, index) => (
-        <span key={port}>
-          {ports.outputs.length > 1 && (
-            <span className={`qg-handle-label ${index ? 'false' : 'true'}`}>{port}</span>
-          )}
-          <Handle
-            type="source"
-            position={Position.Right}
-            id={port}
-            style={
-              ports.outputs.length > 1
-                ? { top: index ? '78%' : '42%', background: index ? '#f87171' : '#34d399' }
-                : undefined
-            }
-          />
-        </span>
-      ))}
-    </div>
-  );
-}
+    );
+  },
+  (previous, next) =>
+    previous.id === next.id && previous.data === next.data && previous.selected === next.selected,
+);
 const nodeTypes = { quickgui: FlowCard };
 const id = () => crypto.randomUUID();
 
@@ -159,17 +224,8 @@ export interface FlowEditorProps {
   onChange: (flows: Flow[]) => void;
   activeNodes?: string[];
   locale: Locale;
-  onRequestUpgrade?: (apply: () => void) => void;
-  onRequestV4?: (apply: () => void) => void;
 }
-export function FlowEditor({
-  project,
-  onChange,
-  activeNodes = [],
-  locale,
-  onRequestUpgrade,
-  onRequestV4,
-}: FlowEditorProps) {
+export function FlowEditor({ project, onChange, activeNodes = [], locale }: FlowEditorProps) {
   const [selectedFlowId, setSelectedFlowId] = useState(project.flows[0]?.id ?? '');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
@@ -177,10 +233,77 @@ export function FlowEditor({
     Record<string, { width: number; height: number }>
   >({});
   const currentFlows = useRef(project.flows);
+  const instance = useRef<ReactFlowInstance<QuickNode> | null>(null);
   currentFlows.current = project.flows;
   const flow = project.flows.find((item) => item.id === selectedFlowId) ?? project.flows[0];
   const selectedNode = flow?.nodes.find((node) => node.id === selectedNodeId);
   const zh = locale === 'zh-CN';
+  const [positionDraft, setPositionDraft] = useState<{
+    flow: Flow;
+    positions: Map<string, FlowNode['position']>;
+  } | null>(null);
+  const draftRef = useRef(positionDraft);
+  useLayoutEffect(() => {
+    if (draftRef.current && draftRef.current.flow !== flow) {
+      draftRef.current = null;
+      setPositionDraft(null);
+    }
+  }, [flow]);
+  const baseNodes = useMemo<QuickNode[]>(
+    () =>
+      (flow?.nodes ?? []).map((node) => ({
+        id: node.id,
+        type: 'quickgui',
+        position: node.position,
+        initialWidth: node.block ? 250 : 198,
+        initialHeight:
+          76 +
+          24 *
+            Math.max(
+              flowNodePorts(node).inputs.length + (node.block?.inputs.length ?? 0),
+              flowNodePorts(node).outputs.length + (node.block?.outputs.length ?? 0),
+            ),
+        measured: measurements[node.id],
+        selected: selectedNodeId === node.id,
+        data: { model: node, active: activeNodes.includes(node.id), locale },
+      })),
+    [flow?.nodes, measurements, selectedNodeId, activeNodes, locale],
+  );
+  const nodes =
+    positionDraft?.flow === flow
+      ? baseNodes.map((node) => {
+          const position = positionDraft.positions.get(node.id);
+          return position ? { ...node, position } : node;
+        })
+      : baseNodes;
+  const edges = useMemo(
+    () =>
+      (flow?.edges ?? []).map((edge) => ({
+        ...edge,
+        selected: selectedEdgeId === edge.id,
+        sourceHandle:
+          edge.sourceHandle ??
+          flowNodePorts(flow!.nodes.find((node) => node.id === edge.source)!).defaultOutput,
+        targetHandle: edge.targetHandle ?? 'input',
+        type: 'smoothstep',
+        animated: !isDataEdge(edge) && activeNodes.includes(edge.source),
+        style: {
+          stroke:
+            selectedEdgeId === edge.id
+              ? 'var(--accent, #a78bfa)'
+              : isDataEdge(edge)
+                ? '#38bdf8'
+                : edge.sourceHandle === 'true'
+                  ? '#34d399'
+                  : edge.sourceHandle === 'false'
+                    ? '#f87171'
+                    : '#737985',
+          strokeWidth: selectedEdgeId === edge.id ? 2.8 : 1.8,
+          strokeDasharray: isDataEdge(edge) ? '5 3' : undefined,
+        },
+      })),
+    [flow, selectedEdgeId, activeNodes],
+  );
   const updateFlow = (patch: Partial<Flow>) => {
     if (!flow) return;
     const nextFlows = currentFlows.current.map((item) => {
@@ -196,12 +319,17 @@ export function FlowEditor({
     onChange(nextFlows);
   };
   const updateNode = (patch: Partial<FlowNode>) => {
-    if (selectedNode && flow)
+    if (selectedNode && flow) {
+      if (patch.config) {
+        updateFlow(withBlockNodeConfig(flow, selectedNode.id, patch.config, project));
+        return;
+      }
       updateFlow({
         nodes: flow.nodes.map((node) =>
           node.id === selectedNode.id ? { ...node, ...patch } : node,
         ),
       });
+    }
   };
   const updateConfig = (key: string, value: Json) => {
     if (selectedNode) updateNode({ config: { ...selectedNode.config, [key]: value } });
@@ -221,6 +349,16 @@ export function FlowEditor({
             label: zh ? '事件入口' : 'Event',
             position: { x: 60, y: 180 },
             config: { trigger: 'manual' },
+            block: createBlockInterface(
+              {
+                id: 'entry',
+                label: 'Event',
+                position: { x: 60, y: 180 },
+                kind: 'event',
+                config: { trigger: 'manual' },
+              },
+              project,
+            ),
           },
         ],
         edges: [],
@@ -249,16 +387,35 @@ export function FlowEditor({
           y: 100 + Math.floor(flow.nodes.length / 4) * 160,
         },
       };
+      {
+        node.block = createBlockInterface(node, project);
+        node.position.x = 80 + (flow.nodes.length % 4) * 320;
+        node.position.y = 100 + Math.floor(flow.nodes.length / 4) * 200;
+        const height =
+          100 +
+          24 *
+            Math.max(
+              node.block.inputs.length + flowNodePorts(node).inputs.length,
+              node.block.outputs.length + flowNodePorts(node).outputs.length,
+            );
+        while (
+          flow.nodes.some((n) => {
+            const measured = measurements[n.id];
+            return (
+              node.position.x < n.position.x + (measured?.width ?? 250) + 24 &&
+              node.position.x + 274 > n.position.x &&
+              node.position.y < n.position.y + (measured?.height ?? 180) + 24 &&
+              node.position.y + height + 24 > n.position.y
+            );
+          })
+        )
+          node.position.y += height + 32;
+      }
       updateFlow({ nodes: [...flow.nodes, node] });
       setSelectedNodeId(node.id);
+      requestAnimationFrame(() => void instance.current?.fitView({ padding: 0.3, maxZoom: 1 }));
     };
-    if (
-      project.schemaVersion < 4 &&
-      (['serial', 'map', 'append'].includes(kind) ||
-        ['serial', 'controlledInterval'].includes(String(preset?.trigger)))
-    )
-      onRequestV4?.(apply);
-    else apply();
+    apply();
   };
   const onConnect = (connection: FlowConnection) => {
     if (!flow || !connection.source || !connection.target || !canConnect(connection)) return;
@@ -267,7 +424,11 @@ export function FlowEditor({
         (edge) =>
           edge.source === connection.source &&
           edge.target === connection.target &&
-          (edge.sourceHandle || 'output') === (connection.sourceHandle || 'output'),
+          (edge.sourceHandle ??
+            flowNodePorts(flow.nodes.find((n) => n.id === edge.source)!).defaultOutput) ===
+            (connection.sourceHandle ??
+              flowNodePorts(flow.nodes.find((n) => n.id === connection.source)!).defaultOutput) &&
+          (edge.targetHandle ?? 'input') === (connection.targetHandle ?? 'input'),
       )
     )
       return;
@@ -282,6 +443,7 @@ export function FlowEditor({
             connection.sourceHandle ??
             flowNodePorts(flow.nodes.find((node) => node.id === connection.source)!).defaultOutput,
           targetHandle: connection.targetHandle ?? 'input',
+          ...(connection.sourceHandle?.startsWith('data-out:') ? { kind: 'data' as const } : {}),
         },
       ],
     });
@@ -305,9 +467,30 @@ export function FlowEditor({
       return false;
     const sourceNode = flow.nodes.find((node) => node.id === source),
       targetNode = flow.nodes.find((node) => node.id === target);
-    if (
-      !sourceNode ||
-      !targetNode ||
+    if (!sourceNode || !targetNode) return false;
+    const dataSource = sourceHandle?.startsWith('data-out:') ?? false;
+    const dataTarget = targetHandle?.startsWith('data-in:') ?? false;
+    if (dataSource !== dataTarget) return false;
+    if (dataSource) {
+      try {
+        validateDataEdges({
+          ...flow,
+          edges: [
+            ...flow.edges,
+            {
+              id: '__connection__',
+              source,
+              target,
+              sourceHandle: sourceHandle!,
+              targetHandle: targetHandle!,
+              kind: 'data',
+            },
+          ],
+        });
+      } catch {
+        return false;
+      }
+    } else if (
       (sourceHandle && !flowNodePorts(sourceNode).outputs.includes(sourceHandle)) ||
       (targetHandle && !flowNodePorts(targetNode).inputs.includes(targetHandle))
     )
@@ -346,19 +529,34 @@ export function FlowEditor({
       (change) => change.type === 'remove' || (change.type === 'position' && !!change.position),
     );
     if (!changesToApply.length) return;
-    let nodes = flow.nodes;
+    const positions = new Map(draftRef.current?.flow === flow ? draftRef.current.positions : []);
+    const removed = new Set<string>();
     for (const change of changesToApply) {
-      if (change.type === 'remove') nodes = nodes.filter((node) => node.id !== change.id);
-      if (change.type === 'position' && change.position)
-        nodes = nodes.map((node) =>
-          node.id === change.id ? { ...node, position: change.position! } : node,
-        );
+      if (change.type === 'remove') removed.add(change.id);
+      if (change.type === 'position' && change.position) positions.set(change.id, change.position);
     }
-    const ids = new Set(nodes.map((node) => node.id));
-    updateFlow({
-      nodes,
-      edges: flow.edges.filter((edge) => ids.has(edge.source) && ids.has(edge.target)),
-    });
+    if (changesToApply.every((change) => change.type === 'position' && change.dragging === true)) {
+      // React Flow owns the live positions; project validation/history run once on release.
+      const next = { flow, positions };
+      draftRef.current = next;
+      setPositionDraft(next);
+      return;
+    }
+    draftRef.current = null;
+    setPositionDraft(null);
+    const nextNodes = flow.nodes
+      .filter((node) => !removed.has(node.id))
+      .map((node) => {
+        const position = positions.get(node.id);
+        return position && (position.x !== node.position.x || position.y !== node.position.y)
+          ? { ...node, position }
+          : node;
+      });
+    if (
+      nextNodes.length !== flow.nodes.length ||
+      nextNodes.some((node, index) => node !== flow.nodes[index])
+    )
+      updateFlow({ nodes: nextNodes });
   };
   const onEdgesChange = (changes: EdgeChange[]) => {
     if (!flow) return;
@@ -414,12 +612,12 @@ export function FlowEditor({
           </button>
         </div>
         <span className="qg-flow-caption">
-          {zh ? '连接节点，让界面拥有逻辑' : 'Connect nodes. Bring your interface to life.'}
+          {zh ? '实线执行 · 虚线数据 · 命名端口' : 'Solid execution · Dashed data · Named ports'}
         </span>
       </div>
       <div className="qg-node-palette">
         {(Object.keys(nodeInfo) as NodeKind[])
-          .filter((kind) => kind !== 'serial')
+          .filter((kind) => !['serial', 'usb'].includes(kind))
           .map((kind) => {
             const info = nodeInfo[kind];
             return (
@@ -434,44 +632,27 @@ export function FlowEditor({
               </button>
             );
           })}
-        {serialActions.map(([action, cn, en]) => (
-          <button
-            key={action}
-            disabled={!flow}
-            onClick={() => addNode('serial', { action })}
-            title={zh ? cn : en}
-          >
-            <Radio size={14} style={{ color: '#2dd4bf' }} />
-            <span>{zh ? cn : en}</span>
-          </button>
-        ))}
-        {(['devices', 'data', 'state', 'error'] as const).map((event, index) => (
-          <button
-            key={event}
-            disabled={!flow}
-            onClick={() =>
-              addNode('event', {
-                trigger: 'serial',
-                event,
-                ...(event === 'devices'
-                  ? {}
-                  : {
-                      connectionId:
-                        project.connections.find((connection) => connection.protocol === 'serial')
-                          ?.id ?? '',
-                    }),
-                ...(event === 'data' ? { direction: 'rx' } : {}),
-              })
-            }
-          >
-            <Radio size={14} />
-            <span>
-              {zh
-                ? ['串口插拔', '串口接收', '串口状态', '串口错误'][index]
-                : ['Serial devices', 'Serial data', 'Serial state', 'Serial error'][index]}
-            </span>
-          </button>
-        ))}
+        {(['serial', 'usb'] as const).flatMap((kind) =>
+          (['discover', 'communicate'] as const).map((action) => (
+            <button
+              key={`${kind}-${action}`}
+              disabled={!flow}
+              onClick={() => addNode(kind, { action })}
+            >
+              <Radio size={14} />
+              <span>
+                {kind === 'usb' ? 'USB' : zh ? '串口' : 'Serial'}{' '}
+                {action === 'discover'
+                  ? zh
+                    ? '设备发现'
+                    : 'discovery'
+                  : zh
+                    ? '通信'
+                    : 'communication'}
+              </span>
+            </button>
+          )),
+        )}
         <button
           disabled={!flow}
           onClick={() =>
@@ -490,36 +671,12 @@ export function FlowEditor({
         <div className="qg-flow-canvas">
           {flow ? (
             <ReactFlow<QuickNode>
+              onInit={(value) => {
+                instance.current = value;
+              }}
               key={flow.id}
-              nodes={flow.nodes.map((node) => ({
-                id: node.id,
-                type: 'quickgui',
-                position: node.position,
-                initialWidth: 198,
-                initialHeight: 76,
-                measured: measurements[node.id],
-                selected: selectedNodeId === node.id,
-                data: { model: node, active: activeNodes.includes(node.id), locale },
-              }))}
-              edges={flow.edges.map((edge) => ({
-                ...edge,
-                selected: selectedEdgeId === edge.id,
-                sourceHandle: edge.sourceHandle ?? 'output',
-                targetHandle: edge.targetHandle ?? 'input',
-                type: 'smoothstep',
-                animated: activeNodes.includes(edge.source),
-                style: {
-                  stroke:
-                    selectedEdgeId === edge.id
-                      ? 'var(--accent, #a78bfa)'
-                      : edge.sourceHandle === 'true'
-                        ? '#34d399'
-                        : edge.sourceHandle === 'false'
-                          ? '#f87171'
-                          : '#737985',
-                  strokeWidth: selectedEdgeId === edge.id ? 2.8 : 1.8,
-                },
-              }))}
+              nodes={nodes}
+              edges={edges}
               nodeTypes={nodeTypes}
               onConnect={onConnect}
               isValidConnection={canConnect}
@@ -539,7 +696,7 @@ export function FlowEditor({
               }}
               fitView
               fitViewOptions={{ padding: 0.3, maxZoom: 1 }}
-              minZoom={0.25}
+              minZoom={0.1}
               maxZoom={1.5}
               connectionRadius={28}
               snapToGrid
@@ -597,6 +754,7 @@ export function FlowEditor({
                   {nodeInfo[selectedNode.kind][zh ? 'zh' : 'en']}
                   <code>{selectedNode.id.slice(0, 8)}</code>
                 </div>
+
                 {selectedNode.kind === 'event' && (
                   <>
                     <Field label={zh ? '触发方式' : 'Trigger'}>
@@ -617,12 +775,7 @@ export function FlowEditor({
                                   ? { trigger, intervalMs: 1000 }
                                   : { trigger };
                           const apply = () => updateNode({ config });
-                          if (
-                            project.schemaVersion < 4 &&
-                            ['serial', 'controlledInterval'].includes(trigger)
-                          )
-                            onRequestV4?.(apply);
-                          else apply();
+                          apply();
                         }}
                       >
                         <option value="manual">
@@ -748,6 +901,52 @@ export function FlowEditor({
                     </p>
                   </>
                 )}
+                {selectedNode.kind === 'usb' && (
+                  <>
+                    <Field label={zh ? '功能块' : 'Function block'}>
+                      <select
+                        value={String(selectedNode.config.action)}
+                        onChange={(e) =>
+                          updateNode({
+                            config: createFlowNodeConfig(
+                              'usb',
+                              project,
+                              e.target.value as SerialAction,
+                            ),
+                          })
+                        }
+                      >
+                        <option value="discover">{zh ? '设备发现' : 'Discovery'}</option>
+                        <option value="communicate">{zh ? '通信' : 'Communication'}</option>
+                      </select>
+                    </Field>
+                    {selectedNode.config.action === 'communicate' && (
+                      <Field label={zh ? '共享会话 ID' : 'Shared session ID'}>
+                        <input
+                          value={String(selectedNode.config.sessionId ?? '')}
+                          onChange={(e) => updateConfig('sessionId', e.target.value)}
+                        />
+                      </Field>
+                    )}
+                    {(selectedNode.config.action === 'discover'
+                      ? ['filter']
+                      : ['device', 'options', 'data', 'encoding', 'reportId', 'length']
+                    ).map((key) => (
+                      <FlowValueRefEditor
+                        key={`${selectedNode.id}:${key}`}
+                        label={key}
+                        value={selectedNode.config[key]}
+                        project={project}
+                        onChange={(value) => updateConfig(key, value)}
+                      />
+                    ))}
+                    <p className="qg-field-hint">
+                      {zh
+                        ? '设备发现支持扫描及热插拔监听；device 接发现结果中的完整设备对象或 ID。HID 支持报告及 Feature；USB Print 仅 Windows。命令由对应执行端口触发。'
+                        : 'Discover exact devices, then wire commands to execution inputs. HID reports and features; USB Print on Windows.'}
+                    </p>
+                  </>
+                )}
                 {selectedNode.kind === 'serial' && (
                   <>
                     <Field label={zh ? '串口操作' : 'Serial action'}>
@@ -763,14 +962,21 @@ export function FlowEditor({
                           })
                         }
                       >
-                        {serialActions.map(([action, cn, en]) => (
+                        {(
+                          [
+                            ['discover', '设备发现', 'Discovery'],
+                            ['communicate', '通信', 'Communication'],
+                          ] as const
+                        ).map(([action, cn, en]) => (
                           <option key={action} value={action}>
                             {zh ? cn : en}
                           </option>
                         ))}
                       </select>
                     </Field>
-                    {!['scan', 'filter'].includes(String(selectedNode.config.action)) && (
+                    {!['scan', 'filter', 'discover'].includes(
+                      String(selectedNode.config.action),
+                    ) && (
                       <Field label={zh ? '串口连接' : 'Serial connection'}>
                         <select
                           value={String(selectedNode.config.connectionId ?? '')}
@@ -789,27 +995,45 @@ export function FlowEditor({
                         </select>
                       </Field>
                     )}
-                    {(selectedNode.config.action === 'filter'
+                    {(selectedNode.config.action === 'communicate'
                       ? [
-                          ['ports', zh ? '端口数组' : 'Ports array'],
-                          ['vid', 'VID'],
-                          ['pid', 'PID'],
+                          ['settings', zh ? '打开参数' : 'Open settings'],
+                          ['data', zh ? '发送内容' : 'Data'],
+                          ['encoding', 'Encoding'],
+                          ['lineEnding', 'Line ending'],
+                          ['timeoutMs', 'Timeout (ms)'],
+                          ['enabled', zh ? '自动重连' : 'Reconnect'],
                         ]
-                      : selectedNode.config.action === 'open'
-                        ? [['settings', zh ? '打开参数' : 'Open settings']]
-                        : selectedNode.config.action === 'setReconnect'
-                          ? [['enabled', zh ? '自动重连' : 'Auto reconnect']]
-                          : selectedNode.config.action === 'send'
-                            ? [
-                                ['data', zh ? '发送内容' : 'Send content'],
-                                ['encoding', zh ? '编码 utf8 / hex' : 'Encoding utf8 / hex'],
-                                [
-                                  'lineEnding',
-                                  zh ? '行尾 none / lf / crlf' : 'Line ending none / lf / crlf',
-                                ],
-                                ['timeoutMs', zh ? '超时（1–15000 ms）' : 'Timeout (1–15000 ms)'],
-                              ]
-                            : []
+                      : selectedNode.config.action === 'discover'
+                        ? [
+                            ['ports', zh ? '过滤用端口数组' : 'Ports to filter'],
+                            ['vid', 'VID'],
+                            ['pid', 'PID'],
+                          ]
+                        : selectedNode.config.action === 'filter'
+                          ? [
+                              ['ports', zh ? '端口数组' : 'Ports array'],
+                              ['vid', 'VID'],
+                              ['pid', 'PID'],
+                            ]
+                          : selectedNode.config.action === 'open'
+                            ? [['settings', zh ? '打开参数' : 'Open settings']]
+                            : selectedNode.config.action === 'setReconnect'
+                              ? [['enabled', zh ? '自动重连' : 'Auto reconnect']]
+                              : selectedNode.config.action === 'send'
+                                ? [
+                                    ['data', zh ? '发送内容' : 'Send content'],
+                                    ['encoding', zh ? '编码 utf8 / hex' : 'Encoding utf8 / hex'],
+                                    [
+                                      'lineEnding',
+                                      zh ? '行尾 none / lf / crlf' : 'Line ending none / lf / crlf',
+                                    ],
+                                    [
+                                      'timeoutMs',
+                                      zh ? '超时（1–15000 ms）' : 'Timeout (1–15000 ms)',
+                                    ],
+                                  ]
+                                : []
                     ).map(([key, label]) => (
                       <FlowValueRefEditor
                         key={`${selectedNode.id}:${key}`}
@@ -1058,8 +1282,7 @@ export function FlowEditor({
                           throw new Error(zh ? '路径必须是数组' : 'Path must be an array');
                         assertJsonPath(value as JsonPath);
                         const apply = () => updateConfig('path', value);
-                        if (project.schemaVersion < 3) onRequestUpgrade?.(apply);
-                        else apply();
+                        apply();
                       }}
                     />
                   </Field>
@@ -1101,8 +1324,8 @@ export function FlowEditor({
                     </Field>
                     <p className="qg-field-hint">
                       {zh
-                        ? '绿色出口为 true，红色出口为 false。'
-                        : 'Green output is true; red output is false.'}
+                        ? 'TRUE 出口为 true，FALSE 出口为 false。'
+                        : 'The TRUE output is true; the FALSE output is false.'}
                     </p>
                   </>
                 )}
@@ -1244,6 +1467,16 @@ export function FlowEditor({
                     </p>
                   </>
                 )}
+                <FunctionBlockEditor
+                  key={selectedNode.id}
+                  node={selectedNode}
+                  project={project}
+                  onEnable={(block) => {
+                    const apply = () => updateNode({ block });
+                    apply();
+                  }}
+                  onApply={(block) => updateFlow(withBlockInterface(flow, selectedNode.id, block))}
+                />
               </>
             ) : (
               <>

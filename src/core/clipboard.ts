@@ -10,8 +10,9 @@ import type {
   ResourceScope,
   Widget,
 } from './types';
-import { projectSchema, validateProject } from './validation';
+import { projectSchema, validateFlow, validateProject } from './validation';
 import { upgradeProject } from './migration';
+import { flowBindingId, mapFlowBinding } from './flowBindings';
 import { listProjectWindows } from './windows';
 import {
   getJsonPath,
@@ -103,7 +104,7 @@ const dependencyKinds: DependencyKind[] = [
   'windows',
   'resourceScopes',
 ];
-const shape = projectSchema.options[3].shape;
+const shape = projectSchema.shape;
 const scopeSchema = z
   .object({ kind: z.enum(['window', 'module']), id: z.string().min(1) })
   .strict();
@@ -115,7 +116,13 @@ const bundleSchema = z
       .object({
         projectId: z.string(),
         projectName: z.string(),
-        schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
+        schemaVersion: z.union([
+          z.literal(1),
+          z.literal(2),
+          z.literal(3),
+          z.literal(4),
+          z.literal(5),
+        ]),
         scope: scopeSchema,
         windowId: z.string().min(1),
         sessionKey: z.string().optional(),
@@ -269,7 +276,7 @@ export function copySelection(
   sessionKey?: string,
   positions?: Record<string, Point>,
 ): ClipboardBundle {
-  validateProject(project);
+  project = validateProject(project);
   const source = clone(project);
   // Package-local assets retain their bytes, but get canonical source-copy IDs
   // before the normal cross-document mapping. No source project is changed.
@@ -389,7 +396,7 @@ export function copySelection(
       source.resourceScopes?.find((r) => r.id === module?.resourceScopeId) ??
       module?.embeddedResourceScope;
     for (const binding of Object.values(widget.bindings)) add('variables', binding.variable);
-    for (const id of Object.values(widget.events)) add('flows', id);
+    for (const binding of Object.values(widget.events)) add('flows', flowBindingId(binding));
     if (widget.moduleId) add('modules', widget.moduleId);
     if (widget.resourceScopeId) add('resourceScopes', widget.resourceScopeId);
     for (const definition of referenceProperties(widget, source.modules)) {
@@ -538,7 +545,6 @@ export function copySelection(
             : Object.values(script.variableAliases).some((id) => needed.variables.has(id));
         });
         const subscribes =
-          source.schemaVersion >= 4 &&
           flow.nodes.some(
             (event) =>
               isAutomaticEventSource(event) &&
@@ -547,9 +553,29 @@ export function copySelection(
                   (reference.kind === 'variable' &&
                     reference.access === 'read' &&
                     needed.variables.has(resolveVariable(source, reference.id).id)) ||
-                  (event.config.trigger === 'serial' &&
+                  ((event.config.trigger === 'serial' ||
+                    (event.kind === 'serial' && event.config.action === 'communicate')) &&
                     reference.kind === 'connection' &&
                     needed.connections.has(reference.id)),
+              ),
+          ) ||
+          flow.nodes.some(
+            (node) =>
+              node.kind === 'usb' &&
+              node.config.action === 'communicate' &&
+              source.flows.some(
+                (included) =>
+                  needed.flows.has(included.id) &&
+                  included.nodes.some(
+                    (n) => n.kind === 'usb' && n.config.sessionId === node.config.sessionId,
+                  ),
+              ) &&
+              flow.edges.some(
+                (edge) =>
+                  edge.source === node.id &&
+                  ['rx', 'tx', 'state', 'feature', 'descriptor'].includes(
+                    String(edge.sourceHandle),
+                  ),
               ),
           );
         if (supplies || subscribes) add('flows', flow.id);
@@ -590,13 +616,13 @@ export function copySelection(
 function validateBundle(raw: unknown): ClipboardBundle {
   assertSize(JSON.stringify(raw));
   const bundle = bundleSchema.parse(raw) as ClipboardBundle;
-  for (const flow of bundle.flows)
+  for (const flow of bundle.flows) {
+    validateFlow(flow, bundle.source.schemaVersion);
     for (const node of flow.nodes)
       if (isV4Node(node)) {
-        if (bundle.source.schemaVersion < 4)
-          throw new Error('Clipboard v4 nodes require source schemaVersion 4');
         validateV4NodeConfig(node);
       }
+  }
   bundle.connections = bundle.connections.map((connection) =>
     sanitizeConnection(connection, bundle.warnings),
   );
@@ -672,7 +698,7 @@ function finishPlan(
   codeTrustRequired: boolean,
 ): PastePlan {
   candidate.revision = target.revision + 1;
-  validateProject(candidate);
+  candidate = validateProject(candidate);
   const plan: PastePlan = {
     candidate,
     rootIds,
@@ -750,7 +776,8 @@ function sameDocumentPaste(
     }
     for (const binding of Object.values(next.bindings))
       binding.variable = shared('variables', binding.variable);
-    for (const [event, id] of Object.entries(next.events)) next.events[event] = shared('flows', id);
+    for (const [event, binding] of Object.entries(next.events))
+      next.events[event] = mapFlowBinding(binding, (id) => shared('flows', id));
     for (const definition of referenceProperties(original, bundle.modules)) {
       const kind = refKind(definition.reference),
         value = getJsonPath(original.props, propertyPath(definition.key, original.props));
@@ -803,7 +830,7 @@ export function preparePaste(
   point?: Point,
   options: PasteOptions = {},
 ): PastePlan {
-  validateProject(target);
+  target = validateProject(target);
   const bundle = validateBundle(rawBundle);
   const sameDocument =
     options.sameDocument === true &&
@@ -812,7 +839,7 @@ export function preparePaste(
   if (options.sameDocument && !sameDocument)
     throw new Error('Same-document reuse requires a matching document session key');
   if (sameDocument) return sameDocumentPaste(target, bundle, scope, point, options);
-  const candidate = upgradeProject(target, bundle.source.schemaVersion === 4 ? 4 : 3);
+  const candidate = upgradeProject(target);
   const destination = widgetsIn(candidate, scope);
   if (
     scope.kind === 'module' &&
@@ -835,10 +862,6 @@ export function preparePaste(
     throw new Error('Paste position must be finite');
   const warnings = [...bundle.warnings],
     summary: string[] = [];
-  if (target.schemaVersion < candidate.schemaVersion)
-    summary.push(
-      `Upgrade the target working copy to schema v${candidate.schemaVersion}; existing widgets keep their definition version.`,
-    );
   const mappings = makeMappings(options.previousMappings);
   const imported = Object.fromEntries(
     dependencyKinds.map((kind) => [kind, new Set<string>()]),
@@ -942,6 +965,12 @@ export function preparePaste(
     kind && typeof value === 'string' && value
       ? mapped(kind, kind === 'assets' ? (own(resources?.assetAliases, value) ?? value) : value)
       : value;
+  for (const flow of bundle.flows)
+    if (imported.flows.has(flow.id)) {
+      const nodeMap = (mappings.nodes[flow.id] = record<string>());
+      for (const node of flow.nodes)
+        nodeMap[node.id] = reserveId(mappings, allUsedIds, 'node', flow.id, node.id);
+    }
   const transformWidgets = (
     originals: Widget[],
     widgetMap: Record<string, string>,
@@ -988,8 +1017,12 @@ export function preparePaste(
         widget.resourceScopeId = defaultScopeId;
       for (const binding of Object.values(widget.bindings))
         binding.variable = mapped('variables', binding.variable);
-      for (const [event, flowId] of Object.entries(widget.events))
-        widget.events[event] = mapped('flows', flowId);
+      for (const [event, binding] of Object.entries(widget.events))
+        widget.events[event] = mapFlowBinding(
+          binding,
+          (id) => mapped('flows', id),
+          (flow, node) => mappings.nodes[flow]?.[node] ?? node,
+        );
       for (const definition of referenceProperties(original, bundle.modules)) {
         const value = getJsonPath(original.props, propertyPath(definition.key, original.props));
         if (value !== undefined)
@@ -1116,17 +1149,22 @@ export function preparePaste(
             );
       candidate.modules.push(next);
     }
+  const usbSessions = new Map<string, string>();
   for (const flow of bundle.flows)
     if (imported.flows.has(flow.id)) {
       const next = clone(flow),
-        nodeMap = record<string>(),
+        nodeMap = mappings.nodes[flow.id],
         edgeMap = record<string>();
       mappings.nodes[flow.id] = nodeMap;
       mappings.edges[flow.id] = edgeMap;
-      for (const node of next.nodes)
-        nodeMap[node.id] = reserveId(mappings, allUsedIds, 'node', flow.id, node.id);
       for (const node of next.nodes) {
         node.id = nodeMap[node.id];
+        if (node.kind === 'usb' && typeof node.config.sessionId === 'string' && !sameDocument) {
+          const original = node.config.sessionId;
+          if (!usbSessions.has(original))
+            usbSessions.set(original, reserveId(mappings, allUsedIds, 'usb_session', original));
+          node.config.sessionId = usbSessions.get(original)!;
+        }
         node.config = remapFlowNodeReferences(node, (reference) =>
           mapped(
             reference.kind === 'variable'
@@ -1218,14 +1256,13 @@ export function preparePaste(
 }
 
 export function applyPastePlan(target: Project, plan: PastePlan): Project {
-  validateProject(target);
+  target = validateProject(target);
   const registered = registeredPlans.get(plan);
   if (!registered || registered.base !== fingerprint(target))
     throw new Error('The target project changed after paste planning; prepare a new paste plan');
   if (registered.candidate !== fingerprint(plan.candidate))
     throw new Error('The paste candidate changed after validation; prepare a new paste plan');
-  validateProject(plan.candidate);
-  return clone(plan.candidate);
+  return validateProject(plan.candidate);
 }
 
 let memoryClipboard: ClipboardBundle | undefined;

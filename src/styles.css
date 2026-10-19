@@ -588,6 +588,9 @@ a {
   display: flex;
   flex-direction: column;
 }
+.console-entry {
+  width: min(28vw, 320px);
+}
 .console-panel > header {
   height: 36px;
   display: flex;
@@ -658,6 +661,11 @@ a {
   color: var(--muted);
   font-size: 9px;
   flex-shrink: 0;
+}
+.log-row > span:last-child {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .log-level {
   font-size: 8px;
@@ -1303,6 +1311,9 @@ a {
 .build-progress > svg {
   color: var(--accent);
   flex-shrink: 0;
+}
+.build-progress.console-open {
+  bottom: 180px;
 }
 .build-progress > span {
   flex: 1;

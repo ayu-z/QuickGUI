@@ -4,6 +4,7 @@ import type { Json, Project, ProjectWindow, Widget } from '../core/types';
 import { listProjectWindows, projectForWindow } from '../core/windows';
 import type { RuntimeController } from './engine';
 import { initialWindowState } from './windowState';
+import { flowBindingId } from '../core/flowBindings';
 import { Scene } from './WidgetRenderer';
 import { getBindableProperties, propertyPath } from '../core/widgetDefinitions';
 import './runtime.css';
@@ -15,11 +16,6 @@ export function writeWidgetBindings(
   project: Project,
   setVariable: RuntimeController['setVariable'],
 ): void {
-  if (widget.definitionVersion !== 2) {
-    if (event === 'change' && widget.bindings.value?.mode === 'twoWay')
-      setVariable(widget.bindings.value.variable, payload, widget.bindings.value.path);
-    return;
-  }
   const fields = getBindableProperties(
     widget,
     project.modules.find((module) => module.id === widget.moduleId),
@@ -50,7 +46,13 @@ export function RuntimeWindows({
       writeWidgetBindings(widget, event, payload, project, engine.setVariable);
       const flow = widget.events[event];
       if (flow)
-        void engine.runFlow(flow, payload).catch((error) => engine.log(String(error), 'error'));
+        void engine
+          .runFlow(
+            flowBindingId(flow),
+            payload,
+            typeof flow === 'string' ? undefined : flow.entryNodeId,
+          )
+          .catch((error) => engine.log(String(error), 'error'));
     } catch (error) {
       engine.log(String(error), 'error');
     }

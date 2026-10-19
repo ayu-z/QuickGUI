@@ -24,9 +24,9 @@ import {
   type PropertyDefinition,
 } from '../core/widgetDefinitions';
 import { errorText, parseWidgetCode } from '../core/validation';
-import { LegacyInspector } from './LegacyInspector';
 import { Field, NumberInput, Section } from './Fields';
 import { CodeEditor } from './CodeEditor';
+import { FlowBindingSelect } from './FlowBindingSelect';
 import { scopedProject, WidgetView } from '../runtime/WidgetRenderer';
 import './designer.css';
 import './propertyInspector.css';
@@ -42,7 +42,6 @@ export interface InspectorProps {
   onDelete: () => void;
   onDuplicate: () => void;
   locale: Locale;
-  onRequestUpgrade?: (reason?: string, callback?: () => void) => void;
   onBeginTransaction?: (label?: string) => void;
   onCommitTransaction?: () => void;
   onCancelTransaction?: () => void;
@@ -58,43 +57,7 @@ function widgetLocked(widget: Widget, project: Project): boolean {
   return false;
 }
 export function Inspector(props: InspectorProps) {
-  if (!props.widget || props.widget.definitionVersion !== 2)
-    return (
-      <div
-        onFocus={() => props.onBeginTransaction?.('Edit legacy widget')}
-        onBlur={() => props.onCommitTransaction?.()}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape') props.onCancelTransaction?.();
-        }}
-      >
-        {props.widget && (
-          <div className="qg-property-upgrade">
-            <span>
-              {props.locale === 'zh-CN'
-                ? '此控件保留旧版行为。升级后可使用完整属性。'
-                : 'This widget retains legacy behavior. Upgrade to use the full property editor.'}
-            </span>
-            <button
-              className="qg-secondary-button"
-              disabled={!props.onRequestUpgrade}
-              onClick={() => props.onRequestUpgrade?.('widget-properties')}
-            >
-              {props.locale === 'zh-CN' ? '升级控件属性' : 'Upgrade widget properties'}
-            </button>
-          </div>
-        )}
-        {props.widget && widgetLocked(props.widget, props.project) && (
-          <p className="qg-field-hint">
-            {props.locale === 'zh-CN'
-              ? '控件已锁定，请先在图层中解锁。'
-              : 'Widget is locked. Unlock it in the layer tree first.'}
-          </p>
-        )}
-        <div inert={!!props.widget && widgetLocked(props.widget, props.project)}>
-          <LegacyInspector {...props} />
-        </div>
-      </div>
-    );
+  if (!props.widget) return null;
   return <PropertyInspector key={props.widget.id} {...props} widget={props.widget} />;
 }
 function DraftText({
@@ -585,7 +548,6 @@ function PropertyInspector({
   onDelete,
   onDuplicate,
   locale,
-  onRequestUpgrade,
   onBeginTransaction,
   onCommitTransaction,
   onCancelTransaction,
@@ -830,18 +792,6 @@ function PropertyInspector({
           </button>
         </div>
       </div>
-      {selected.some((item) => item.definitionVersion !== 2) && (
-        <div className="qg-property-upgrade">
-          <span>
-            {zh
-              ? '批量属性需要升级所有选中控件。'
-              : 'Upgrade all selected widgets to edit common properties.'}
-          </span>
-          <button onClick={() => onRequestUpgrade?.('batch-properties')}>
-            {zh ? '升级' : 'Upgrade'}
-          </button>
-        </div>
-      )}
       <div className="qg-segmented">
         <button className={tab === 'design' ? 'active' : ''} onClick={() => setTab('design')}>
           <SlidersHorizontal size={13} />
@@ -1247,22 +1197,18 @@ function PropertyInspector({
                     label={'on' + event.name[0].toUpperCase() + event.name.slice(1)}
                     hint={event.description + ' · ' + event.payload}
                   >
-                    <select
-                      value={widget.events[event.name] ?? ''}
-                      onChange={(input) => {
+                    <FlowBindingSelect
+                      binding={widget.events[event.name]}
+                      flows={project.flows}
+                      zh={zh}
+                      label={'on' + event.name[0].toUpperCase() + event.name.slice(1)}
+                      onChange={(binding) => {
                         const events = { ...widget.events };
-                        if (input.target.value) events[event.name] = input.target.value;
+                        if (binding) events[event.name] = binding;
                         else delete events[event.name];
                         onUpdate({ events });
                       }}
-                    >
-                      <option value="">{zh ? '无关联流程' : 'No flow'}</option>
-                      {project.flows.map((flow) => (
-                        <option key={flow.id} value={flow.id}>
-                          {flow.name}
-                        </option>
-                      ))}
-                    </select>
+                    />
                   </Field>
                 ))}
                 {!definition.events.length && (
