@@ -1,3 +1,4 @@
+import { openPreviewDebug, closePreview } from './workspace';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { createEmptyProject, createWidget } from '../../src/core/project';
 import { createBlockInterface } from '../../src/core/functionBlocks';
@@ -74,7 +75,7 @@ const surfaceColor = (locator: Locator) =>
 
 for (const width of [1440, 1100]) {
   for (const theme of ['light', 'dark'] as const) {
-    test(`${theme} flow layout at ${width}px aligns with the interface workspace and keeps console in the canvas column`, async ({
+    test(`${theme} flow layout at ${width}px aligns with the interface workspace and uses the complete canvas height`, async ({
       page,
     }, info) => {
       await page.setViewportSize({ width, height: 1000 });
@@ -84,7 +85,6 @@ for (const width of [1440, 1100]) {
         right: await bounds(page.locator('.right-panel')),
         heading: await bounds(page.locator('.canvas-heading')),
         status: await bounds(page.locator('.qg-canvas-status')),
-        console: await bounds(page.locator('.console-panel')),
         leftColor: await surfaceColor(page.locator('.left-panel')),
         rightColor: await surfaceColor(page.locator('.right-panel')),
         headingColor: await surfaceColor(page.locator('.canvas-heading')),
@@ -94,13 +94,12 @@ for (const width of [1440, 1100]) {
       const right = await bounds(page.locator('.qg-flow-settings'));
       const heading = await bounds(page.locator('.qg-flow-workspace .canvas-heading'));
       const status = await bounds(page.locator('.qg-flow-workspace .qg-canvas-status'));
-      const console = await bounds(page.locator('.console-panel'));
+      await expect(page.locator('.workspace-body .console-panel')).toHaveCount(0);
       for (const [actual, expected] of [
         [left, design.left],
         [right, design.right],
         [heading, design.heading],
         [status, design.status],
-        [console, design.console],
       ]) {
         for (const key of ['x', 'y', 'width', 'height'] as const)
           expect(actual[key], key).toBeCloseTo(expected[key], 0);
@@ -109,11 +108,8 @@ for (const width of [1440, 1100]) {
       expect(right.width).toBe(width > 1200 ? 304 : 280);
       expect(heading.height).toBe(43);
       expect(status.height).toBe(29);
-      expect(console.x).toBeCloseTo(left.x + left.width, 0);
-      expect(console.x + console.width).toBeCloseTo(right.x, 0);
-      expect(status.y + status.height).toBeCloseTo(console.y, 0);
-      expect(left.y + left.height).toBeCloseTo(console.y + console.height, 0);
-      expect(right.y + right.height).toBeCloseTo(console.y + console.height, 0);
+      expect(status.y + status.height).toBeCloseTo(left.y + left.height, 0);
+      expect(status.y + status.height).toBeCloseTo(right.y + right.height, 0);
       expect(await surfaceColor(page.locator('.qg-flow-sidebar'))).toBe(design.leftColor);
       expect(await surfaceColor(page.locator('.qg-flow-settings'))).toBe(design.rightColor);
       expect(await surfaceColor(page.locator('.qg-flow-workspace .canvas-heading'))).toBe(
@@ -273,7 +269,6 @@ for (const size of [
       '.qg-flow-viewport',
       '.react-flow',
       '.react-flow__node',
-      '.console-panel',
     ];
     const measurements = await page.evaluate(
       (selectors) =>
@@ -331,14 +326,11 @@ for (const size of [
       .click();
     await expectVisibleFlow(page, 3);
 
-    const consoleToggle = page
-      .locator('.statusbar')
-      .getByRole('button', { name: '运行日志', exact: true });
-    await consoleToggle.click();
-    await expect(page.locator('.console-panel')).toHaveCount(0);
-    await expectVisibleFlow(page, 3);
-    await consoleToggle.click();
-    await expect(page.locator('.console-panel')).toBeVisible();
+    await expect(page.locator('.workspace-body .console-panel')).toHaveCount(0);
+    await openPreviewDebug(page);
+    await expect(page.locator('.preview-modal .console-panel')).toBeVisible();
+    await expect(page.locator('.workspace-body .console-panel')).toHaveCount(0);
+    await closePreview(page);
     await expectVisibleFlow(page, 3);
     await page
       .locator('.workspace-tabs nav')

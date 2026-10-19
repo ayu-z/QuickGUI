@@ -81,7 +81,7 @@ test('property input blur and multi-selection keep widget properties until selec
   await expect(windowTitle(page)).toHaveValue('Main inspector window');
 });
 
-test('canceling selection in a module keeps its edit context and exposes the canonical window properties', async ({
+test('canceling module selection shows module metadata and keeps canonical window properties independent', async ({
   page,
 }) => {
   const project = fixture();
@@ -100,13 +100,31 @@ test('canceling selection in a module keeps its edit context and exposes the can
   await page.locator('.left-tabs').getByRole('button', { name: '模块', exact: true }).click();
   await page.locator('.module-card').getByRole('button', { name: '编辑定义', exact: true }).click();
   await expect(widget(page, 'module_button')).toBeVisible();
+  await widget(page, 'module_button').click();
   await blank(page);
-  await expect(windowTitle(page)).toHaveValue('Main inspector window');
+  const metadata = page.locator('.qg-module-inspector');
+  await expect(metadata.getByLabel('模块名称', { exact: true })).toHaveValue('Editable module');
+  await expect(page.locator('.qg-window-inspector')).toHaveCount(0);
   await expect(page.getByRole('button', { name: '退出模块定义', exact: true })).toBeVisible();
-  await windowTitle(page).fill('Canonical window title');
+  await metadata.getByLabel('模块名称', { exact: true }).fill('Renamed module');
+  await metadata.getByLabel('模块名称', { exact: true }).blur();
   await widget(page, 'module_button').click();
   await expect(page.locator('.qg-inspector')).toBeVisible();
-  await expect(page.locator('.canvas-heading')).toContainText('Editable module');
+  await expect(page.locator('.canvas-heading')).toContainText('Renamed module');
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => JSON.parse(localStorage.getItem('quickgui.project.v1')!).project.window.title,
+      ),
+    )
+    .toBe('Main inspector window');
+  await page
+    .locator('.workspace-tools')
+    .getByRole('button', { name: '窗口属性', exact: true })
+    .click();
+  await expect(page.getByRole('button', { name: '退出模块定义', exact: true })).toHaveCount(0);
+  await expect(windowTitle(page)).toHaveValue('Main inspector window');
+  await windowTitle(page).fill('Canonical window title');
   await expect
     .poll(() =>
       page.evaluate(

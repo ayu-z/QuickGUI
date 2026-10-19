@@ -1,3 +1,4 @@
+import { projectManagement, expectProjectName } from './workspace';
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { strFromU8, unzipSync } from 'fflate';
@@ -6,17 +7,14 @@ import { validateProject } from '../../src/core/validation';
 
 async function openExample(page: Page) {
   await page.goto('/');
-  await page.locator('.project-switch').click();
-  await page
-    .locator('.project-dropdown')
-    .getByRole('button', { name: '关闭工程', exact: true })
-    .click();
+  const management = await projectManagement(page);
+  await management.getByRole('button', { name: '关闭工程', exact: true }).click();
   await page
     .getByRole('dialog', { name: '关闭当前工程', exact: true })
     .getByRole('button', { name: '保留恢复副本并关闭', exact: true })
     .click();
   await page.getByRole('button', { name: '打开串口助手示例', exact: true }).click();
-  await expect(page.locator('.project-switch')).toHaveText('串口助手');
+  await expectProjectName(page, '串口助手');
   await expect(page.getByTestId('design-canvas')).toBeVisible();
 }
 async function section(page: Page, name: string) {
@@ -165,7 +163,7 @@ test('serial flow ports and value sources remain editable and existing connectio
   );
   await requestConnection.selectOption('serial_port');
   await expect(requestConnection).toHaveValue('serial_port');
-  await expect(page.locator('.save-indicator')).toContainText('已自动保存');
+  await expect(page.locator('.statusbar .save-indicator')).toContainText('已自动保存');
   await expect
     .poll(() =>
       page.evaluate(

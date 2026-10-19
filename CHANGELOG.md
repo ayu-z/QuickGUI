@@ -1,5 +1,21 @@
 # 变动日志
 
+## 2026-10-20 — 精简工作区、分离调试日志并完善图层与模块编辑
+
+- 顶部保持LOGO、QuickGUI、Studio及六个工作区，移除工程下拉管理和保存提示；保存状态与只读工程名称移至statusbar。项目配置新增工程管理卡片，集中新建、打开、重命名、保存及关闭，显示稳定ID，沿用原导入信任、CODE草稿、关闭/恢复和保存语义。窄屏不隐藏品牌，工程管理按钮可换行，修复190px英文侧栏页签裁剪。
+- 画布与流程不再放置运行日志或预留日志高度；浏览器在预览中按需展开调试，原生预览使用对应PreviewWindow的实际engine，避免把Designer会话当成原生预览。调试提供入口选择、运行/停止、示例数据模拟、级别过滤、搜索、复制、清空与自动滚动；收起只清理模拟interval，保留业务与有界日志。编译使用独立输出drawer，自动打开、持续接收进度，完成/失败后可复查或由状态栏重新打开，不混入运行日志；进度与取消入口放在输出内部，避免遮挡。
+- 修复原生日志清空后被后续快照带回：仅清当前视图，按(id,time)过滤并随原始buffer交集裁剪，换工程清理且复用ID的新时间戳可见；不删除持久日志、变量、报警或共享业务。首次原生start/attach快照接受前保持revision=-1/running=false；运行与模拟等待有效修订。原生子预览attachOnly不能恢复已停止的共享会话，禁用伪恢复并提示在主预览恢复，继续说明运行/停止的共享作用域。无Rust或IPC协议修改。
+- 图层树按每级最上层在前显示，支持展开/收起全部、搜索展示祖先、选择自动揭示、真实roving焦点、方向/Home/End键、Shift范围、Ctrl/Meta切换多选及F2/双击改名。拖动支持前后排序、移入panel和返回根级，检查循环、锁定、自动布局及资源作用域；实际画布位置补偿目标边框/内边距。透明panel实现组合/取消组合与快捷键；非连续同级对象可组合，group放在最高选中层原slot，保留内部z、稳定ID、绑定/事件与CODE草稿。无损取消组合保护行为/样式/作用域、草稿及暴露属性引用，菜单禁用原因可查看，结构变更单次撤销。
+- 模块提供命名空白/多选子树创建、搜索、实例计数、插入、重命名、复制、安全删除和导出；复制原控件而不替换，保留真实相对位置及资源作用域。定义属性独立维护名称、版本、尺寸与暴露属性，实例覆盖仍独立；双击实例或属性入口进入定义，退出恢复来源窗口/模块与选择。已有引用保护定义删除和公开属性增删，检查循环与CODE草稿。布局模块导出完整.qgui工程以保留依赖，React源码组件只读查看/导出并经原工具重建后重新导入，不伪造未编译bundle；无工程格式或运行节点新增。
+- 新增 `src/core/hierarchy.ts`、`src/core/modules.ts`、`src/designer/ModuleInspector.tsx`、`src/designer/layers.css`、`src/panels/DebugConsole.tsx`、`src/panels/ModuleSourceWorkspace.tsx`、`src/panels/ModulesPanel.tsx`、`src/panels/debugConsole.css`、`src/panels/moduleSource.css`、`src/panels/modules.css`、`tests/hierarchy.test.ts`、`tests/modules.test.ts`、`tests/e2e/layers.spec.ts`、`tests/e2e/modules.spec.ts`、`tests/e2e/native-preview-debug.spec.ts`、`tests/e2e/preview-debug.spec.ts`、`tests/e2e/workspace.ts`。
+- 修改 `src/App.tsx`、`src/designer/CanvasEditor.tsx`、`src/designer/ContextMenu.tsx`、`src/designer/Inspector.tsx`、`src/designer/LayerTree.tsx`、`src/designer/commands.ts`、`src/panels/ProjectConfigPanel.tsx`、`src/panels/projectConfig.css`、`src/runtime/controller.ts`、`src/styles.css`、`tests/native-controller.test.ts`、`README.md`、`docs/architecture.md` 和本文件；修改E2E `tests/e2e/` 下的 `appearance-colors.spec.ts`、`build-output.spec.ts`、`canvas-interactions.spec.ts`、`components.spec.ts`、`designer.spec.ts`、`dropdowns.spec.ts`、`flow-bindings.spec.ts`、`flow-drag.spec.ts`、`flow-layout.spec.ts`、`function-blocks.spec.ts`、`multi-window.spec.ts`、`parameters.spec.ts`、`project-close.spec.ts`、`project-config.spec.ts`、`project-name.spec.ts`、`project-theme.spec.ts`、`selection-inspector.spec.ts`、`serial-assistant.spec.ts`、`translations.spec.ts`、`usb-assistant.spec.ts`、`v3-integration.spec.ts`。无源文件删除或重命名，无依赖、C SDK、编译路径或本地敏感配置变更。
+- 新增35项单测覆盖层级/模块原子操作、跨作用域保护及原生clear/pending；新增图层4项、模块6项、预览调试与原生子会话守卫各1项，并扩展工程管理回归。迁移原工程菜单/日志入口测试，保留真实值、工程导出、草稿/引用保护、帧渲染隔离及多窗口断言；原生回归使用受控IPC边界，不作为实体设备或原生实机交互验收。图层Chr/WebKit各4/4、模块Chr6/6通过；首轮模块窄屏英文导入按钮溢出已修，坐标断言保留生产浮点精度并使用0.001容差。
+- 全局1434首轮55项目标回归51通过，失败来自旧导出按钮、模块创建/选择及工程配置导航断言。迁移后相关15项通过14，最后模块绑定保护改在同子窗口的普通text控件验证，继续保留模块实例作用域及字号断言，最终该项与新增原生子预览守卫2/2通过；未放宽超时。图层菜单测试改用包含快捷键的可访问名称，之后双浏览器专项全部通过。独立报告保存在忽略的 `artifacts/root-ui-e2e-1434*`、`artifacts/isolated-layers*`、`artifacts/modules-isolated-e2e/`。
+- 联调期间子预览说明直接访问可选windows数组导致一次TypeScript检查失败，已补空值保护；后续完整类型检查、344项单测及本机生产构建通过。
+- 最终 `node artifacts/run-isolated-e2e.mjs` 在独立1421服务上通过112/112 Chromium全量；1426上的图层、模块、预览调试、原生子预览、项目配置、下拉、流程布局、参数、编译、多窗口、命名及选择属性专项通过51/51 WebKit，显式排除既有 `naming keeps keyboard focus` 一项，正式配置和超时未改。完整日志另存忽略的 `artifacts/workspace-full-chromium.log`、`artifacts/workspace-full-webkit.log`。
+- 最后将原生首次pending期间的停止按钮禁用，等待快照时不提前宣称子会话已停止；随后对最新源码分别复跑原生子预览、预览日志及参数6项，Chromium/WebKit各6/6通过，并再次完成生产构建与本机打包。已目视核对项目管理、窄屏英文模块与预览调试截图；最终专项报告在忽略的 `artifacts/isolated-e2e/`、`artifacts/isolated-e2e-webkit/`。用户原1420服务保留。
+- `npm run check` 的TypeScript与344项单测、`npx tauri build --debug --bundles app` 前置生产构建与本机打包通过，更新 `target/debug/bundle/macos/QuickGUI.app`（78.06 MiB）。保留既有Monaco体积和桥接混合导入提示。`cargo test --workspace` 仍被未修改的 `crates/quickgui-engine/src/serial_demo_test.rs:154` 既有E0502借用冲突阻断；无C SDK/进程协议/编译路径改动，未重复C/AOT专项。既有WebKit工程命名Tab焦点失败沿用上条已确认基线，最终专项显式排除，不计为通过。所有报告、截图、隔离副本、应用包按生成物处理，用户 `QuickGUI_Icons/` 未修改或暂存。
+
 ## 2026-10-20 — 拆分窗口与工程配置并整合顶部导航
 
 - 移除左侧窗口选择栏的settings行，选择栏仅保留窗口切换与新增；当前附加窗口的重命名、删除和启动设置迁入右侧窗口属性，主窗口标记及原有草稿/流程引用删除保护继续生效。提取共用窗口操作对话框，保留名称校验、焦点约束、确认及错误显示。

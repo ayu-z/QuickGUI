@@ -1,20 +1,18 @@
+import { projectManagement, expectProjectName } from './workspace';
 import { expect, test } from '@playwright/test';
 
 test('USB example opens from the welcome screen and browser preview reports native capability', async ({
   page,
 }) => {
   await page.goto('/');
-  await page.locator('.project-switch').click();
-  await page
-    .locator('.project-dropdown')
-    .getByRole('button', { name: '关闭工程', exact: true })
-    .click();
+  const management = await projectManagement(page);
+  await management.getByRole('button', { name: '关闭工程', exact: true }).click();
   await page
     .getByRole('dialog', { name: '关闭当前工程', exact: true })
     .getByRole('button', { name: '保留恢复副本并关闭', exact: true })
     .click();
   await page.getByRole('button', { name: '打开 USB 助手示例', exact: true }).click();
-  await expect(page.locator('.project-switch')).toHaveText('USB 助手');
+  await expectProjectName(page, 'USB 助手');
   await expect(page.locator('[data-design-widget="usb_payload"]')).toBeVisible();
   await page
     .locator('.workspace-tabs nav')

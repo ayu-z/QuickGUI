@@ -309,7 +309,7 @@ test('persists added languages and explicit empty text and uses a runtime locale
     greeting: '',
   });
   await text(page, 'fr-FR', 'greeting').fill('Bonjour');
-  await expect(page.locator('.save-indicator')).toContainText('已自动保存');
+  await expect(page.locator('.statusbar .save-indicator')).toContainText('已自动保存');
   const exported = await exportProject(page, info);
   expect(exported.project.translations?.['fr-FR']).toEqual({ greeting: 'Bonjour' });
   expect(exported.project.locale).toBe('zh-CN');
@@ -462,7 +462,7 @@ test('fits two compact single-line language columns beside the index and preserv
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
   await expectExpandedColumnsVisible(page);
   await expect(text(page, 'zh-CN', 'multiline')).toHaveValue('第一行第二行第三行');
-  await expect(page.locator('.save-indicator')).toContainText('已自动保存');
+  await expect(page.locator('.statusbar .save-indicator')).toContainText('已自动保存');
   const exported = (await exportProject(page, info)).project;
   expect(exported.translations!['zh-CN'].multiline).toBe(originalChinese);
   expect(exported.translations!.en.multiline).toBe(originalEnglish);

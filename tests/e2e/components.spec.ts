@@ -67,7 +67,7 @@ test('compiled TSX package imports with consent and renders reactive props and d
   const downloaded = page.waitForEvent('download');
   await page
     .locator('.module-card')
-    .getByRole('button', { name: 'Export package', exact: true })
+    .getByRole('button', { name: /^Export module / })
     .click();
   expect((await downloaded).suggestedFilename()).toMatch(/\.qgcomponent$/);
   expect(errors).toEqual([]);

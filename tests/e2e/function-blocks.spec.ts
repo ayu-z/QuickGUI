@@ -1,3 +1,5 @@
+import { openPreviewDebug } from './workspace';
+import { expectProjectName } from './workspace';
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { strFromU8, unzipSync } from 'fflate';
@@ -35,7 +37,7 @@ async function openFixture(page: Page) {
     .getByRole('dialog', { name: '关闭当前工程', exact: true })
     .getByRole('button', { name: '保留恢复副本并关闭', exact: true })
     .click();
-  await expect(page.locator('.project-switch')).toHaveText(p.name);
+  await expectProjectName(page, p.name);
   await flows(page);
 }
 test.beforeEach(async ({ page }) => {
@@ -156,6 +158,7 @@ test('pump demo exposes a wired two-input/two-output FB and calculates current U
   await preview.getByRole('button', { name: '计算转速', exact: true }).click();
   await expect(preview.locator('[data-widget="target_rpm_value"]')).toContainText('900');
   await expect(preview.locator('[data-widget="speed_margin_value"]')).toContainText('80');
+  await openPreviewDebug(page);
   await expect(page.locator('.console-content')).toContainText('900');
   await page.screenshot({ path: 'artifacts/pump-fb-demo.png', fullPage: true });
 });

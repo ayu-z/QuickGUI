@@ -1,11 +1,12 @@
+import { projectManagement, currentProjectName, expectProjectName } from './workspace';
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { strFromU8, unzipSync } from 'fflate';
 import type { Project } from '../../src/core/types';
 
 async function projectMenuAction(page: Page, name: string) {
-  await page.locator('.project-switch').click();
-  await page.locator('.project-dropdown').getByRole('button', { name, exact: true }).click();
+  const management = await projectManagement(page);
+  await management.getByRole('button', { name, exact: true }).click();
 }
 
 async function closeToWelcome(page: Page) {
@@ -43,7 +44,7 @@ test.beforeEach(async ({ page }) => {
 test('naming keeps keyboard focus inside the dialog and supports header Escape and valid Enter', async ({
   page,
 }) => {
-  const originalName = await page.locator('.project-switch').innerText();
+  const originalName = await currentProjectName(page);
   await projectMenuAction(page, '新建工程');
   let dialog = page.getByRole('dialog', { name: '新建工程', exact: true });
   await expect(dialog.getByLabel('工程名称', { exact: true })).toBeFocused();
@@ -55,7 +56,7 @@ test('naming keeps keyboard focus inside the dialog and supports header Escape a
   await expect(dialog.getByRole('button', { name: '取消命名', exact: true })).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
-  await expect(page.locator('.project-switch')).toHaveText(originalName);
+  await expectProjectName(page, originalName);
 
   await projectMenuAction(page, '新建工程');
   dialog = page.getByRole('dialog', { name: '新建工程', exact: true });
@@ -74,9 +75,9 @@ test('naming keeps keyboard focus inside the dialog and supports header Escape a
   await input.press('Enter');
   const closing = page.getByRole('dialog', { name: '关闭当前工程', exact: true });
   await expect(closing).toBeVisible();
-  await expect(page.locator('.project-switch')).toHaveText(originalName);
+  await expectProjectName(page, originalName);
   await closing.getByRole('button', { name: '保留恢复副本并关闭', exact: true }).click();
-  await expect(page.locator('.project-switch')).toHaveText('键盘创建工程');
+  await expectProjectName(page, '键盘创建工程');
   await expect(page.getByTestId('design-canvas')).toBeVisible();
 });
 
@@ -105,13 +106,13 @@ test('welcome creation rejects blank names, can be cancelled and creates the cho
   await dialog.getByRole('button', { name: '创建工程', exact: true }).click();
   await expect(page.getByTestId('design-canvas')).toBeVisible();
   await expect(page.locator('.qg-design-widget')).toHaveCount(0);
-  await expect(page.locator('.project-switch')).toHaveText('产线 A HMI');
+  await expectProjectName(page, '产线 A HMI');
   const exported = await exportOriginal(page, testInfo, 'welcome-created');
   expect(exported.filename).toBe('产线 A HMI.qgui');
   expect(exported.project.name).toBe('产线 A HMI');
 });
 
-test('the project menu names a new project before replacing the current project', async ({
+test('project management names a new project before replacing the current project', async ({
   page,
 }, testInfo) => {
   const initial = await exportOriginal(page, testInfo, 'before-menu-create');
@@ -120,7 +121,11 @@ test('the project menu names a new project before replacing the current project'
   let dialog = page.getByRole('dialog', { name: '新建工程', exact: true });
   await dialog.getByLabel('工程名称', { exact: true }).fill('不创建的项目');
   await dialog.getByRole('button', { name: '取消', exact: true }).click();
-  await expect(page.locator('.project-switch')).toHaveText(initial.project.name);
+  await expectProjectName(page, initial.project.name);
+  await page
+    .locator('.workspace-tabs nav')
+    .getByRole('button', { name: '界面', exact: true })
+    .click();
   await expect(page.locator('.qg-design-widget')).toHaveCount(originalWidgetCount);
   await expect(page.getByRole('dialog', { name: '关闭当前工程', exact: true })).toHaveCount(0);
 
@@ -132,7 +137,7 @@ test('the project menu names a new project before replacing the current project'
     .getByRole('dialog', { name: '关闭当前工程', exact: true })
     .getByRole('button', { name: '保留恢复副本并关闭', exact: true })
     .click();
-  await expect(page.locator('.project-switch')).toHaveText('设备维护工程');
+  await expectProjectName(page, '设备维护工程');
   await expect(page.locator('.qg-design-widget')).toHaveCount(0);
   const created = await exportOriginal(page, testInfo, 'menu-created');
   expect(created.filename).toBe('设备维护工程.qgui');
@@ -163,17 +168,17 @@ test('renaming updates the project name, export and recovery while preserving in
   await dialog.getByLabel('工程名称', { exact: true }).fill('   ');
   await dialog.getByLabel('工程名称', { exact: true }).press('Enter');
   await expect(dialog).toBeVisible();
-  await expect(page.locator('.project-switch')).toHaveText(original.project.name);
+  await expectProjectName(page, original.project.name);
   await dialog.getByLabel('工程名称', { exact: true }).fill('取消的工程名');
   await dialog.getByRole('button', { name: '取消', exact: true }).click();
-  await expect(page.locator('.project-switch')).toHaveText(original.project.name);
+  await expectProjectName(page, original.project.name);
 
   await projectMenuAction(page, '重命名工程');
   dialog = page.getByRole('dialog', { name: '重命名工程', exact: true });
   await dialog.getByLabel('工程名称', { exact: true }).fill('一级泵站工程');
   await dialog.getByRole('button', { name: '保存名称', exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(page.locator('.project-switch')).toHaveText('一级泵站工程');
+  await expectProjectName(page, '一级泵站工程');
   await expect(projectConfiguration.getByLabel('应用名称', { exact: true })).toHaveValue(
     'Station Application',
   );
@@ -190,14 +195,14 @@ test('renaming updates the project name, export and recovery while preserving in
   expect(renamed.project.publish).toEqual(original.project.publish);
   expect(renamed.project.widgets).toEqual(original.project.widgets);
 
-  await expect(page.locator('.save-indicator')).toContainText('已自动保存');
+  await expect(page.locator('.statusbar .save-indicator')).toContainText('已自动保存');
   await page.reload();
-  await expect(page.locator('.project-switch')).toHaveText('一级泵站工程');
+  await expectProjectName(page, '一级泵站工程');
   await closeToWelcome(page);
   await page.reload();
   await expect(page.getByTestId('no-project')).toContainText('一级泵站工程');
   await page.getByRole('button', { name: /恢复上次关闭的工程/ }).click();
-  await expect(page.locator('.project-switch')).toHaveText('一级泵站工程');
+  await expectProjectName(page, '一级泵站工程');
   const restored = await exportOriginal(page, testInfo, 'restored-rename');
   expect(restored.project.name).toBe('一级泵站工程');
   expect(restored.project.id).toBe(original.project.id);

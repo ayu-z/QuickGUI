@@ -6,8 +6,6 @@ import {
   Code2,
   Copy,
   Download,
-  FilePlus2,
-  FilePenLine,
   FolderOpen,
   GitBranch,
   Image,
@@ -22,7 +20,6 @@ import {
   Plus,
   RotateCcw,
   RotateCw,
-  Save,
   Square,
   Sun,
   Terminal,
@@ -36,11 +33,10 @@ import {
   Package,
   Puzzle,
   Search,
-  CircleDot,
   Settings2,
 } from 'lucide-react';
 import { EditorStore, type EditorState, type Section } from './core/store';
-import { manualFlowEntries, reconcileFlowBinding } from './core/flowBindings';
+import { reconcileFlowBinding } from './core/flowBindings';
 import { FlowBindingSelect } from './designer/FlowBindingSelect';
 import {
   cloneSubtree,
@@ -88,6 +84,18 @@ import { WelcomeScreen } from './panels/WelcomeScreen';
 import { ProjectNameDialog } from './panels/ProjectNameDialog';
 import { WindowManager } from './panels/WindowManager';
 import { ProjectConfigPanel } from './panels/ProjectConfigPanel';
+import { DebugConsole, PreviewDebugger } from './panels/DebugConsole';
+import { ModulesPanel } from './panels/ModulesPanel';
+import { ModuleInspector } from './designer/ModuleInspector';
+import { ModuleSourceWorkspace } from './panels/ModuleSourceWorkspace';
+import {
+  createModuleFromSelection,
+  insertModuleInstance,
+  duplicateModuleDefinition,
+  deleteModuleDefinition,
+  updateModuleDefinition,
+} from './core/modules';
+import { groupWidgets, ungroupWidgets, moveWidgets, type HierarchyTarget } from './core/hierarchy';
 import { PasteReviewDialog } from './panels/PasteReviewDialog';
 import {
   copySelection,
@@ -139,9 +147,46 @@ function PreviewWindow() {
   }, [project, engine, windowId]);
   useEffect(() => () => engine?.dispose(), [engine]);
   return project && engine ? (
-    <RuntimeApp project={project} engine={engine} windowId={windowId} />
+    <NativePreviewSurface project={project} engine={engine} windowId={windowId} />
   ) : (
     <div className="loading-screen">{error || 'Loading preview…'}</div>
+  );
+}
+
+function NativePreviewSurface({
+  project,
+  engine,
+  windowId,
+}: {
+  project: Project;
+  engine: RuntimeController;
+  windowId: string;
+}) {
+  const [debug, setDebug] = useState(false);
+  const zh = project.locale === 'zh-CN';
+  return (
+    <>
+      <RuntimeApp project={project} engine={engine} windowId={windowId} />
+      <button
+        className="button native-preview-debug-toggle"
+        aria-label={zh ? '预览调试' : 'Preview debug'}
+        aria-expanded={debug}
+        onClick={() => setDebug(!debug)}
+      >
+        <Terminal size={14} />
+        {zh ? '预览调试' : 'Preview debug'}
+      </button>
+      {debug && (
+        <div className="native-preview-debug">
+          <PreviewDebugger
+            project={project}
+            engine={engine}
+            canStart={windowId === 'main'}
+            onClose={() => setDebug(false)}
+          />
+        </div>
+      )}
+    </>
   );
 }
 
@@ -248,33 +293,20 @@ function ProjectWorkspace({
     point?: Point;
   } | null>(null);
   const [nameAction, setNameAction] = useState<'create' | 'rename' | null>(null);
-  const [preview, setPreview] = useState(false),
-    [exportMenu, setExportMenu] = useState(false),
-    [projectMenu, setProjectMenu] = useState(false);
-  const projectMenuRef = useRef<HTMLDivElement>(null),
-    exportMenuRef = useRef<HTMLDivElement>(null);
-  useDismissibleLayer(projectMenu, projectMenuRef, () => setProjectMenu(false));
+  const [preview, setPreview] = useState(false);
+  const [previewDebug, setPreviewDebug] = useState(false);
+  const [exportMenu, setExportMenu] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
   useDismissibleLayer(exportMenu, exportMenuRef, () => setExportMenu(false));
   const previewQueue = useRef<Promise<void>>(Promise.resolve());
   const previewGeneration = useRef(0);
   const [buildProgress, setBuildProgress] = useState<string | null>(null);
   const [buildLogs, setBuildLogs] = useState<RuntimeLog[]>([]);
+  const [buildConsoleOpen, setBuildConsoleOpen] = useState(false);
   const buildInProgress = useRef(false);
-  const consoleContent = useRef<HTMLDivElement>(null);
-  const [runEntryKey, setRunEntryKey] = useState('');
-  const followConsole = useRef(true);
-  const consoleLogs = [...snapshot.logs, ...buildLogs].sort((a, b) => a.time - b.time).slice(-1000);
-  const [showConsole, setShowConsole] = useState(true),
-    [simulate, setSimulate] = useState(false);
-  const resourceSection =
-    section === 'appearance' || section === 'languages' || section === 'project';
-  const workspaceConsoleVisible = showConsole && (!resourceSection || buildProgress !== null);
-  useEffect(() => {
-    if (followConsole.current && consoleContent.current)
-      consoleContent.current.scrollTop = consoleContent.current.scrollHeight;
-  }, [snapshot.logs, buildLogs, workspaceConsoleVisible]);
   const [toast, setToast] = useState<{ text: string; error?: boolean }>();
   const [moduleId, setModuleId] = useState<string | null>(null);
+  const moduleReturn = useRef<{ moduleId: string | null; selectedIds: string[] }[]>([]);
   const [pendingModule, setPendingModule] = useState<ComponentModule | null>(null);
   const [pendingProject, setPendingProject] = useState<Project | null>(null);
   const [closeRequest, setCloseRequest] = useState<{ next?: Project } | null>(null);
@@ -287,19 +319,25 @@ function ProjectWorkspace({
     assetInput = useRef<HTMLInputElement>(null);
   const t = translations[project.locale],
     zh = project.locale === 'zh-CN';
-  const simulationAvailable = project.variables.some(
-    (variable) =>
-      ['temperature', 'pressure'].includes(variable.id) &&
-      variable.type === 'number' &&
-      !variable.readOnly,
-  );
   const activeModule = project.modules.find((m) => m.id === moduleId);
   const activeWindow = getProjectWindow(project, activeWindowId);
   const windowProject = projectForWindow(project, activeWindowId);
+  const moduleScope =
+    activeModule &&
+    (project.resourceScopes?.find((scope) => scope.id === activeModule.resourceScopeId) ??
+      activeModule.embeddedResourceScope);
   const designProject = activeModule
     ? {
         ...windowProject,
-        widgets: activeModule.widgets,
+        widgets: activeModule.widgets.map((widget) =>
+          moduleScope && !widget.parentId && !widget.resourceScopeId
+            ? { ...widget, resourceScopeId: moduleScope.id }
+            : widget,
+        ),
+        resourceScopes:
+          moduleScope && !project.resourceScopes?.some((scope) => scope.id === moduleScope.id)
+            ? [...(project.resourceScopes ?? []), moduleScope]
+            : project.resourceScopes,
         window: {
           ...windowProject.window,
           title: activeModule.name,
@@ -310,10 +348,14 @@ function ProjectWorkspace({
     : windowProject;
   useEffect(() => {
     setModuleId(null);
+    moduleReturn.current = [];
     setFilter('');
   }, [activeWindowId]);
   useEffect(() => {
-    if (moduleId && !activeModule) setModuleId(null);
+    if (moduleId && !activeModule) {
+      setModuleId(null);
+      moduleReturn.current = [];
+    }
   }, [moduleId, activeModule]);
   const selected = designProject.widgets.find((w) => w.id === selectedId);
   const selectedWidgets = designProject.widgets.filter((widget) => selectedIds.includes(widget.id));
@@ -328,12 +370,60 @@ function ProjectWorkspace({
   const inspectActiveWindow = () => {
     store.cancelTransaction();
     setModuleId(null);
+    moduleReturn.current = [];
     store.inspectWindow();
   };
   const notify = useCallback((text: string, error = false) => {
     if (!mounted.current) return;
     setToast({ text, error });
   }, []);
+  const canvasPositions = (ids: string[]) => {
+    const positions: Record<string, Point> = {};
+    const canvas = document.querySelector<HTMLElement>('[data-testid="design-canvas"]');
+    if (!canvas) return positions;
+    const bounds = canvas.getBoundingClientRect();
+    const scale = bounds.width / designProject.window.width;
+    if (!scale) return positions;
+    for (const id of ids) {
+      const element = canvas.querySelector<HTMLElement>(`[data-design-widget="${CSS.escape(id)}"]`);
+      if (!element) continue;
+      const box = element.getBoundingClientRect();
+      positions[id] = { x: (box.left - bounds.left) / scale, y: (box.top - bounds.top) / scale };
+    }
+    return positions;
+  };
+  const moveLayers = (ids: string[], target: HierarchyTarget) => {
+    const original = scopeWidgets(project);
+    const roots = selectionRoots(original, ids);
+    const positions = canvasPositions(roots.map((widget) => widget.id));
+    const canvas = document.querySelector<HTMLElement>('[data-testid="design-canvas"]');
+    let destination: Point | undefined;
+    if (canvas) {
+      const box = canvas.getBoundingClientRect();
+      const scale = box.width / designProject.window.width;
+      const content = target.parentId
+        ? canvas.querySelector<HTMLElement>(
+            `[data-design-widget="${CSS.escape(target.parentId)}"] > .qg-design-widget-content > [data-widget] > .qg-panel-content`,
+          )
+        : canvas;
+      if (content && scale) {
+        const bounds = content.getBoundingClientRect();
+        destination = { x: (bounds.left - box.left) / scale, y: (bounds.top - box.top) / scale };
+      }
+    }
+    store.update((next) => {
+      const list = scopeWidgets(next);
+      const moved = moveWidgets(list, ids, target);
+      for (const root of roots) {
+        if (root.parentId === target.parentId || !destination || !positions[root.id]) continue;
+        const widget = moved.find((item) => item.id === root.id)!;
+        widget.layout.x = positions[root.id].x - destination.x;
+        widget.layout.y = positions[root.id].y - destination.y;
+      }
+      list.splice(0, list.length, ...moved);
+    });
+    store.setSelection(ids, ids.at(-1));
+  };
   const enqueuePreview = (next: Project, windowId?: string) => {
     const generation = previewGeneration.current;
     const task = previewQueue.current
@@ -387,32 +477,6 @@ function ProjectWorkspace({
     const timer = setTimeout(() => setToast(undefined), toast.error ? 9000 : 4000);
     return () => clearTimeout(timer);
   }, [toast]);
-  useEffect(() => {
-    if (!simulationAvailable) {
-      if (simulate) setSimulate(false);
-      return;
-    }
-    if (!simulate) return;
-    const start = Date.now();
-    const timer = setInterval(() => {
-      const elapsed = (Date.now() - start) / 1000;
-      try {
-        if (project.variables.some((v) => v.id === 'temperature'))
-          engine.setVariable(
-            'temperature',
-            Math.round((42.6 + Math.sin(elapsed / 3) * 8) * 10) / 10,
-          );
-        if (project.variables.some((v) => v.id === 'pressure'))
-          engine.setVariable(
-            'pressure',
-            Math.round((0.36 + Math.sin(elapsed / 5) * 0.04) * 100) / 100,
-          );
-      } catch (e) {
-        engine.log(String(e), 'error');
-      }
-    }, 500);
-    return () => clearInterval(timer);
-  }, [simulate, simulationAvailable, engine, project.variables]);
   const updateWidget = (id: string, patch: Partial<Widget>) => {
     const candidate = designProject.widgets.find((widget) => widget.id === id);
     if (candidate && inheritedFlag(candidate, designProject.widgets, 'locked')) {
@@ -436,6 +500,13 @@ function ProjectWorkspace({
     else store.updateWidget(id, patch);
   };
   const addWidget = (type: Widget['type'], x?: number, y?: number) => {
+    if (activeModule?.implementation) {
+      notify(
+        zh ? '源码组件请导出、构建后重新导入' : 'Export, rebuild and reimport source components',
+        true,
+      );
+      return;
+    }
     if (moduleId) {
       const widget = createWidget(type, x, y, 2);
       store.update((p) => p.modules.find((m) => m.id === moduleId)!.widgets.push(widget));
@@ -613,6 +684,40 @@ function ProjectWorkspace({
         notify(zh ? '请先解除控件锁定' : 'Unlock selected widgets first', true);
         return;
       }
+      if (command === 'group' || command === 'ungroup') {
+        if (activeModule?.implementation)
+          throw new Error(zh ? '源码组件布局为只读' : 'Source component layouts are read-only');
+        if (command === 'ungroup') {
+          const removed = new Set(roots.map((widget) => widget.id));
+          if (roots.some((widget) => store.getDraft(widget.id, scopeKey) !== undefined))
+            throw new Error(
+              zh ? '请先处理组合容器的 CODE 草稿' : 'Resolve the group container CODE draft first',
+            );
+          if (
+            activeModule &&
+            Object.values(activeModule.exposedProps).some((property) =>
+              removed.has(property.widgetId),
+            )
+          )
+            throw new Error(
+              zh
+                ? '组合容器仍被模块暴露属性引用'
+                : 'The group container is referenced by a module property',
+            );
+        }
+        let ids: string[] = [];
+        store.update((next) => {
+          const list = scopeWidgets(next);
+          const result =
+            command === 'group'
+              ? groupWidgets(list, current.selectedIds, zh ? '组合' : 'Group')
+              : ungroupWidgets(list, current.selectedIds);
+          list.splice(0, list.length, ...result.widgets);
+          ids = 'groupId' in result ? [result.groupId] : result.selectedIds;
+        });
+        store.setSelection(ids, ids.at(-1));
+        return;
+      }
       if (command === 'delete') {
         const deleted = new Set(roots.flatMap((widget) => [...subtreeIds(widgets, widget.id)]));
         if (widgets.some((widget) => deleted.has(widget.id) && widget.editor?.locked))
@@ -691,57 +796,50 @@ function ProjectWorkspace({
   const deleteWidget = () => {
     void executeCommand('delete');
   };
-  const createModule = () => {
-    const source = selected ?? createWidget('panel', 32, 32, 2);
-    const children = cloneSubtree(selected ? designProject.widgets : [source], source.id, true);
-    const child = children.find((w) => !w.parentId)!;
-    const module: ComponentModule = {
-      id: uid('module'),
-      name: `${source.name}模块`,
-      version: '1.0.0',
-      width: source.layout.width,
-      height: source.layout.height,
-      widgets: children,
-      exposedProps: Object.fromEntries(
-        getWidgetDefinition(
-          child.type,
-          child.definitionVersion ?? 1,
-          project.modules.find((module) => module.id === child.moduleId),
-        )
-          .properties.filter((definition) =>
-            ['text', 'value', 'enabled', 'visible'].includes(definition.key),
-          )
-          .map((definition) => [
-            definition.key,
-            {
-              widgetId: child.id,
-              property: definition.key,
-              default: child.props[definition.key] ?? definition.fallbackValue,
-            },
-          ]),
-      ),
-    };
-    store.update((p) => p.modules.push(module));
+  const createModule = (name: string) => {
+    store.update((next) => {
+      createModuleFromSelection(next, {
+        name,
+        scope: editScope,
+        selectedIds: store.getSnapshot().selectedIds,
+        drafts: store.getSnapshot().drafts,
+        positions: canvasPositions(store.getSnapshot().selectedIds),
+      });
+    });
     setLeftTab('modules');
-    notify(
-      zh
-        ? '模块已创建，可编辑定义或添加实例'
-        : 'Module created. Edit its definition or add an instance.',
-    );
+    notify(zh ? '模块已创建，原控件保留' : 'Module created; original widgets retained');
   };
-  const addModuleInstance = (module: ComponentModule) => {
-    const widget = createWidget('module', 32, 32, 2);
-    widget.name = module.name;
-    widget.moduleId = module.id;
-    widget.layout.width = module.width;
-    widget.layout.height = module.height;
-    widget.props = Object.fromEntries(
-      Object.entries(module.exposedProps).map(([key, value]) => [key, value.default]),
-    );
-    store.update((p) => getProjectWindow(p, activeWindowId).widgets.push(widget));
-    setModuleId(null);
-    store.select(widget.id);
+  const insertModule = (id: string) => {
+    let widgetId = '';
+    store.update((next) => {
+      widgetId = insertModuleInstance(next, id, editScope).id;
+    });
+    store.select(widgetId);
     store.setSection('design');
+  };
+  const editModule = (id: string) => {
+    if (!project.modules.some((module) => module.id === id)) return;
+    store.cancelTransaction();
+    moduleReturn.current.push({ moduleId, selectedIds: [...store.getSnapshot().selectedIds] });
+    setModuleId(id);
+    setFilter('');
+    setLeftTab('layers');
+    store.setSelection([]);
+    store.setSection('design');
+  };
+  const exitModule = () => {
+    store.cancelTransaction();
+    const previous = moduleReturn.current.pop();
+    setModuleId(previous?.moduleId ?? null);
+    setFilter('');
+    store.setSelection(previous?.selectedIds ?? []);
+  };
+  const exportModule = (id: string) => {
+    const module = project.modules.find((item) => item.id === id);
+    if (!module) throw new Error(zh ? '模块不存在' : 'Module does not exist');
+    if (module.implementation)
+      download(`${module.name}.qgcomponent`, exportComponentPackage(module, project) as BlobPart);
+    else download(`${module.name}.qgui`, exportProject(project, drafts) as BlobPart);
   };
   const installModule = (module: ComponentModule) => {
     const current = store.getSnapshot().project;
@@ -791,7 +889,6 @@ function ProjectWorkspace({
   };
   const requestClose = (next?: Project) => {
     if (closeInProgress.current) return;
-    setProjectMenu(false);
     setCloseError('');
     setCloseRequest({ next });
   };
@@ -810,7 +907,7 @@ function ProjectWorkspace({
       store.beginClose(!saveToFile);
       previewGeneration.current++;
       setPreview(false);
-      setSimulate(false);
+      setPreviewDebug(false);
       const warnings = await engine.closeProject();
       store.finishClose(warnings);
       if (closeRequest.next) store.replaceProject(closeRequest.next);
@@ -852,6 +949,8 @@ function ProjectWorkspace({
     if (buildInProgress.current) return;
     buildInProgress.current = true;
     setExportMenu(false);
+    setBuildLogs([]);
+    setBuildConsoleOpen(true);
     let unlisten: (() => void) | undefined;
     const recordProgress = ({ stage, message }: native.BuildProgress) => {
       if (!mounted.current) return;
@@ -879,9 +978,6 @@ function ProjectWorkspace({
             ? '独立应用构建请使用桌面版。'
             : 'Use the desktop app to build a standalone application.',
         );
-      setBuildLogs([]);
-      followConsole.current = true;
-      setShowConsole(true);
       recordProgress({ stage: 'prepare', message: zh ? '准备构建…' : 'Preparing build…' });
       unlisten = await native.onBuildProgress(recordProgress);
       const result = await native.buildRuntime(project);
@@ -906,7 +1002,6 @@ function ProjectWorkspace({
     }
   };
   const openProject = async () => {
-    setProjectMenu(false);
     if (native.isDesktop()) {
       try {
         const p = await native.loadProject();
@@ -927,31 +1022,14 @@ function ProjectWorkspace({
         engine.applyProject(project);
         engine.windowAction('open', activeWindowId);
       }
-      if (generation === previewGeneration.current) setPreview(true);
+      if (generation === previewGeneration.current) {
+        setPreview(true);
+        return true;
+      }
     } catch (e) {
       notify(errorText(e), true);
     }
-  };
-  const runEntries = project.flows
-    .filter((flow) => flow.enabled)
-    .flatMap((flow) =>
-      manualFlowEntries(flow).map((node) => ({
-        flow,
-        node,
-        key: JSON.stringify([flow.id, node.id]),
-      })),
-    );
-  const runEntry = runEntries.find((entry) => entry.key === runEntryKey) ?? runEntries[0];
-  const run = () => {
-    if (engine.getSnapshot().revision !== project.revision) {
-      notify(zh ? '运行时正在更新，请稍后重试' : 'Runtime is updating. Please retry.');
-      return;
-    }
-    if (!snapshot.running) engine.start();
-    if (runEntry)
-      void engine
-        .runFlow(runEntry.flow.id, null, runEntry.node.id)
-        .catch((e) => notify(errorText(e), true));
+    return false;
   };
   const tabs: [Section, typeof LayoutDashboard, string][] = [
     ['design', LayoutDashboard, t.design],
@@ -968,80 +1046,7 @@ function ProjectWorkspace({
         <div className="brand">
           <img src="/quickgui.svg" alt="QuickGUI" />
           <strong>QuickGUI</strong>
-          <span>DESIGNER</span>
-        </div>
-        <div
-          ref={projectMenuRef}
-          className="project-menu-wrap"
-          onKeyDown={(event) => {
-            if (event.key === 'Escape' && projectMenu) {
-              event.preventDefault();
-              event.stopPropagation();
-              setProjectMenu(false);
-              projectMenuRef.current?.querySelector('button')?.focus();
-            }
-          }}
-        >
-          <button
-            className="project-switch"
-            title={project.name}
-            aria-expanded={projectMenu}
-            aria-controls="project-dropdown"
-            onClick={() => {
-              setExportMenu(false);
-              setProjectMenu(!projectMenu);
-            }}
-          >
-            <span className="project-dot" />
-            <span className="project-switch-name">{project.name}</span>
-            <ChevronDown size={13} />
-          </button>
-          {projectMenu && (
-            <div id="project-dropdown" className="dropdown project-dropdown">
-              <button
-                onClick={() => {
-                  setProjectMenu(false);
-                  setNameAction('create');
-                }}
-              >
-                <FilePlus2 size={15} />
-                {t.new}
-              </button>
-              <button
-                onClick={() => {
-                  setProjectMenu(false);
-                  setNameAction('rename');
-                }}
-              >
-                <FilePenLine size={15} />
-                {zh ? '重命名工程' : 'Rename project'}
-              </button>
-              <button onClick={() => requestClose()}>
-                <X size={15} />
-                {zh ? '关闭工程' : 'Close project'}
-              </button>
-              <button onClick={() => void openProject()}>
-                <FolderOpen size={15} />
-                {t.open}
-              </button>
-              <button
-                onClick={() => {
-                  store.saveRecovery();
-                  setProjectMenu(false);
-                  if (native.isDesktop())
-                    void native.saveProject(project).catch((e) => notify(String(e), true));
-                  else exportOriginal();
-                }}
-              >
-                <Save size={15} />
-                {t.save}
-              </button>
-            </div>
-          )}
-        </div>
-        <div className="save-indicator" title={state.dirty ? t.unsaved : t.saved}>
-          <span className={state.dirty ? 'saving-dot' : 'saved-dot'} />
-          {state.dirty ? t.unsaved : t.saved}
+          <span>Studio</span>
         </div>
         <div className="workspace-tabs">
           <nav aria-label={zh ? '工作区' : 'Workspace'}>
@@ -1122,7 +1127,6 @@ function ProjectWorkspace({
               aria-expanded={exportMenu}
               aria-controls="export-dropdown"
               onClick={() => {
-                setProjectMenu(false);
                 setExportMenu(!exportMenu);
               }}
             >
@@ -1160,9 +1164,7 @@ function ProjectWorkspace({
           </div>
         </div>
       </header>
-      <main
-        className={`workspace-body ${section === 'flows' ? `flow-page-layout ${showConsole ? 'flow-console-visible' : ''}` : ''}`}
-      >
+      <main className={`workspace-body ${section === 'flows' ? 'flow-page-layout' : ''}`}>
         {section === 'design' && (
           <aside className="left-panel">
             <WindowManager
@@ -1202,7 +1204,7 @@ function ProjectWorkspace({
                 </div>
                 <button
                   className={`window-row ${state.inspector === 'window' ? 'active' : ''}`}
-                  onClick={inspectActiveWindow}
+                  onClick={activeModule ? () => store.setSelection([]) : inspectActiveWindow}
                 >
                   <Monitor size={15} />
                   <span>{activeModule ? activeModule.name : activeWindow.name}</span>
@@ -1213,6 +1215,20 @@ function ProjectWorkspace({
                   selectedIds={selectedIds}
                   filter={filter}
                   locale={project.locale}
+                  scopeKey={scopeKey}
+                  onMove={moveLayers}
+                  onRename={(id, name) => {
+                    const normalized = name.trim();
+                    if (
+                      !normalized ||
+                      normalized.length > 200 ||
+                      /[\u0000-\u001f\u007f]/.test(normalized)
+                    )
+                      throw new Error(
+                        zh ? '请输入1–200个有效字符' : 'Enter 1–200 valid characters',
+                      );
+                    updateWidget(id, { name: normalized });
+                  }}
                   onSelectionChange={store.setSelection}
                   onCommand={(command) => {
                     void executeCommand(command);
@@ -1228,7 +1244,11 @@ function ProjectWorkspace({
                     <Plus size={14} />
                     {zh ? '添加控件' : 'Add widget'}
                   </button>
-                  <button className="icon-button" title={t.modules} onClick={createModule}>
+                  <button
+                    className="icon-button"
+                    title={t.modules}
+                    onClick={() => setLeftTab('modules')}
+                  >
                     <Puzzle size={15} />
                   </button>
                 </div>
@@ -1238,65 +1258,25 @@ function ProjectWorkspace({
               <Library onAdd={(type) => addWidget(type)} locale={project.locale} />
             )}
             {leftTab === 'modules' && (
-              <div className="module-list">
-                <div className="panel-intro">
-                  {zh
-                    ? '复用控件组合，独立编辑定义与实例。'
-                    : 'Reusable widgets with independent instance overrides.'}
-                </div>
-                <button className="button full" onClick={createModule}>
-                  <Plus size={14} />
-                  {zh ? '从选中控件创建' : 'Create from selection'}
-                </button>
-                <button
-                  className="button full"
-                  style={{ marginTop: 8 }}
-                  onClick={() => componentInput.current?.click()}
-                >
-                  <FolderOpen size={14} />
-                  {zh ? '导入组件包' : 'Import component package'}
-                </button>
-                {project.modules.map((module) => (
-                  <div className="module-card" key={module.id}>
-                    <Puzzle size={20} />
-                    <strong>{module.name}</strong>
-                    <small>
-                      v{module.version} · {module.widgets.length} {zh ? '个控件' : 'widgets'}
-                    </small>
-                    <div>
-                      <button onClick={() => addModuleInstance(module)}>
-                        {zh ? '添加实例' : 'Add instance'}
-                      </button>
-                      {module.implementation ? (
-                        <button
-                          onClick={() => {
-                            try {
-                              download(
-                                `${module.name}.qgcomponent`,
-                                exportComponentPackage(module, project) as BlobPart,
-                              );
-                            } catch (error) {
-                              notify(errorText(error), true);
-                            }
-                          }}
-                        >
-                          {zh ? '导出组件包' : 'Export package'}
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            store.cancelTransaction();
-                            setModuleId(module.id);
-                            store.select(module.widgets[0]?.id ?? null);
-                          }}
-                        >
-                          {zh ? '编辑定义' : 'Edit definition'}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <ModulesPanel
+                project={project}
+                activeModuleId={moduleId}
+                selectionCount={selectedIds.length}
+                onCreate={createModule}
+                onInsert={insertModule}
+                onEdit={editModule}
+                onRename={(id, name) =>
+                  store.update((next) => updateModuleDefinition(next, id, { name }))
+                }
+                onDuplicate={(id) =>
+                  store.update((next) => {
+                    duplicateModuleDefinition(next, id, undefined, drafts);
+                  })
+                }
+                onDelete={(id) => store.update((next) => deleteModuleDefinition(next, id, drafts))}
+                onExport={exportModule}
+                onImport={() => componentInput.current?.click()}
+              />
             )}
             {leftTab === 'assets' && (
               <div className="module-list">
@@ -1328,7 +1308,15 @@ function ProjectWorkspace({
           </aside>
         )}
         <section className="center-panel">
-          {section === 'design' && (
+          {section === 'design' && activeModule?.implementation && (
+            <ModuleSourceWorkspace
+              key={activeModule.id}
+              module={activeModule}
+              locale={project.locale}
+              onExit={exitModule}
+            />
+          )}
+          {section === 'design' && !activeModule?.implementation && (
             <CanvasEditor
               key={`${activeWindowId}:${activeModule?.id ?? 'window'}`}
               heading={
@@ -1339,20 +1327,22 @@ function ProjectWorkspace({
                     {activeModule ? activeModule.name : activeWindow.name}
                   </strong>
                   {activeModule && (
-                    <button
-                      className="module-exit"
-                      onClick={() => {
-                        store.cancelTransaction();
-                        setModuleId(null);
-                        store.select(null);
-                      }}
-                    >
+                    <button className="module-exit" onClick={() => store.setSelection([])}>
+                      {zh ? '模块属性' : 'Module properties'}
+                    </button>
+                  )}
+                  {activeModule && (
+                    <button className="module-exit" onClick={exitModule}>
                       {zh ? '退出模块定义' : 'Exit module'}
                     </button>
                   )}
                 </>
               }
               project={designProject}
+              onEditModule={(id) => {
+                const widget = designProject.widgets.find((item) => item.id === id);
+                if (widget?.moduleId) editModule(widget.moduleId);
+              }}
               selectedId={selectedId}
               selectedIds={selectedIds}
               scopeKey={scopeKey}
@@ -1407,100 +1397,34 @@ function ProjectWorkspace({
             />
           )}
           {section === 'project' && (
-            <ProjectConfigPanel key={project.id} project={project} onChange={store.update} />
-          )}
-          {workspaceConsoleVisible && (
-            <section className="console-panel">
-              <header>
-                <button onClick={() => setShowConsole(false)}>
-                  <Terminal size={14} />
-                  <span>{t.console}</span>
-                  <span className="count-pill">{consoleLogs.length}</span>
-                </button>
-                <div>
-                  {simulationAvailable && (
-                    <label className="simulate-toggle">
-                      <input
-                        type="checkbox"
-                        checked={simulate}
-                        onChange={(e) => setSimulate(e.target.checked)}
-                      />
-                      {t.simulate}
-                      <span className="simulated-label">SIM</span>
-                    </label>
-                  )}
-                  <button
-                    className="icon-button"
-                    title={t.clear}
-                    onClick={() => {
-                      engine.clearLogs();
-                      setBuildLogs([]);
-                    }}
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                  {runEntries.length > 1 && (
-                    <select
-                      className="console-entry"
-                      aria-label={zh ? '运行入口' : 'Run entry'}
-                      value={runEntry?.key ?? ''}
-                      onChange={(event) => setRunEntryKey(event.target.value)}
-                    >
-                      {runEntries.map((entry) => (
-                        <option key={entry.key} value={entry.key}>
-                          {entry.flow.name} · {entry.node.label}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                  <button
-                    className="icon-button"
-                    title={t.run}
-                    onClick={run}
-                    disabled={
-                      snapshot.revision !== project.revision || (!runEntry && snapshot.running)
-                    }
-                    aria-busy={snapshot.revision !== project.revision || undefined}
-                  >
-                    <Play size={13} />
-                  </button>
-                  <button className="icon-button" title={t.stop} onClick={engine.stop}>
-                    <Square size={12} />
-                  </button>
-                </div>
-              </header>
-              <div
-                className="console-content"
-                ref={consoleContent}
-                onScroll={(event) => {
-                  const element = event.currentTarget;
-                  followConsole.current =
-                    element.scrollHeight - element.scrollTop - element.clientHeight < 24;
-                }}
-              >
-                {consoleLogs.length ? (
-                  consoleLogs.map((log) => (
-                    <div className={`log-row ${log.level}`} key={log.id}>
-                      <time>
-                        {new Date(log.time).toLocaleTimeString('en-GB', { hour12: false })}
-                      </time>
-                      <span className="log-level">{log.level}</span>
-                      <span>{log.message}</span>
-                    </div>
-                  ))
-                ) : (
-                  <div className="console-empty">
-                    <CircleDot size={12} />
-                    {t.emptyLogs}
-                  </div>
-                )}
-              </div>
-            </section>
+            <ProjectConfigPanel
+              key={project.id}
+              project={project}
+              onChange={store.update}
+              management={{
+                onCreate: () => setNameAction('create'),
+                onOpen: openProject,
+                onRename: () => setNameAction('rename'),
+                onSave: async () => {
+                  store.saveRecovery();
+                  if (native.isDesktop()) await native.saveProject(project);
+                  else exportOriginal();
+                },
+                onClose: () => requestClose(),
+              }}
+            />
           )}
         </section>
         {section === 'design' && (
           <aside className="right-panel">
-            {state.inspector === 'window' || !selected ? (
+            {activeModule && (state.inspector === 'window' || !selected) ? (
+              <ModuleInspector
+                project={project}
+                moduleId={activeModule.id}
+                onChange={store.update}
+                onExport={exportModule}
+              />
+            ) : state.inspector === 'window' || !selected ? (
               <WindowInspector
                 key={`${project.id}:${activeWindowId}`}
                 project={project}
@@ -1531,6 +1455,11 @@ function ProjectWorkspace({
                   onCancelTransaction={store.cancelTransaction}
                   draft={store.getDraft(selected.id, scopeKey)}
                   onDraft={(text) => store.setDraft(selected.id, text, scopeKey)}
+                  onEditModule={
+                    selected.type === 'module' && selected.moduleId
+                      ? () => editModule(selected.moduleId!)
+                      : undefined
+                  }
                   onDelete={deleteWidget}
                   onDuplicate={() => {
                     void executeCommand('duplicate');
@@ -1547,10 +1476,33 @@ function ProjectWorkspace({
           <span className="saved-dot" />
           {native.isDesktop() ? t.desktop : t.browser}
         </span>
-        {(!resourceSection || buildProgress !== null) && (
-          <button onClick={() => setShowConsole(!showConsole)}>
-            <Terminal size={12} />
-            {t.console}
+        <span className="save-indicator" title={state.dirty ? t.unsaved : t.saved}>
+          <span className={state.dirty ? 'saving-dot' : 'saved-dot'} />
+          {state.dirty ? t.unsaved : t.saved}
+        </span>
+        <span className="status-project" title={project.name}>
+          {project.name}
+        </span>
+        <button
+          aria-label={zh ? '预览调试' : 'Preview debug'}
+          onClick={async () => {
+            if (!(await openPreview())) return;
+            setPreviewDebug(true);
+            if (native.isDesktop())
+              notify(
+                zh
+                  ? '在预览窗口中点击“预览调试”查看该窗口的运行会话。'
+                  : 'Use Preview debug in the preview window to inspect its runtime session.',
+              );
+          }}
+        >
+          <Terminal size={12} />
+          {zh ? '预览调试' : 'Preview debug'}
+        </button>
+        {buildLogs.length > 0 && (
+          <button onClick={() => setBuildConsoleOpen(!buildConsoleOpen)}>
+            <Activity size={12} />
+            {zh ? '构建输出' : 'Build output'}
           </button>
         )}
         <div className="status-spacer" />
@@ -1758,7 +1710,7 @@ function ProjectWorkspace({
       {preview && !native.isDesktop() && (
         <div className="modal-backdrop">
           <div
-            className={`preview-modal ${(project.windows?.length ?? 0) > 0 ? 'preview-workspace-modal' : ''}`}
+            className={`preview-modal ${previewDebug ? 'preview-debug-open' : ''} ${(project.windows?.length ?? 0) > 0 ? 'preview-workspace-modal' : ''}`}
           >
             <header>
               <div>
@@ -1768,17 +1720,38 @@ function ProjectWorkspace({
                 </strong>
                 <span className="live-pill">LIVE</span>
               </div>
-              <button
-                className="icon-button"
-                aria-label={t.close}
-                onClick={() => setPreview(false)}
-              >
-                <X size={18} />
-              </button>
+              <div className="preview-debug-actions">
+                <button
+                  className="button"
+                  aria-label={zh ? '预览调试' : 'Preview debug'}
+                  aria-expanded={previewDebug}
+                  onClick={() => setPreviewDebug(!previewDebug)}
+                >
+                  <Terminal size={14} />
+                  {zh ? '调试' : 'Debug'}
+                </button>
+                <button
+                  className="icon-button"
+                  aria-label={t.close}
+                  onClick={() => {
+                    setPreview(false);
+                    setPreviewDebug(false);
+                  }}
+                >
+                  <X size={18} />
+                </button>
+              </div>
             </header>
             <div className="preview-scroll">
               <RuntimeWindows project={project} engine={engine} />
             </div>
+            {previewDebug && (
+              <PreviewDebugger
+                project={project}
+                engine={engine}
+                onClose={() => setPreviewDebug(false)}
+              />
+            )}
             <footer>
               <span>
                 {zh
@@ -1794,8 +1767,29 @@ function ProjectWorkspace({
           </div>
         </div>
       )}
-      {buildProgress !== null && (
-        <div className={`build-progress${workspaceConsoleVisible ? ' console-open' : ''}`}>
+      {buildConsoleOpen && (
+        <div className="build-output-drawer">
+          <DebugConsole
+            logs={buildLogs}
+            title={zh ? '构建输出' : 'Build output'}
+            locale={project.locale}
+            onClear={() => setBuildLogs([])}
+            onClose={() => setBuildConsoleOpen(false)}
+          >
+            {buildProgress !== null && (
+              <div className="build-progress build-progress-inline">
+                <Activity size={16} />
+                <span>{buildProgress.slice(-300)}</span>
+                <button className="button" onClick={() => void native.cancelBuild()}>
+                  {zh ? '取消构建' : 'Cancel build'}
+                </button>
+              </div>
+            )}
+          </DebugConsole>
+        </div>
+      )}
+      {buildProgress !== null && !buildConsoleOpen && (
+        <div className={`build-progress${buildConsoleOpen ? ' console-open' : ''}`}>
           <Activity size={16} />
           <span>{buildProgress.slice(-300)}</span>
           <button className="button" onClick={() => void native.cancelBuild()}>

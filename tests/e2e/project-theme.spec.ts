@@ -1,3 +1,4 @@
+import { expectProjectName } from './workspace';
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { strFromU8, unzipSync } from 'fflate';
@@ -89,7 +90,7 @@ test('applies an undoable project theme to canvas, preview and export independen
     },
   });
   expect(project.window.background).toBe('#17191f');
-  await expect(page.locator('.save-indicator')).toContainText('已自动保存');
+  await expect(page.locator('.statusbar .save-indicator')).toContainText('已自动保存');
   await page.reload();
   await expect(page.getByTestId('design-canvas')).toHaveCSS('background-color', 'rgb(23, 25, 31)');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
@@ -136,7 +137,7 @@ test('updates matching child window backgrounds while preserving custom colors a
     .getByRole('dialog', { name: '关闭当前工程', exact: true })
     .getByRole('button', { name: '保留恢复副本并关闭', exact: true })
     .click();
-  await expect(page.locator('.project-switch')).toHaveText('多窗口主题');
+  await expectProjectName(page, '多窗口主题');
   await applyTheme(page, 'light');
   await expect(page.getByTestId('design-canvas')).toHaveCSS(
     'background-color',
@@ -173,9 +174,9 @@ test('updates matching child window backgrounds while preserving custom colors a
     '#f4f5f8',
     '#345678',
   ]);
-  await expect(page.locator('.save-indicator')).toContainText('已自动保存');
+  await expect(page.locator('.statusbar .save-indicator')).toContainText('已自动保存');
   await page.reload();
-  await expect(page.locator('.project-switch')).toHaveText('多窗口主题');
+  await expectProjectName(page, '多窗口主题');
   await page.getByRole('combobox', { name: '选择窗口', exact: true }).selectOption('main');
   await expect(page.getByTestId('design-canvas')).toHaveCSS(
     'background-color',

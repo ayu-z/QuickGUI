@@ -1,3 +1,4 @@
+import { openPreviewDebug } from './workspace';
 import { test, expect, type Page } from '@playwright/test';
 
 test.beforeEach(async ({ page }) => {
@@ -156,6 +157,7 @@ test('preview uses event bindings and live runtime values', async ({ page }) => 
   await expect(preview.locator('[data-widget="cycles"]')).toContainText('2');
   await preview.locator('[data-widget="power"] input').check();
   await expect(preview.locator('[data-widget="power"] input')).toBeChecked();
+  await openPreviewDebug(page);
   await expect(page.locator('.console-content')).toContainText('Cycle completed');
   await page.screenshot({ path: 'artifacts/preview-runtime.png', fullPage: true });
 });

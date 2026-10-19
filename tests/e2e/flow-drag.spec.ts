@@ -1,3 +1,4 @@
+import { openPreviewDebug, closePreview } from './workspace';
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import type { FlowNode, Project } from '../../src/core/types';
@@ -219,15 +220,18 @@ test('background runtime highlights keep changing during drag without rendering 
   await expect
     .poll(async () => (await activityStates()).some((state) => state.includes('background-delay')))
     .toBe(true);
+  await openPreviewDebug(page);
+  const completed = page
+    .locator('.preview-modal .console-content .log-row')
+    .filter({ hasText: 'Completed: Background activity' });
+  const completedBefore = await completed.count();
+  await closePreview(page);
   const target = targetNode(page);
   await target.locator('.qg-flow-card-header').click();
   await expect(page.getByLabel('节点名称', { exact: true })).toHaveValue('add');
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
   const initialRevision = await revision(page);
   const initialPosition = project.flows[0].nodes.find((node) => node.id === 'add')!.position;
-  const completed = page.locator('.console-content .log-row').filter({
-    hasText: 'Completed: Background activity',
-  });
   const header = (await target.locator('.qg-flow-card-header').boundingBox())!;
   const start = { x: header.x + header.width / 2, y: header.y + header.height / 2 };
   const before = (await target.boundingBox())!;
@@ -235,9 +239,8 @@ test('background runtime highlights keep changing during drag without rendering 
   await page.mouse.down();
   const beforeRenders = await renderCounts(page);
   const initialStates = (await activityStates()).length;
-  const completedBefore = await completed.count();
   await page.mouse.move(start.x + 96, start.y + 48, { steps: 60 });
-  await expect.poll(() => completed.count()).toBeGreaterThan(completedBefore);
+  await expect.poll(async () => (await activityStates()).length).toBeGreaterThan(initialStates);
   const duringRenders = await renderCounts(page);
   const duringStates = (await activityStates())
     .slice(initialStates)
@@ -268,6 +271,9 @@ test('background runtime highlights keep changing during drag without rendering 
   await expect.poll(() => revision(page)).toBe(initialRevision + 1);
   await expect.poll(() => position(page)).not.toEqual(initialPosition);
   await expect(page.getByLabel('节点名称', { exact: true })).toHaveValue('add');
+  await openPreviewDebug(page);
+  await expect.poll(() => completed.count()).toBeGreaterThan(completedBefore);
+  await closePreview(page);
 });
 
 test('property and named-port edits remain live while connected edges follow repeated drags', async ({

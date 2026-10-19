@@ -137,7 +137,7 @@ test('project settings keep publish metadata global while window properties stay
   await expect(configuration(page).getByLabel('应用名称', { exact: true })).toHaveValue(
     'Plant Control',
   );
-  await expect(page.locator('.save-indicator')).toContainText('已自动保存');
+  await expect(page.locator('.statusbar .save-indicator')).toContainText('已自动保存');
   await page.reload();
   await settings(page);
   await expect(configuration(page).getByLabel('应用标识', { exact: true })).toHaveValue(
@@ -211,7 +211,7 @@ test('window, application and desktop shortcut icons use independent assets and 
   });
   await expect(app.getByRole('alert')).toBeVisible();
   await expect(app.getByRole('img', { name: 'application-icon.png', exact: true })).toBeVisible();
-  await expect(page.locator('.save-indicator')).toContainText('已自动保存');
+  await expect(page.locator('.statusbar .save-indicator')).toContainText('已自动保存');
   await page.reload();
   await settings(page);
   await expect(app.getByRole('img', { name: 'application-icon.png', exact: true })).toBeVisible();
@@ -291,9 +291,12 @@ test('the merged top bar keeps every section and key action usable across langua
         expect(geometry.overlaps).toEqual([]);
         expect(geometry.outside).toEqual([]);
         expect(geometry.pageWidth).toBe(width);
-        await topbar.locator('.project-switch').click();
-        await expect(page.locator('.project-dropdown')).toBeVisible();
-        await page.keyboard.press('Escape');
+        await expect(topbar.locator('.project-menu-wrap')).toHaveCount(0);
+        await expect(topbar.locator('.save-indicator')).toHaveCount(0);
+        await expect(page.locator('.statusbar .save-indicator')).toBeVisible();
+        await expect(topbar.locator('.brand img')).toBeVisible();
+        await expect(topbar.locator('.brand strong')).toHaveText('QuickGUI');
+        await expect(topbar.locator('.brand').getByText('Studio', { exact: true })).toBeVisible();
         await topbar.locator('.export-menu-wrap > button').click();
         await expect(page.locator('.export-dropdown')).toBeVisible();
         await page.keyboard.press('Escape');
@@ -439,4 +442,64 @@ test('finishing a delayed icon read after switching windows or pages does not mu
     ),
   ).toBe(2);
   await expect(undo(page)).toBeDisabled();
+});
+
+test('project management shows stable identity and opens, renames and saves projects from the configuration page', async ({
+  page,
+}, info) => {
+  const original = await open(page);
+  await settings(page);
+  const management = configuration(page).getByRole('region', { name: '工程管理', exact: true });
+  await expect(management.getByTestId('project-name')).toHaveText(original.name);
+  await expect(management.getByTestId('project-id')).toHaveText(original.id);
+  await expect(management.getByRole('button')).toHaveText([
+    '新建工程',
+    '打开工程',
+    '重命名工程',
+    '保存工程',
+    '关闭工程',
+  ]);
+  await expect(page.locator('.topbar .project-menu-wrap')).toHaveCount(0);
+  await management.getByRole('button', { name: '重命名工程', exact: true }).click();
+  const rename = page.getByRole('dialog', { name: '重命名工程', exact: true });
+  await rename.getByLabel('工程名称', { exact: true }).fill('Managed plant project');
+  await rename.getByRole('button', { name: '保存名称', exact: true }).click();
+  await expect(management.getByTestId('project-name')).toHaveText('Managed plant project');
+  await expect(management.getByTestId('project-id')).toHaveText(original.id);
+  const pendingDownload = page.waitForEvent('download');
+  await management.getByRole('button', { name: '保存工程', exact: true }).click();
+  const download = await pendingDownload;
+  expect(download.suggestedFilename()).toBe('Managed plant project.qgui');
+  const savedPath = info.outputPath('management-save.qgui');
+  await download.saveAs(savedPath);
+  const saved = JSON.parse(
+    strFromU8(unzipSync(new Uint8Array(await readFile(savedPath)))['quickgui.json']),
+  ) as Project;
+  expect(saved.id).toBe(original.id);
+  expect(saved.name).toBe('Managed plant project');
+  expect(saved.publish).toEqual(original.publish);
+  await expect(page.locator('.statusbar .save-indicator')).toContainText('已自动保存');
+  const incoming = createEmptyProject('Opened via project management');
+  const chooser = page.waitForEvent('filechooser');
+  await management.getByRole('button', { name: '打开工程', exact: true }).click();
+  await (
+    await chooser
+  ).setFiles({
+    name: 'incoming.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(incoming)),
+  });
+  await page
+    .getByRole('dialog', { name: '关闭当前工程', exact: true })
+    .getByRole('button', { name: '保留恢复副本并关闭', exact: true })
+    .click();
+  await settings(page);
+  await expect(management.getByTestId('project-name')).toHaveText(incoming.name);
+  await expect(management.getByTestId('project-id')).toHaveText(incoming.id);
+  await management.getByRole('button', { name: '关闭工程', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: '关闭当前工程', exact: true })
+    .getByRole('button', { name: '取消', exact: true })
+    .click();
+  await expect(management.getByTestId('project-name')).toHaveText(incoming.name);
 });

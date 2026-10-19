@@ -1,3 +1,5 @@
+import { openPreviewDebug, closePreview } from './workspace';
+import { expectProjectName } from './workspace';
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { strFromU8, unzipSync } from 'fflate';
@@ -22,7 +24,7 @@ async function open(page: Page, project: Project) {
     { key: storageKey, saved: JSON.stringify({ project, drafts: {} }) },
   );
   await page.goto('/');
-  await expect(page.locator('.project-switch')).toHaveText(project.name);
+  await expectProjectName(page, project.name);
   await page
     .locator('.workspace-tabs nav')
     .getByRole('button', { name: '流程', exact: true })
@@ -282,11 +284,15 @@ test('existing definitions create references with typed outputs and data wiring 
   await edit(page, 'Result');
   // Live graph application is debounced; run only after this revision is accepted.
   await expect(inspector(page).getByLabel('runtime Result', { exact: true })).toBeEnabled();
-  await page.locator('.console-panel').getByRole('button', { name: '运行', exact: true }).click();
+  const debug = await openPreviewDebug(page);
+  await debug.getByRole('button', { name: '运行', exact: true }).click();
+  await closePreview(page);
   await expect(inspector(page).getByLabel('runtime Result', { exact: true })).toHaveValue('45');
   await edit(page, 'Input');
   await commitText(page, 'runtime Input', '81');
+  await openPreviewDebug(page);
   await page.locator('.console-panel').getByRole('button', { name: '运行', exact: true }).click();
+  await closePreview(page);
   await edit(page, 'Result');
   await expect(inspector(page).getByLabel('runtime Result', { exact: true })).toHaveValue('81');
   await expect(inspector(page).getByLabel('initial Result', { exact: true })).toHaveValue('0');
@@ -326,7 +332,10 @@ test('runtime editing waits for an accepted native revision and honors read-only
         body: `
       export * from '/src/native/bridge.ts?parameter-test-actual';
       const harness = window.parameterNative = { hold: false, starts: 0, writes: [] };
-      let runtime, listener;
+      let runtime, listener, projectListener;
+      export const getPreviewProject = async () => JSON.parse(localStorage.getItem('quickgui.project.v1')).project;
+      export const onProjectUpdated = async (callback) => { projectListener = callback; return () => {}; };
+      harness.updateProject = (project) => projectListener(project);
       export const isDesktop = () => true;
       export const setDesignerTheme = async () => {};
       export const onPreviewClosed = async () => () => {};
@@ -354,16 +363,12 @@ test('runtime editing waits for an accepted native revision and honors read-only
   await open(page, project);
   await edit(page, 'Sample');
   const runtime = inspector(page).getByLabel('runtime Sample', { exact: true });
-  const run = page.locator('.console-panel').getByRole('button', { name: '运行', exact: true });
   await expect(runtime).toBeEnabled();
-  await expect(run).toBeEnabled();
   await page.evaluate(() => {
     (window as unknown as { parameterNative: { hold: boolean } }).parameterNative.hold = true;
   });
   await commitText(page, '参数单位', 'ms');
   await expect(runtime).toBeDisabled();
-  await expect(run).toBeDisabled();
-  await expect(run).toHaveAttribute('aria-busy', 'true');
   expect(
     await page.evaluate(
       () =>
@@ -387,8 +392,6 @@ test('runtime editing waits for an accepted native revision and honors read-only
     harness.release();
   });
   await expect(runtime).toBeEnabled();
-  await expect(run).toBeEnabled();
-  await expect(run).not.toHaveAttribute('aria-busy', 'true');
   await commitText(page, 'runtime Sample', '9');
   await expect(runtime).toHaveValue('9');
   expect(
@@ -400,4 +403,41 @@ test('runtime editing waits for an accepted native revision and honors read-only
   await inspector(page).getByLabel('只读', { exact: true }).check();
   await expect(runtime).toBeDisabled();
   expect((await recovered(page)).variables[0].initial).toBe(7);
+  await page.goto('/?preview=1');
+  await page.getByRole('button', { name: '预览调试', exact: true }).click();
+  const nativeDebug = page.locator('.native-preview-debug .console-panel');
+  const run = nativeDebug.getByRole('button', { name: '运行', exact: true });
+  await expect(run).toBeEnabled();
+  await page.evaluate(() => {
+    const harness = (
+      window as unknown as {
+        parameterNative: { hold: boolean; updateProject: (project: Project) => void };
+      }
+    ).parameterNative;
+    const next = JSON.parse(localStorage.getItem('quickgui.project.v1')!).project as Project;
+    next.revision++;
+    next.variables[0].unit = 's';
+    harness.hold = true;
+    harness.updateProject(next);
+  });
+  await expect(run).toBeDisabled();
+  await expect(run).toHaveAttribute('aria-busy', 'true');
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          typeof (window as unknown as { parameterNative: { release?: () => void } })
+            .parameterNative.release,
+      ),
+    )
+    .toBe('function');
+  await page.evaluate(() => {
+    const harness = (
+      window as unknown as { parameterNative: { hold: boolean; release: () => void } }
+    ).parameterNative;
+    harness.hold = false;
+    harness.release();
+  });
+  await expect(run).toBeEnabled();
+  await expect(run).not.toHaveAttribute('aria-busy', 'true');
 });

@@ -41,6 +41,7 @@ export interface InspectorProps {
   onDraft: (text: string | undefined) => void;
   onDelete: () => void;
   onDuplicate: () => void;
+  onEditModule?: () => void;
   locale: Locale;
   onBeginTransaction?: (label?: string) => void;
   onCommitTransaction?: () => void;
@@ -547,6 +548,7 @@ function PropertyInspector({
   onDraft,
   onDelete,
   onDuplicate,
+  onEditModule,
   locale,
   onBeginTransaction,
   onCommitTransaction,
@@ -982,19 +984,34 @@ function PropertyInspector({
                   </>
                 )}
                 {widget.type === 'module' && !multiple && (
-                  <Field label={zh ? '组件模块' : 'Component module'}>
-                    <select
-                      value={widget.moduleId ?? ''}
-                      onChange={(event) => onUpdate({ moduleId: event.target.value || undefined })}
-                    >
-                      <option value="">—</option>
-                      {project.modules.map((module) => (
-                        <option key={module.id} value={module.id}>
-                          {module.name} · {module.version}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
+                  <>
+                    <Field label={zh ? '组件模块' : 'Component module'}>
+                      <select
+                        value={widget.moduleId ?? ''}
+                        onChange={(event) =>
+                          onUpdate({ moduleId: event.target.value || undefined })
+                        }
+                      >
+                        <option value="">—</option>
+                        {project.modules.map((module) => (
+                          <option key={module.id} value={module.id}>
+                            {module.name} · {module.version}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    {onEditModule && (
+                      <button className="qg-secondary-button" onClick={onEditModule}>
+                        {module?.implementation
+                          ? zh
+                            ? '查看模块源码'
+                            : 'View module source'
+                          : zh
+                            ? '编辑模块定义'
+                            : 'Edit module definition'}
+                      </button>
+                    )}
+                  </>
                 )}
               </Section>
             )}

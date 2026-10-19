@@ -401,7 +401,7 @@ test('multi-selection, alignment, eight resize grips and persistent editor visib
   await expect(widget(page, 'alpha')).toHaveAttribute('aria-disabled', 'false');
   await page.getByRole('button', { name: '隐藏 Alpha', exact: true }).click();
   await expect(widget(page, 'alpha')).toHaveCount(0);
-  await expect(page.locator('.save-indicator')).toContainText('已自动保存');
+  await expect(page.locator('.statusbar .save-indicator')).toContainText('已自动保存');
   await page.reload();
   await expect(widget(page, 'alpha')).toHaveCount(0);
   await page.getByRole('button', { name: '预览', exact: true }).click();

@@ -1,5 +1,16 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { Box, FileBadge, Image, Monitor, Settings2 } from 'lucide-react';
+import {
+  Box,
+  FileBadge,
+  FilePenLine,
+  FilePlus2,
+  FolderOpen,
+  Image,
+  Monitor,
+  Save,
+  Settings2,
+  X,
+} from 'lucide-react';
 import type { Project, PublishConfig } from '../core/types';
 import { IconAssetField } from '../designer/IconAssetField';
 import { Toggle } from '../designer/Fields';
@@ -100,12 +111,22 @@ function PublishTextField({
   );
 }
 
+export interface ProjectManagement {
+  onCreate: () => void;
+  onOpen: () => void | Promise<void>;
+  onRename: () => void;
+  onSave: () => void | Promise<void>;
+  onClose: () => void;
+}
+
 export function ProjectConfigPanel({
   project,
   onChange,
+  management,
 }: {
   project: Project;
   onChange: (mutate: (project: Project) => void) => void;
+  management: ProjectManagement;
 }) {
   const zh = project.locale === 'zh-CN';
   const publish = project.publish;
@@ -143,6 +164,75 @@ export function ProjectConfigPanel({
         aria-label={zh ? '项目配置滚动区域' : 'Project settings scroll area'}
       >
         <div className="project-config-grid">
+          <section
+            className="project-config-card project-config-project"
+            aria-label={zh ? '工程管理' : 'Project management'}
+          >
+            <h3>
+              <FolderOpen size={16} aria-hidden="true" />
+              {zh ? '工程信息' : 'Project'}
+            </h3>
+            <dl className="project-config-identity">
+              <div>
+                <dt>{zh ? '工程名称' : 'Project name'}</dt>
+                <dd>
+                  <strong data-testid="project-name" title={project.name}>
+                    {project.name}
+                  </strong>
+                </dd>
+              </div>
+              <div>
+                <dt>{zh ? '工程 ID' : 'Project ID'}</dt>
+                <dd>
+                  <code data-testid="project-id" title={project.id}>
+                    {project.id}
+                  </code>
+                </dd>
+              </div>
+            </dl>
+            <div className="project-config-management-actions">
+              <button
+                className="button"
+                aria-label={zh ? '新建工程' : 'New project'}
+                onClick={management.onCreate}
+              >
+                <FilePlus2 size={14} aria-hidden="true" />
+                {zh ? '新建工程' : 'New project'}
+              </button>
+              <button
+                className="button"
+                aria-label={zh ? '打开工程' : 'Open project'}
+                onClick={() => void management.onOpen()}
+              >
+                <FolderOpen size={14} aria-hidden="true" />
+                {zh ? '打开工程' : 'Open project'}
+              </button>
+              <button
+                className="button"
+                aria-label={zh ? '重命名工程' : 'Rename project'}
+                onClick={management.onRename}
+              >
+                <FilePenLine size={14} aria-hidden="true" />
+                {zh ? '重命名工程' : 'Rename project'}
+              </button>
+              <button
+                className="button primary"
+                aria-label={zh ? '保存工程' : 'Save project'}
+                onClick={() => void management.onSave()}
+              >
+                <Save size={14} aria-hidden="true" />
+                {zh ? '保存工程' : 'Save project'}
+              </button>
+              <button
+                className="button project-config-close"
+                aria-label={zh ? '关闭工程' : 'Close project'}
+                onClick={management.onClose}
+              >
+                <X size={14} aria-hidden="true" />
+                {zh ? '关闭工程' : 'Close project'}
+              </button>
+            </div>
+          </section>
           <section
             className="project-config-card project-config-application"
             aria-label={zh ? '应用信息' : 'Application information'}

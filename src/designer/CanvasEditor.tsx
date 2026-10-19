@@ -42,6 +42,7 @@ export interface CanvasEditorProps {
   canUndo?: boolean;
   canRedo?: boolean;
   onAdd: (type: WidgetType, x?: number, y?: number) => void;
+  onEditModule?: (id: string) => void;
   renderWidget?: (widget: Widget) => ReactNode;
   heading?: ReactNode;
 }
@@ -144,6 +145,7 @@ export function CanvasEditor({
   canUndo,
   canRedo,
   onAdd,
+  onEditModule,
   renderWidget,
   heading,
 }: CanvasEditorProps) {
@@ -666,6 +668,11 @@ export function CanvasEditor({
               outlineWidth: 1.5 / view.zoom,
             }}
             onPointerDown={(event) => startWidget(event, widget)}
+            onDoubleClick={(event) => {
+              if (widget.type !== 'module' || !onEditModule) return;
+              event.stopPropagation();
+              onEditModule(widget.id);
+            }}
             onPointerMove={move}
             onPointerUp={end}
             onPointerCancel={cancelPointer}

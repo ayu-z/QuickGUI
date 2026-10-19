@@ -1,3 +1,4 @@
+import { openPreviewDebug, closePreview } from './workspace';
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { strFromU8, unzipSync } from 'fflate';
@@ -164,7 +165,7 @@ test('keeps inactive palette edits independent and applies saved colors to canva
   expect(exported.theme.palettes?.light['color.brand']).toBe('#11aa77');
   expect(exported.theme.palettes?.dark['color.brand']).toBe('#442266');
   expect(exported.window.background).toBe('#17191f');
-  await expect(page.locator('.save-indicator')).toContainText('已自动保存');
+  await expect(page.locator('.statusbar .save-indicator')).toContainText('已自动保存');
   await page.reload();
   await tab(page, '应用外观').click();
   await expect(value(page, 'light', 'color.brand')).toHaveValue('#11aa77');
@@ -245,31 +246,20 @@ for (const viewport of [
   });
 }
 
-test('hides the runtime console in resource pages while retaining its preference in design and flow pages', async ({
+test('editing pages use the whole workspace and runtime logs are only displayed by preview debugging', async ({
   page,
 }) => {
   await open(page);
+  for (const name of ['多语言', '项目配置', '界面', '应用外观', '流程']) {
+    await tab(page, name).click();
+    await expect(page.locator('.workspace-body .console-panel')).toHaveCount(0);
+    await expect(
+      page.locator('.statusbar').getByRole('button', { name: '运行日志', exact: true }),
+    ).toHaveCount(0);
+  }
+  const debug = await openPreviewDebug(page);
+  await expect(debug).toBeVisible();
+  await expect(page.locator('.workspace-body .console-panel')).toHaveCount(0);
+  await closePreview(page);
   await expect(page.locator('.console-panel')).toHaveCount(0);
-  await tab(page, '多语言').click();
-  await expect(page.locator('.console-panel')).toHaveCount(0);
-  await tab(page, '项目配置').click();
-  await expect(page.locator('.console-panel')).toHaveCount(0);
-  await tab(page, '界面').click();
-  await expect(page.locator('.console-panel')).toBeVisible();
-  await page.locator('.console-panel > header > button').click();
-  await expect(page.locator('.console-panel')).toHaveCount(0);
-  await tab(page, '应用外观').click();
-  await expect(page.locator('.console-panel')).toHaveCount(0);
-  await tab(page, '流程').click();
-  await expect(page.locator('.console-panel')).toHaveCount(0);
-  await page.locator('.statusbar').getByRole('button', { name: '运行日志', exact: true }).click();
-  await expect(page.locator('.console-panel')).toBeVisible();
-  await tab(page, '应用外观').click();
-  await expect(page.locator('.console-panel')).toHaveCount(0);
-  await tab(page, '多语言').click();
-  await expect(page.locator('.console-panel')).toHaveCount(0);
-  await tab(page, '项目配置').click();
-  await expect(page.locator('.console-panel')).toHaveCount(0);
-  await tab(page, '流程').click();
-  await expect(page.locator('.console-panel')).toBeVisible();
 });

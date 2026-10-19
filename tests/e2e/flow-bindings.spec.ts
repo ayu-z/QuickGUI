@@ -1,3 +1,5 @@
+import { openPreviewDebug } from './workspace';
+import { expectProjectName } from './workspace';
 import { expect, test } from '@playwright/test';
 import { createEmptyProject, createWidget } from '../../src/core/project';
 import { createBlockInterface } from '../../src/core/functionBlocks';
@@ -47,19 +49,19 @@ test('widgets choose independent entries in one flow and the entry binding can b
     .getByRole('dialog', { name: '关闭当前工程', exact: true })
     .getByRole('button', { name: '保留恢复副本并关闭', exact: true })
     .click();
-  await expect(page.locator('.project-switch')).toHaveText(project.name);
+  await expectProjectName(page, project.name);
   await page.getByRole('button', { name: '预览', exact: true }).click();
   const preview = page.locator('.preview-modal');
   await preview.locator('[data-widget="button-a"] button').click();
   await expect(preview.locator('[data-widget="value-a"] input')).toHaveValue('1.00');
   await expect(preview.locator('[data-widget="value-b"] input')).toHaveValue('0.00');
   await preview.getByRole('button', { name: '关闭', exact: true }).click();
-  const runEntry = page.getByLabel('运行入口', { exact: true });
+  const debug = await openPreviewDebug(page);
+  const runEntry = debug.getByLabel('运行入口', { exact: true });
   await expect(runEntry.locator('option')).toHaveCount(2);
   await runEntry.selectOption(JSON.stringify(['main', 'b-event']));
-  await page.locator('.console-panel').getByRole('button', { name: '运行', exact: true }).click();
+  await debug.getByRole('button', { name: '运行', exact: true }).click();
   await expect(page.locator('.console-content')).toContainText('Completed: Main');
-  await page.getByRole('button', { name: '预览', exact: true }).click();
   await expect(preview.locator('[data-widget="value-a"] input')).toHaveValue('1.00');
   await expect(preview.locator('[data-widget="value-b"] input')).toHaveValue('2.00');
   await preview.locator('[data-widget="button-b"] button').click();

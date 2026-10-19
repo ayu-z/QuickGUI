@@ -13,6 +13,10 @@ export class NativeRuntimeController extends RuntimeController {
   private storageUnlisten?: () => void;
   private accepted = { projectId: '', revision: -1, sequence: -1 };
   private updateError?: RuntimeLog;
+  private clearedProjectId = '';
+  private clearedLogTokens = new Set<string>();
+  private nativeLogTokens = new Set<string>();
+  private logToken = (log: RuntimeLog) => JSON.stringify([log.id, log.time]);
   private accept = (snapshot: RuntimeSnapshot) => {
     if (this.disposed || snapshot.revision !== this.project.revision) return;
     if (snapshot.projectId && snapshot.projectId !== this.project.id) return;
@@ -24,10 +28,38 @@ export class NativeRuntimeController extends RuntimeController {
     )
       return;
     this.accepted = { projectId: this.project.id, revision: snapshot.revision, sequence };
+    if (this.clearedProjectId !== this.project.id) {
+      this.clearedLogTokens.clear();
+      this.clearedProjectId = this.project.id;
+    }
+    const logs = this.updateError ? [...snapshot.logs, this.updateError] : snapshot.logs;
+    this.nativeLogTokens = new Set(logs.map(this.logToken));
+    for (const token of this.clearedLogTokens)
+      if (!this.nativeLogTokens.has(token)) this.clearedLogTokens.delete(token);
     this.publish({
       ...snapshot,
-      logs: this.updateError ? [...snapshot.logs, this.updateError] : snapshot.logs,
+      logs: logs.filter((log) => !this.clearedLogTokens.has(this.logToken(log))),
     });
+  };
+  override clearLogs = () => {
+    if (this.disposed) return;
+    const projectId = this.snapshot.projectId ?? this.project.id;
+    if (this.clearedProjectId !== projectId) {
+      this.clearedLogTokens.clear();
+      this.nativeLogTokens.clear();
+      this.clearedProjectId = projectId;
+    }
+    // Native buffers are shared with the running session. Clear this view while
+    // retaining only markers that can still return in the current native buffer.
+    const current = new Set([
+      ...this.nativeLogTokens,
+      ...this.snapshot.logs.map(this.logToken),
+      ...(this.updateError ? [this.logToken(this.updateError)] : []),
+    ]);
+    for (const token of this.clearedLogTokens)
+      if (!current.has(token)) this.clearedLogTokens.delete(token);
+    for (const log of this.snapshot.logs) this.clearedLogTokens.add(this.logToken(log));
+    this.publish({ logs: [] });
   };
   constructor(
     project: Project,
@@ -35,6 +67,7 @@ export class NativeRuntimeController extends RuntimeController {
   ) {
     super(project, native.executeC);
     project = this.project;
+    this.publish({ revision: -1, running: false });
     this.revision = project.revision;
     this.requestedProjectId = project.id;
     this.ready = Promise.all([

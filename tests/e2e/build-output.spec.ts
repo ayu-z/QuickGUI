@@ -68,10 +68,9 @@ async function startBuild(page: Page) {
 test('live build output opens the console and survives native snapshots and completion', async ({
   page,
 }) => {
-  await page.locator('.console-panel > header > button').click();
   await expect(page.locator('.console-panel')).toHaveCount(0);
   await startBuild(page);
-  const output = page.locator('.console-content');
+  const output = page.locator('.build-output-drawer .console-content');
   await expect(output).toContainText('准备构建');
   await page.evaluate(() =>
     window.buildHarness.emit('dependencies', 'npm ci: installing dependencies'),
@@ -82,7 +81,7 @@ test('live build output opens the console and survives native snapshots and comp
   );
   await expect(output).toContainText('compiler stderr diagnostic');
   await page.evaluate(() => window.buildHarness.refreshRuntime());
-  await expect(output).toContainText('native runtime refreshed');
+  await expect(output).not.toContainText('native runtime refreshed');
   await expect(output).toContainText('npm ci: installing dependencies');
   await page.evaluate(() =>
     window.buildHarness.finish({
@@ -95,6 +94,14 @@ test('live build output opens the console and survives native snapshots and comp
   await expect(page.locator('.build-progress')).toHaveCount(0);
   await expect(output).toContainText('compiler stderr diagnostic');
   await expect.poll(() => page.evaluate(() => window.buildHarness.listeners)).toBe(0);
+  await page
+    .locator('.build-output-drawer')
+    .getByRole('button', { name: '关闭日志', exact: true })
+    .click();
+  await expect(page.locator('.build-output-drawer')).toHaveCount(0);
+  await page.locator('.statusbar').getByRole('button', { name: '构建输出', exact: true }).click();
+  await expect(output).toContainText('compiler stderr diagnostic');
+  await expect(output).not.toContainText('native runtime refreshed');
 });
 
 test('failed and cancelled builds keep diagnostics and release the listener', async ({ page }) => {
@@ -104,7 +111,7 @@ test('failed and cancelled builds keep diagnostics and release the listener', as
     window.buildHarness.emit('error', 'package failed (exit code: 7)');
     window.buildHarness.fail('package failed (exit code: 7)');
   });
-  const output = page.locator('.console-content');
+  const output = page.locator('.build-output-drawer .console-content');
   await expect(page.locator('.build-progress')).toHaveCount(0);
   await expect(output).toContainText('final compiler diagnostic');
   await expect(output.locator('.log-row.error')).toHaveCount(1);

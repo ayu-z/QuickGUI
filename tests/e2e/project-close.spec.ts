@@ -1,12 +1,10 @@
+import { projectManagement, expectProjectName } from './workspace';
 import { expect, test, type Page } from '@playwright/test';
 import { createProject } from '../../src/core/project';
 
 async function askToClose(page: Page) {
-  await page.locator('.project-switch').click();
-  await page
-    .locator('.project-dropdown')
-    .getByRole('button', { name: '关闭工程', exact: true })
-    .click();
+  const management = await projectManagement(page);
+  await management.getByRole('button', { name: '关闭工程', exact: true }).click();
   return page.getByRole('dialog', { name: '关闭当前工程', exact: true });
 }
 test.beforeEach(async ({ page }) => {
@@ -23,6 +21,10 @@ test('cancel leaves the project open and close enters a durable empty workspace'
     .fill('Unsaved latest value');
   let dialog = await askToClose(page);
   await dialog.getByRole('button', { name: '取消', exact: true }).click();
+  await page
+    .locator('.workspace-tabs nav')
+    .getByRole('button', { name: '界面', exact: true })
+    .click();
   await expect(page.getByTestId('design-canvas')).toBeVisible();
   await expect(page.locator('[data-widget="start_button"] button')).toHaveText(
     'Unsaved latest value',
@@ -100,7 +102,7 @@ test('save and close downloads a project and does not silently create another pr
     .click();
   await expect(page.getByTestId('design-canvas')).toBeVisible();
   await expect(page.locator('.qg-design-widget')).toHaveCount(0);
-  await expect(page.locator('.project-switch')).toContainText('未命名工程');
+  await expectProjectName(page, '未命名工程');
 });
 
 test('a future or unknown-field project is rejected without leaving the closed screen', async ({

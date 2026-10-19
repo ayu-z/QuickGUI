@@ -77,6 +77,8 @@ export function ContextMenu({
           <button
             role="menuitem"
             disabled={item.disabled}
+            title={item.disabled ? item.reason : undefined}
+            aria-description={item.disabled ? item.reason : undefined}
             onClick={() => {
               onCommand(item.id);
               onClose();

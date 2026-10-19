@@ -1,3 +1,4 @@
+import { projectManagement } from './workspace';
 import { expect, test, type Page } from '@playwright/test';
 import { createEmptyProject, createWidget } from '../../src/core/project';
 
@@ -121,63 +122,45 @@ for (const theme of ['dark', 'light']) {
   });
 }
 
-test('project and export popups dismiss outside, preserve internal focus and remain mutually exclusive', async ({
+test('export popup dismisses outside and preserves focus while project actions live in settings', async ({
   page,
 }) => {
-  const project = page.locator('.project-switch');
   const exported = page.locator('.export-menu-wrap > button');
-  const projectMenu = page.locator('.project-dropdown');
-  const exportMenu = page.locator('.export-dropdown');
-  await project.click();
-  await expect(project).toHaveAttribute('aria-expanded', 'true');
-  await projectMenu.locator('button').first().focus();
-  await expect(projectMenu).toBeVisible();
+  const menu = page.locator('.export-dropdown');
+  await expect(page.locator('.project-menu-wrap')).toHaveCount(0);
+  await exported.click();
+  await expect(exported).toHaveAttribute('aria-expanded', 'true');
+  await menu.locator('button').first().focus();
+  await expect(menu).toBeVisible();
   await page.getByTitle('Theme', { exact: true }).focus();
-  await expect(projectMenu).toHaveCount(0);
+  await expect(menu).toHaveCount(0);
   await expect(page.getByTitle('Theme', { exact: true })).toBeFocused();
-  await project.click();
   await exported.click();
-  await expect(projectMenu).toHaveCount(0);
-  await expect(exportMenu).toBeVisible();
-  await project.click();
-  await expect(exportMenu).toHaveCount(0);
-  await expect(projectMenu).toBeVisible();
   await page.locator('.brand strong').click();
-  await expect(projectMenu).toHaveCount(0);
+  await expect(menu).toHaveCount(0);
   await exported.click();
-  await exportMenu.locator('button').last().focus();
-  await expect(exportMenu).toBeVisible();
+  await menu.locator('button').last().focus();
   await page.keyboard.press('Tab');
-  await expect(exportMenu).toHaveCount(0);
+  await expect(menu).toHaveCount(0);
   await expect(exported).toHaveAttribute('aria-expanded', 'false');
-});
-
-test('menu Escape returns to its trigger, item actions still work and window blur dismisses', async ({
-  page,
-}) => {
-  const project = page.locator('.project-switch');
-  const exported = page.locator('.export-menu-wrap > button');
-  const selection = page.locator('[data-design-widget="input"]');
-  await project.click();
-  await page.locator('.project-dropdown button').first().focus();
-  await page.keyboard.press('Escape');
-  await expect(page.locator('.project-dropdown')).toHaveCount(0);
-  await expect(project).toBeFocused();
-  await expect(selection).toHaveClass(/is-selected/);
-  await project.click();
-  await page
-    .locator('.project-dropdown')
-    .getByRole('button', { name: '重命名工程', exact: true })
-    .click();
+  const management = await projectManagement(page);
+  await management.getByRole('button', { name: '重命名工程', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '重命名工程', exact: true });
   await expect(dialog).toBeVisible();
-  await expect(page.locator('.project-dropdown')).toHaveCount(0);
   await dialog.getByRole('button', { name: '取消', exact: true }).click();
+});
+
+test('export Escape returns to its trigger, item actions still work and window blur dismisses', async ({
+  page,
+}) => {
+  const exported = page.locator('.export-menu-wrap > button');
+  const selection = page.locator('[data-design-widget="input"]');
   await exported.click();
   await page.locator('.export-dropdown button').first().focus();
   await page.keyboard.press('Escape');
   await expect(page.locator('.export-dropdown')).toHaveCount(0);
   await expect(exported).toBeFocused();
+  await expect(selection).toHaveClass(/is-selected/);
   await exported.click();
   const download = page.waitForEvent('download');
   await page.locator('.export-dropdown button').first().click();

@@ -1,4 +1,5 @@
 import type { Locale, Widget } from '../core/types';
+import { groupIssue, ungroupIssue } from '../core/hierarchy';
 
 export interface Point {
   x: number;
@@ -13,6 +14,8 @@ export type DesignerCommand =
   | 'cut'
   | 'paste'
   | 'duplicate'
+  | 'group'
+  | 'ungroup'
   | 'delete'
   | 'select-all'
   | 'clear-selection'
@@ -40,6 +43,7 @@ export interface CommandItem {
   shortcut?: string;
   disabled?: boolean;
   divider?: boolean;
+  reason?: string;
 }
 
 export function inheritedFlag(
@@ -174,6 +178,8 @@ export function commandItems(
   const locked = roots.some((item) => inheritedFlag(item, widgets, 'locked'));
   const mutable = !empty && !locked,
     sameParent = roots.every((item) => item.parentId === roots[0]?.parentId);
+  const groupingIssue = groupIssue(widgets, ids),
+    ungroupingIssue = ungroupIssue(widgets, ids);
   const item = (
     id: DesignerCommand,
     chinese: string,
@@ -188,6 +194,14 @@ export function commandItems(
     item('paste', '粘贴', 'Paste', !options.paste, '⌘/Ctrl V'),
     item('duplicate', '创建副本', 'Duplicate', !mutable, '⌘/Ctrl D'),
     item('delete', '删除', 'Delete', !mutable, 'Delete'),
+    {
+      ...item('group', '组合所选图层', 'Group selection', !!groupingIssue, '⌘/Ctrl G', true),
+      reason: groupingIssue,
+    },
+    {
+      ...item('ungroup', '取消组合', 'Ungroup', !!ungroupingIssue, '⌘/Ctrl ⇧G'),
+      reason: ungroupingIssue,
+    },
     item('select-all', '全选', 'Select all', !widgets.length, '⌘/Ctrl A', true),
     item('clear-selection', '取消选择', 'Clear selection', empty, 'Esc'),
     item('front', '置于顶层', 'Bring to front', !mutable || !sameParent, undefined, true),
@@ -239,6 +253,7 @@ export function commandForKey(
           x: 'cut',
           v: 'paste',
           d: 'duplicate',
+          g: event.shiftKey ? 'ungroup' : 'group',
           a: 'select-all',
           z: event.shiftKey ? 'redo' : 'undo',
           y: 'redo',

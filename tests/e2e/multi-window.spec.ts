@@ -304,17 +304,27 @@ test('keeps module insertion and editing scoped to the selected window and prote
 }) => {
   const mainWidgetCount = await page.locator('.qg-design-widget').count();
   await page.locator('.left-tabs').getByRole('button', { name: '模块', exact: true }).click();
-  await page.getByRole('button', { name: '从选中控件创建', exact: true }).click();
+  await page
+    .locator('.modules-panel')
+    .getByLabel('模块名称', { exact: true })
+    .fill('Window-scoped control');
+  await page
+    .locator('.modules-panel')
+    .getByRole('button', { name: '创建模块', exact: true })
+    .click();
   await page.locator('.module-card').getByRole('button', { name: '编辑定义', exact: true }).click();
   await expect(page.getByRole('button', { name: '退出模块定义', exact: true })).toBeVisible();
   const id = await addWindow(page, '模块窗口');
   await expect(page.getByRole('button', { name: '退出模块定义', exact: true })).toHaveCount(0);
+  await page.locator('.left-tabs').getByRole('button', { name: '模块', exact: true }).click();
   await page.locator('.module-card').getByRole('button', { name: '添加实例', exact: true }).click();
   await expect(page.locator('.qg-design-widget')).toHaveCount(1);
   await selectWindow(page, 'main');
   await expect(page.locator('.qg-design-widget')).toHaveCount(mainWidgetCount);
   await selectWindow(page, id);
+  await page.locator('.left-tabs').getByRole('button', { name: '模块', exact: true }).click();
   await page.locator('.module-card').getByRole('button', { name: '编辑定义', exact: true }).click();
+  await page.locator('.qg-design-widget').first().click();
   await page.locator('.qg-inspector').getByLabel('字号', { exact: true }).fill('22');
   await page
     .locator('.workspace-tools')
@@ -350,7 +360,9 @@ test('keeps module insertion and editing scoped to the selected window and prote
     .locator('.workspace-tabs nav')
     .getByRole('button', { name: '界面', exact: true })
     .click();
-  await page.locator('.qg-design-widget').first().click();
+  // New modules expose only explicitly declared public properties; use an ordinary
+  // child-window text control to keep this a test of a binding that exists only there.
+  await addText(page);
   const inspector = page.locator('.qg-inspector');
   await inspector.locator('.qg-add-binding select').selectOption('text');
   await inspector

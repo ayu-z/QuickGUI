@@ -1,3 +1,4 @@
+import { projectManagement, expectProjectName } from './workspace';
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { strFromU8, unzipSync } from 'fflate';
@@ -26,7 +27,7 @@ async function importProject(page: Page, project: Project) {
     .getByRole('dialog', { name: '关闭当前工程', exact: true })
     .getByRole('button', { name: '保留恢复副本并关闭', exact: true })
     .click();
-  await expect(page.locator('.project-switch')).toHaveText(project.name);
+  await expectProjectName(page, project.name);
   await expect(page.locator('[data-design-widget]')).toHaveCount(project.widgets.length);
 }
 
@@ -69,11 +70,8 @@ test('creating a project uses v5 and new widgets use definition version 2', asyn
   page,
 }, info) => {
   await page.goto('/');
-  await page.locator('.project-switch').click();
-  await page
-    .locator('.project-dropdown')
-    .getByRole('button', { name: '新建工程', exact: true })
-    .click();
+  const management = await projectManagement(page);
+  await management.getByRole('button', { name: '新建工程', exact: true }).click();
   const naming = page.getByRole('dialog', { name: '新建工程', exact: true });
   await naming.getByLabel('工程名称', { exact: true }).fill('V3 New Project');
   await naming.getByRole('button', { name: '创建工程', exact: true }).click();
