@@ -11,9 +11,11 @@ import {
 import {
   Background,
   BackgroundVariant,
-  Controls,
   MiniMap,
   ReactFlow,
+  ReactFlowProvider,
+  useReactFlow,
+  useViewport,
   type Connection,
   type Edge,
   type EdgeChange,
@@ -22,6 +24,7 @@ import {
   type NodeTypes,
   type ReactFlowInstance,
 } from '@xyflow/react';
+import { ChevronRight, GitBranch, Grid3X3, Magnet, Maximize, Minus, Plus } from 'lucide-react';
 import type { Flow, FlowNode, Locale, ThemeMode } from '../core/types';
 
 export type QuickFlowNode = Node<{ model: FlowNode; active: boolean; locale: Locale }, 'quickgui'>;
@@ -33,6 +36,8 @@ interface FlowCanvasProps {
   edges: Edge[];
   nodeTypes: NodeTypes;
   colorMode: ThemeMode;
+  locale: Locale;
+  selectedLabel?: string;
   onInit: (instance: ReactFlowInstance<QuickFlowNode>) => void;
   onNodesChange: (changes: NodeChange<QuickFlowNode>[]) => void;
   onEdgesChange: (changes: EdgeChange[]) => void;
@@ -56,6 +61,96 @@ const proOptions = { hideAttribution: true };
 const deleteKeys = ['Backspace', 'Delete'];
 const minimapStyle = { width: 135, height: 85 };
 
+const FlowCanvasHeading = memo(function FlowCanvasHeading({
+  flow,
+  locale,
+  grid,
+  snap,
+  onToggleGrid,
+  onToggleSnap,
+}: {
+  flow: Flow;
+  locale: Locale;
+  grid: boolean;
+  snap: boolean;
+  onToggleGrid: () => void;
+  onToggleSnap: () => void;
+}) {
+  const zh = locale === 'zh-CN';
+  const { zoom } = useViewport();
+  const { zoomTo, fitView } = useReactFlow<QuickFlowNode>();
+  return (
+    <div className="canvas-heading qg-flow-heading">
+      <div className="canvas-heading-context">
+        <span>{zh ? '流程' : 'FLOW'}</span>
+        <ChevronRight size={12} />
+        <strong title={flow.name}>{flow.name}</strong>
+      </div>
+      <div
+        className="canvas-heading-tools"
+        role="toolbar"
+        aria-label={zh ? '流程画布工具' : 'Flow canvas tools'}
+      >
+        <span className="dimension-label">
+          <GitBranch size={14} />
+          {flow.nodes.length} {zh ? '节点' : 'nodes'} · {flow.edges.length} {zh ? '连线' : 'edges'}
+        </span>
+        <div className="qg-toolbar-cluster">
+          <button
+            className={`qg-icon-button ${grid ? 'active' : ''}`}
+            onClick={onToggleGrid}
+            aria-label={zh ? '切换网格' : 'Toggle grid'}
+            aria-pressed={grid}
+            title={zh ? '网格' : 'Grid'}
+          >
+            <Grid3X3 size={15} />
+          </button>
+          <button
+            className={`qg-icon-button ${snap ? 'active' : ''}`}
+            onClick={onToggleSnap}
+            aria-label={zh ? '切换吸附' : 'Toggle snap'}
+            aria-pressed={snap}
+            title={zh ? '吸附网格（16px）' : 'Snap to grid (16px)'}
+          >
+            <Magnet size={15} />
+          </button>
+          <span className="qg-toolbar-divider" />
+          <button
+            className="qg-icon-button"
+            aria-label={zh ? '缩小' : 'Zoom out'}
+            onClick={() => void zoomTo(Math.max(0.1, zoom - 0.1))}
+          >
+            <Minus size={14} />
+          </button>
+          <button
+            className="qg-zoom-value"
+            aria-label={zh ? '重置缩放' : 'Reset zoom'}
+            title={zh ? '重置为100%' : 'Reset to 100%'}
+            onClick={() => void zoomTo(1)}
+          >
+            {Math.round(zoom * 100)}%
+          </button>
+          <button
+            className="qg-icon-button"
+            aria-label={zh ? '放大' : 'Zoom in'}
+            onClick={() => void zoomTo(Math.min(1.5, zoom + 0.1))}
+          >
+            <Plus size={14} />
+          </button>
+          <button
+            className="qg-icon-button"
+            aria-label={zh ? '适应画布' : 'Fit canvas'}
+            title={zh ? '适应画布' : 'Fit canvas'}
+            onClick={() => void fitView(fitViewOptions)}
+          >
+            <Maximize size={14} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+});
+
 /** Keep pointer-rate updates inside the graph, away from the project and property forms. */
 export const FlowCanvas = memo(function FlowCanvas({
   flow,
@@ -63,6 +158,8 @@ export const FlowCanvas = memo(function FlowCanvas({
   edges,
   nodeTypes,
   colorMode,
+  locale,
+  selectedLabel,
   onInit,
   onNodesChange,
   onEdgesChange,
@@ -74,6 +171,10 @@ export const FlowCanvas = memo(function FlowCanvas({
   nodeColor,
 }: FlowCanvasProps) {
   const [draft, setDraft] = useState<PositionDraft | null>(null);
+  const [grid, setGrid] = useState(true);
+  const [snap, setSnap] = useState(true);
+  const toggleGrid = useCallback(() => setGrid((value) => !value), []);
+  const toggleSnap = useCallback(() => setSnap((value) => !value), []);
   const pending = useRef<PositionDraft | null>(null);
   const frame = useRef<number | null>(null);
   const activeNodes = useContext(FlowActivityContext);
@@ -192,38 +293,72 @@ export const FlowCanvas = memo(function FlowCanvas({
   );
 
   return (
-    <ReactFlow<QuickFlowNode>
-      key={flow.id}
-      onInit={onInit}
-      nodes={liveNodes}
-      edges={liveEdges}
-      nodeTypes={nodeTypes}
-      onConnect={onConnect}
-      isValidConnection={isValidConnection}
-      onNodesChange={handleNodesChange}
-      onEdgesChange={onEdgesChange}
-      onNodeClick={selectNode}
-      onEdgeClick={selectEdge}
-      onPaneClick={onClearSelection}
+    <ReactFlowProvider
+      initialNodes={nodes}
+      initialEdges={edges}
+      initialMinZoom={0.1}
+      initialMaxZoom={1.5}
       fitView
-      fitViewOptions={fitViewOptions}
-      minZoom={0.1}
-      maxZoom={1.5}
-      connectionRadius={28}
-      snapToGrid
-      snapGrid={snapGrid}
-      colorMode={colorMode}
-      deleteKeyCode={deleteKeys}
-      proOptions={proOptions}
+      initialFitViewOptions={fitViewOptions}
     >
-      <Background
-        variant={BackgroundVariant.Dots}
-        gap={20}
-        size={1}
-        color="var(--border, #30343b)"
-      />
-      <Controls showInteractive={false} />
-      <MiniMap<QuickFlowNode> pannable zoomable nodeColor={nodeColor} style={minimapStyle} />
-    </ReactFlow>
+      <div className="qg-flow-stage">
+        <FlowCanvasHeading
+          flow={flow}
+          locale={locale}
+          grid={grid}
+          snap={snap}
+          onToggleGrid={toggleGrid}
+          onToggleSnap={toggleSnap}
+        />
+        <div className="qg-flow-viewport">
+          <ReactFlow<QuickFlowNode>
+            key={flow.id}
+            onInit={onInit}
+            nodes={liveNodes}
+            edges={liveEdges}
+            nodeTypes={nodeTypes}
+            onConnect={onConnect}
+            isValidConnection={isValidConnection}
+            onNodesChange={handleNodesChange}
+            onEdgesChange={onEdgesChange}
+            onNodeClick={selectNode}
+            onEdgeClick={selectEdge}
+            onPaneClick={onClearSelection}
+            fitView
+            fitViewOptions={fitViewOptions}
+            minZoom={0.1}
+            maxZoom={1.5}
+            connectionRadius={28}
+            snapToGrid={snap}
+            snapGrid={snapGrid}
+            colorMode={colorMode}
+            deleteKeyCode={deleteKeys}
+            proOptions={proOptions}
+          >
+            {grid && (
+              <Background
+                variant={BackgroundVariant.Dots}
+                gap={20}
+                size={1}
+                color="var(--border, #30343b)"
+              />
+            )}
+            <MiniMap<QuickFlowNode> pannable zoomable nodeColor={nodeColor} style={minimapStyle} />
+          </ReactFlow>
+        </div>
+        <div className="qg-canvas-status">
+          <span>
+            <i className="qg-status-dot" />
+            {locale === 'zh-CN' ? '流程画布' : 'Flow canvas'}
+          </span>
+          <span title={selectedLabel ?? flow.name}>{selectedLabel ?? flow.name}</span>
+          <span className="qg-flow-caption">
+            {locale === 'zh-CN'
+              ? '实线执行 · 虚线数据 · 命名端口'
+              : 'Solid execution · Dashed data · Named ports'}
+          </span>
+        </div>
+      </div>
+    </ReactFlowProvider>
   );
 });

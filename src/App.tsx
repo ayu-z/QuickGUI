@@ -1173,7 +1173,7 @@ function ProjectWorkspace({
           </button>
         </div>
       </div>
-      <main className="workspace-body">
+      <main className={`workspace-body ${section === 'flows' ? 'flow-page-layout' : ''}`}>
         {section === 'design' && (
           <aside className="left-panel">
             <WindowManager
@@ -1400,6 +1400,7 @@ function ProjectWorkspace({
               onChange={updateFlows}
               activeNodes={snapshot.activeNodes}
               locale={project.locale}
+              designerTheme={designerTheme}
             />
           )}
           {section === 'scripts' && (

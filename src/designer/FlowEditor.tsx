@@ -22,6 +22,9 @@ import {
   PanelsTopLeft,
   Plus,
   Radio,
+  Search,
+  MousePointer2,
+  X,
   Trash2,
   Zap,
 } from 'lucide-react';
@@ -219,11 +222,18 @@ export interface FlowEditorProps {
   onChange: (flows: Flow[]) => void;
   activeNodes?: string[];
   locale: Locale;
+  designerTheme?: 'light' | 'dark';
 }
 const noActiveNodes: string[] = [];
 const nodeColor = (node: QuickNode) => nodeInfo[node.data.model.kind].color;
 
-function FlowEditor({ project, onChange, locale }: Omit<FlowEditorProps, 'activeNodes'>) {
+function FlowEditor({
+  project,
+  onChange,
+  locale,
+  designerTheme,
+}: Omit<FlowEditorProps, 'activeNodes'>) {
+  const [paletteSearch, setPaletteSearch] = useState('');
   const [selectedFlowId, setSelectedFlowId] = useState(project.flows[0]?.id ?? '');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
@@ -619,89 +629,160 @@ function FlowEditor({ project, onChange, locale }: Omit<FlowEditorProps, 'active
       setSelectedNodeId(null);
     }
   };
+  const paletteItems = [
+    ...(Object.keys(nodeInfo) as NodeKind[])
+      .filter((kind) => !['serial', 'usb'].includes(kind))
+      .map((kind) => ({
+        id: kind,
+        kind,
+        icon: nodeInfo[kind].icon,
+        color: nodeInfo[kind].color,
+        label: nodeInfo[kind][zh ? 'zh' : 'en'],
+        search: `${nodeInfo[kind].zh} ${nodeInfo[kind].en} ${kind}`,
+        group: ['read', 'write', 'map', 'append'].includes(kind)
+          ? 'data'
+          : ['http', 'connection', 'script', 'emit', 'window'].includes(kind)
+            ? 'integration'
+            : 'logic',
+        preset: undefined as Record<string, Json> | undefined,
+      })),
+    ...(['serial', 'usb'] as const).flatMap((kind) =>
+      (['discover', 'communicate'] as const).map((action) => ({
+        id: `${kind}-${action}`,
+        kind,
+        icon: Radio,
+        color: nodeInfo[kind].color,
+        label: `${kind === 'usb' ? 'USB' : zh ? '串口' : 'Serial'} ${action === 'discover' ? (zh ? '设备发现' : 'discovery') : zh ? '通信' : 'communication'}`,
+        search: `${kind} ${action} ${kind === 'serial' ? '串口' : 'USB'} ${action === 'discover' ? '设备发现 discovery' : '通信 communication'}`,
+        group: 'integration',
+        preset: { action } as Record<string, Json>,
+      })),
+    ),
+    {
+      id: 'controlled-interval',
+      kind: 'event' as const,
+      icon: Clock3,
+      color: nodeInfo.event.color,
+      label: zh ? '受控定时器' : 'Controlled interval',
+      search: '受控定时器 controlled interval timer',
+      group: 'logic',
+      preset: {
+        trigger: 'controlledInterval',
+        interval: { source: 'literal', value: 1000 },
+        enabled: { source: 'literal', value: false },
+      } as Record<string, Json>,
+    },
+  ];
+  const visibleItems = paletteItems.filter((item) =>
+    item.search.toLowerCase().includes(paletteSearch.trim().toLowerCase()),
+  );
   return (
     <div className="qg-flow-editor">
-      <div className="qg-flow-toolbar">
-        <div className="qg-toolbar-cluster">
-          <GitBranch size={17} />
+      <aside
+        className="left-panel qg-flow-sidebar"
+        aria-label={zh ? '流程与节点库' : 'Flows and nodes'}
+      >
+        <div className="qg-flow-sidebar-heading">
+          <span>{zh ? '流程' : 'FLOWS'}</span>
+          <span className="qg-count">{project.flows.length}</span>
+          <button
+            className="qg-icon-button"
+            onClick={newFlow}
+            aria-label={zh ? '新增流程' : 'Add flow'}
+            title={zh ? '新增流程' : 'Add flow'}
+          >
+            <Plus size={15} />
+          </button>
+        </div>
+        <div className="qg-flow-toolbar">
+          <GitBranch size={15} />
           <select
             aria-label={zh ? '选择流程' : 'Select flow'}
             value={flow?.id ?? ''}
+            disabled={!project.flows.length}
             onChange={(event) => {
               setSelectedFlowId(event.target.value);
               setSelectedNodeId(null);
+              setSelectedEdgeId(null);
             }}
           >
+            {!project.flows.length && <option value="">{zh ? '尚无流程' : 'No flows'}</option>}
             {project.flows.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.name}
               </option>
             ))}
           </select>
-          <button
-            className="qg-icon-button"
-            onClick={newFlow}
-            aria-label={zh ? '新增流程' : 'Add flow'}
-          >
-            <Plus size={15} />
-          </button>
         </div>
-        <span className="qg-flow-caption">
-          {zh ? '实线执行 · 虚线数据 · 命名端口' : 'Solid execution · Dashed data · Named ports'}
-        </span>
-      </div>
-      <div className="qg-node-palette">
-        {(Object.keys(nodeInfo) as NodeKind[])
-          .filter((kind) => !['serial', 'usb'].includes(kind))
-          .map((kind) => {
-            const info = nodeInfo[kind];
-            return (
+        <div className="qg-node-palette qg-library">
+          <div className="qg-library-intro">
+            <span>{zh ? '节点库' : 'NODES'}</span>
+            <span className="qg-count">{visibleItems.length}</span>
+          </div>
+          <label className="qg-search">
+            <Search size={14} />
+            <input
+              aria-label={zh ? '搜索节点' : 'Search nodes'}
+              placeholder={zh ? '搜索节点…' : 'Search nodes…'}
+              value={paletteSearch}
+              onChange={(event) => setPaletteSearch(event.target.value)}
+            />
+            {paletteSearch && (
               <button
-                key={kind}
-                disabled={!flow}
-                onClick={() => addNode(kind)}
-                title={zh ? `添加${info.zh}` : `Add ${info.en}`}
+                type="button"
+                className="qg-flow-search-clear"
+                aria-label={zh ? '清空搜索' : 'Clear search'}
+                onClick={() => setPaletteSearch('')}
               >
-                <info.icon size={14} style={{ color: info.color }} />
-                <span>{info[zh ? 'zh' : 'en']}</span>
+                <X size={12} />
               </button>
-            );
+            )}
+          </label>
+          {(['logic', 'data', 'integration'] as const).map((group) => {
+            const items = visibleItems.filter((item) => item.group === group);
+            return items.length ? (
+              <section className="qg-library-group" key={group}>
+                <h3>
+                  {
+                    {
+                      logic: zh ? '逻辑与事件' : 'LOGIC & EVENTS',
+                      data: zh ? '数据处理' : 'DATA',
+                      integration: zh ? '设备与集成' : 'DEVICES & INTEGRATIONS',
+                    }[group]
+                  }
+                </h3>
+                <div className="qg-library-grid">
+                  {items.map((item) => (
+                    <button
+                      key={item.id}
+                      className="qg-library-item"
+                      disabled={!flow}
+                      title={zh ? `添加${item.label}` : `Add ${item.label}`}
+                      onClick={() => addNode(item.kind, item.preset)}
+                    >
+                      <item.icon size={20} style={{ color: item.color }} />
+                      <span>{item.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ) : null;
           })}
-        {(['serial', 'usb'] as const).flatMap((kind) =>
-          (['discover', 'communicate'] as const).map((action) => (
-            <button
-              key={`${kind}-${action}`}
-              disabled={!flow}
-              onClick={() => addNode(kind, { action })}
-            >
-              <Radio size={14} />
-              <span>
-                {kind === 'usb' ? 'USB' : zh ? '串口' : 'Serial'}{' '}
-                {action === 'discover'
-                  ? zh
-                    ? '设备发现'
-                    : 'discovery'
-                  : zh
-                    ? '通信'
-                    : 'communication'}
-              </span>
-            </button>
-          )),
-        )}
-        <button
-          disabled={!flow}
-          onClick={() =>
-            addNode('event', {
-              trigger: 'controlledInterval',
-              interval: { source: 'literal', value: 1000 },
-              enabled: { source: 'literal', value: false },
-            })
-          }
-        >
-          <Clock3 size={14} />
-          <span>{zh ? '受控定时器' : 'Controlled interval'}</span>
-        </button>
-      </div>
+          {!visibleItems.length && (
+            <p className="qg-field-hint qg-flow-search-empty">
+              {zh ? '没有匹配的节点' : 'No matching nodes'}
+            </p>
+          )}
+          <div className="qg-library-tip">
+            <MousePointer2 size={14} />
+            <span>
+              {zh
+                ? '点击添加节点，拖动端口建立连线。'
+                : 'Click to add a node. Drag between ports to connect.'}
+            </span>
+          </div>
+        </div>
+      </aside>
       <div className="qg-flow-workspace">
         <div className="qg-flow-canvas">
           {flow ? (
@@ -719,33 +800,75 @@ function FlowEditor({ project, onChange, locale }: Omit<FlowEditorProps, 'active
               onSelectNode={selectNode}
               onSelectEdge={selectEdge}
               onClearSelection={clearSelection}
-              colorMode={project.theme.mode}
+              colorMode={designerTheme ?? project.theme.mode}
+              locale={locale}
+              selectedLabel={selectedNode?.label}
               nodeColor={nodeColor}
             />
           ) : (
-            <div className="qg-inspector-empty">
-              <GitBranch size={34} />
-              <strong>{zh ? '创建第一个逻辑流程' : 'Create your first flow'}</strong>
-              <button className="qg-primary-button" onClick={newFlow}>
-                <Plus size={14} />
-                {zh ? '新增流程' : 'New flow'}
-              </button>
+            <div className="qg-flow-stage">
+              <div className="canvas-heading">
+                <div className="canvas-heading-context">
+                  <strong>{zh ? '流程画布' : 'Flow canvas'}</strong>
+                </div>
+              </div>
+              <div className="qg-inspector-empty qg-flow-empty">
+                <GitBranch size={34} />
+                <strong>{zh ? '创建第一个逻辑流程' : 'Create your first flow'}</strong>
+                <span>
+                  {zh
+                    ? '从左侧节点库搭建逻辑与数据流程。'
+                    : 'Build logic and data flows with the node library.'}
+                </span>
+                <button className="qg-primary-button" onClick={newFlow}>
+                  <Plus size={14} />
+                  {zh ? '创建流程' : 'Create flow'}
+                </button>
+              </div>
+              <div className="qg-canvas-status">
+                <span>
+                  <i className="qg-status-dot" />
+                  {zh ? '流程画布' : 'Flow canvas'}
+                </span>
+                <span>{zh ? '尚无流程' : 'No flows'}</span>
+              </div>
             </div>
           )}
         </div>
-        <aside className="qg-flow-settings">
+      </div>
+      <aside
+        className="right-panel qg-flow-settings"
+        aria-label={zh ? '流程属性' : 'Flow properties'}
+      >
+        <header className="qg-inspector-heading">
+          <div>
+            <strong title={selectedNode?.label ?? flow?.name}>
+              {selectedNode?.label ?? flow?.name ?? (zh ? '流程属性' : 'Flow properties')}
+            </strong>
+            <span className="qg-widget-type">
+              {selectedNode
+                ? nodeInfo[selectedNode.kind][zh ? 'zh' : 'en']
+                : zh
+                  ? '流程设置'
+                  : 'FLOW SETTINGS'}
+            </span>
+          </div>
+          {selectedNode && (
+            <button
+              className="qg-icon-button danger"
+              onClick={deleteSelectedNode}
+              aria-label={zh ? '删除节点' : 'Delete node'}
+            >
+              <Trash2 size={14} />
+            </button>
+          )}
+        </header>
+        <div className="qg-flow-settings-body">
           {flow &&
             (selectedNode ? (
               <>
-                <div className="qg-flow-settings-title">
-                  <span>{zh ? '节点配置' : 'NODE SETTINGS'}</span>
-                  <button
-                    className="qg-icon-button danger"
-                    onClick={deleteSelectedNode}
-                    aria-label={zh ? '删除节点' : 'Delete node'}
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                <div className="qg-section-title">
+                  <h3>{zh ? '节点属性' : 'NODE PROPERTIES'}</h3>
                 </div>
                 <Field label={zh ? '节点名称' : 'Node label'}>
                   <input
@@ -1487,7 +1610,9 @@ function FlowEditor({ project, onChange, locale }: Omit<FlowEditorProps, 'active
               </>
             ) : (
               <>
-                <div className="qg-flow-settings-title">{zh ? '流程设置' : 'FLOW SETTINGS'}</div>
+                <div className="qg-section-title">
+                  <h3>{zh ? '常规' : 'GENERAL'}</h3>
+                </div>
                 <Field label={zh ? '流程名称' : 'Flow name'}>
                   <input
                     value={flow.name}
@@ -1501,8 +1626,8 @@ function FlowEditor({ project, onChange, locale }: Omit<FlowEditorProps, 'active
                 />
                 <p className="qg-field-hint">
                   {zh
-                    ? '点击上方节点类型添加节点。拖动节点端口建立连接。选中节点后按 Delete 删除。'
-                    : 'Add a node using the toolbar. Drag between ports to connect nodes. Press Delete to remove selected nodes.'}
+                    ? '从左侧节点库添加节点。拖动节点端口建立连接。选中节点后按 Delete 删除。'
+                    : 'Add a node from the library. Drag between ports to connect nodes. Press Delete to remove selected nodes.'}
                 </p>
                 <div className="qg-flow-stats">
                   <div>
@@ -1525,8 +1650,19 @@ function FlowEditor({ project, onChange, locale }: Omit<FlowEditorProps, 'active
                 </button>
               </>
             ))}
-        </aside>
-      </div>
+          {!flow && (
+            <div className="qg-inspector-empty">
+              <GitBranch size={30} />
+              <strong>{zh ? '创建流程开始设计' : 'Create a flow to start'}</strong>
+              <span>
+                {zh
+                  ? '在左侧新增流程，再添加和配置节点。'
+                  : 'Add a flow on the left, then configure its nodes.'}
+              </span>
+            </div>
+          )}
+        </div>
+      </aside>
     </div>
   );
 }
@@ -1544,6 +1680,7 @@ const FlowEditorWithActivity = memo(
     previous.project === next.project &&
     previous.onChange === next.onChange &&
     previous.locale === next.locale &&
+    previous.designerTheme === next.designerTheme &&
     (previous.activeNodes ?? noActiveNodes).length === (next.activeNodes ?? noActiveNodes).length &&
     (previous.activeNodes ?? noActiveNodes).every((id, index) => id === next.activeNodes?.[index]),
 );

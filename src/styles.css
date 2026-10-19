@@ -349,6 +349,31 @@ a {
   flex: 1;
   min-height: 0;
 }
+.workspace-body.flow-page-layout {
+  display: grid;
+  grid-template-columns: 224px minmax(0, 1fr) 304px;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+.flow-page-layout > .center-panel {
+  display: contents;
+}
+.flow-page-layout .qg-flow-sidebar {
+  grid-column: 1;
+  grid-row: 1 / -1;
+}
+.flow-page-layout .qg-flow-workspace {
+  grid-column: 2;
+  grid-row: 1;
+}
+.flow-page-layout .qg-flow-settings {
+  grid-column: 3;
+  grid-row: 1 / -1;
+}
+.flow-page-layout .console-panel {
+  grid-column: 2;
+  grid-row: 2;
+  min-width: 0;
+}
 .left-panel {
   width: 224px;
   flex-shrink: 0;
@@ -1173,6 +1198,9 @@ a {
   color: var(--muted);
 }
 @media (max-width: 1200px) {
+  .workspace-body.flow-page-layout {
+    grid-template-columns: 190px minmax(0, 1fr) 280px;
+  }
   .left-panel,
   .workspace-name {
     width: 190px;
