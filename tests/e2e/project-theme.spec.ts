@@ -83,6 +83,10 @@ test('applies an undoable project theme to canvas, preview and export independen
   expect(project.theme).toMatchObject({
     mode: 'dark',
     tokens: { 'color.background': '#17191f', 'color.text': '#edf0f7' },
+    palettes: {
+      light: { 'color.background': '#f4f5f8', 'color.text': '#202333' },
+      dark: { 'color.background': '#17191f', 'color.text': '#edf0f7' },
+    },
   });
   expect(project.window.background).toBe('#17191f');
   await expect(page.locator('.save-indicator')).toContainText('已自动保存');
@@ -95,6 +99,7 @@ test('updates matching child window backgrounds while preserving custom colors a
   page,
 }, info) => {
   const project = createEmptyProject('多窗口主题');
+  delete project.theme.palettes;
   const fixed = createWidget('text');
   fixed.id = 'fixed-color';
   fixed.style.color = '#be123c';
@@ -161,6 +166,8 @@ test('updates matching child window backgrounds while preserving custom colors a
   const exported = await exportProject(page, info);
   expect(exported.theme.mode).toBe('light');
   expect(exported.theme.tokens['color.brand']).toBe('#123456');
+  expect(exported.theme.palettes?.light['color.brand']).toBe('#123456');
+  expect(exported.theme.palettes?.dark['color.brand']).toBe('#123456');
   expect(exported.widgets[0].style.color).toBe('#be123c');
   expect(exported.windows?.map((window) => window.config.background)).toEqual([
     '#f4f5f8',

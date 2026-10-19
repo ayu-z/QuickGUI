@@ -176,14 +176,9 @@ export function TranslationsPanel({
       <header className="translations-heading">
         <div>
           <h2>
-            <Languages size={20} aria-hidden="true" />
+            <Languages size={16} aria-hidden="true" />
             {zh ? '多语言' : 'Languages'}
           </h2>
-          <p>
-            {zh
-              ? '两种及以内语言并排显示；三种及以上同一时刻展开一列，也可全部收起。'
-              : 'Up to two languages appear side by side. With three or more, expand one language at a time or collapse all columns.'}
-          </p>
         </div>
         <span className="translations-count">
           {zh
@@ -229,21 +224,35 @@ export function TranslationsPanel({
         </form>
       </div>
 
-      <p className="translations-help">
-        {zh ? (
-          <>
-            控件文本使用 <code>@key</code> 引用索引，例如 <code>@pump.title</code>。运行时可用名为{' '}
-            <code>locale</code>{' '}
-            的字符串变量切换语言。重命名索引后需同步修改控件引用；删除可通过撤销恢复。
-          </>
-        ) : (
-          <>
-            Reference an index in widget text with <code>@key</code>, e.g. <code>@pump.title</code>.
-            Switch runtime languages with a string variable named <code>locale</code>. Update widget
-            references after renaming an index. Use Undo to restore deleted resources.
-          </>
-        )}
-      </p>
+      <details className="translations-help">
+        <summary>{zh ? '使用说明' : 'Usage guide'}</summary>
+        <p>
+          {zh
+            ? '两种及以内语言并排显示；三种及以上同一时刻展开一列，也可全部收起。'
+            : 'Up to two languages appear side by side. With three or more, expand one language at a time or collapse all columns.'}
+        </p>
+        <p>
+          {zh ? (
+            <>
+              控件文本使用 <code>@key</code> 引用索引，例如 <code>@pump.title</code>。运行时可用名为{' '}
+              <code>locale</code>{' '}
+              的字符串变量切换语言。重命名索引后需同步修改控件引用；删除可通过撤销恢复。
+            </>
+          ) : (
+            <>
+              Reference an index in widget text with <code>@key</code>, e.g.{' '}
+              <code>@pump.title</code>. Switch runtime languages with a string variable named{' '}
+              <code>locale</code>. Update widget references after renaming an index. Use Undo to
+              restore deleted resources.
+            </>
+          )}
+        </p>
+        <p>
+          {zh
+            ? '翻译文本即时保存；索引在回车或失焦时保存，Esc 取消。未设置的翻译保持缺省，不会被批量填为空文本。'
+            : 'Translation text saves immediately. Indices save on Enter or blur; press Esc to cancel. Missing translations stay unset rather than being filled with empty text.'}
+        </p>
+      </details>
       {error && (
         <p className="translations-error" role="alert">
           {error}
@@ -443,11 +452,6 @@ export function TranslationsPanel({
           </tbody>
         </table>
       </div>
-      <p className="translations-footnote">
-        {zh
-          ? '翻译文本即时保存；索引在回车或失焦时保存，Esc 取消。未设置的翻译保持缺省，不会被批量填为空文本。'
-          : 'Translation text saves immediately. Indices save on Enter or blur; press Esc to cancel. Missing translations stay unset rather than being filled with empty text.'}
-      </p>
     </section>
   );
 }

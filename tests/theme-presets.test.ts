@@ -121,7 +121,16 @@ describe('project UI theme presets', () => {
     applyProjectThemePreset(project, 'light');
     expect(project).toEqual(light);
     applyProjectThemePreset(project, 'dark');
-    expect(project).toEqual(original);
+    expect(project).toEqual({
+      ...original,
+      theme: {
+        ...original.theme,
+        palettes: {
+          light: PROJECT_THEME_PRESETS.light,
+          dark: original.theme.tokens,
+        },
+      },
+    });
   });
 
   it('records the complete theme preset as one change and restores it with one undo', () => {

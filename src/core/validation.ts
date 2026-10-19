@@ -4,6 +4,7 @@ import { reactImplementationSchema } from './componentPackage';
 import { assertJsonPath, assertJsonValue, validateJsonPath } from './jsonValue';
 import { validatePropertyPatch } from './widgetDefinitions';
 import { propertyDefinitionSchema } from './propertySchema';
+import { themeSchema } from './themePresets';
 import { upgradeProject } from './migration';
 import { flowBindingId, validFlowBinding } from './flowBindings';
 import { LATEST_PROJECT_VERSION } from './types';
@@ -207,9 +208,7 @@ const projectBaseSchema = z
     name: z.string().min(1).max(200),
     revision: z.number().int().nonnegative(),
     locale: z.enum(['zh-CN', 'en']),
-    theme: z
-      .object({ mode: z.enum(['light', 'dark', 'system']), tokens: z.record(z.string()) })
-      .strict(),
+    theme: themeSchema,
     window: windowConfigSchema,
     publish: z
       .object({

@@ -1290,63 +1290,6 @@ a {
   min-height: 0;
   overflow: hidden;
 }
-.project-settings-heading {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 20px 28px 16px;
-  border-bottom: 1px solid var(--border);
-  background: var(--panel);
-}
-.project-settings-heading h2 {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0 0 8px;
-  font-size: 18px;
-  font-weight: 550;
-}
-.project-settings-heading p,
-.appearance-section > p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.8;
-}
-.project-settings-content {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: 24px 28px;
-}
-.appearance-section {
-  max-width: 840px;
-  margin-bottom: 20px;
-  padding: 20px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--panel);
-}
-.appearance-section > h3 {
-  margin: 0 0 10px;
-  font-size: 12px;
-  font-weight: 550;
-}
-.appearance-section .settings-field {
-  padding-top: 0;
-  border-top: 0;
-}
-.project-theme-presets {
-  margin-bottom: 12px;
-}
-.project-theme-presets > strong {
-  display: block;
-  margin-bottom: 10px;
-  font-size: 12px;
-  font-weight: 500;
-}
 .project-theme-presets > div {
   display: flex;
   flex-wrap: wrap;
@@ -1363,47 +1306,11 @@ a {
   color: var(--text);
   background: var(--panel);
 }
-.project-theme-swatch {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 3px;
-  width: 39px;
-  height: 28px;
-  padding: 4px;
-  border: 1px solid #333743;
-  border-radius: 4px;
-  background: #17191f;
-}
-.project-theme-swatch i {
-  border-radius: 2px;
-  background: #20232c;
-}
-.project-theme-swatch i:last-child {
-  background: #8b5cf6;
-}
-.project-theme-swatch.light {
-  border-color: #d6dae3;
-  background: #f4f5f8;
-}
-.project-theme-swatch.light i {
-  background: #fff;
-}
-.project-theme-swatch.light i:last-child {
-  background: #7c3aed;
-}
 .project-theme-presets button:hover,
 .project-theme-presets button[aria-pressed='true'] {
   color: var(--accent);
   border-color: var(--accent);
   background: var(--accent-bg);
-}
-.settings-field {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 11px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
 }
 .settings-actions {
   display: flex;

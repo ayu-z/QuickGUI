@@ -1,5 +1,16 @@
 # 变动日志
 
+## 2026-10-20 — 独立亮暗配色与资源页空间优化
+
+- 应用外观按明确需求改为“索引／亮色／暗色”三列，每个方案单元格包含色块与颜色值，支持分别编辑和原子新增双色令牌。两套颜色分别保存，编辑非当前列不改变有效颜色或窗口，切换选择已保存方案，不重置已编辑值；主题匹配的主/附窗口背景跟随切换，字面颜色、自定义背景和独立组件资源保留。
+- v5主题增加可选 `palettes.light/dark`，沿用 `tokens` 保存当前有效颜色，设计、预览与独立运行器共用有效值。旧工程只读不新增字段或变脏，首次编辑/切换才生成方案；当前颜色保留，另一套内置色取对应默认值，自定义键继承原值，不补入稀疏旧工程缺失的键。`system` 保持原有效色在暗色列，不引入新的系统自动切换行为。
+- 工程、资源作用域和组件包共用严格主题校验，要求两套颜色与有效令牌键集合一致，当前方案值与有效值一致；缺失或不一致时拒绝导入，不静默改写。双色字段需要支持它的新版设计器，旧版严格校验会拒绝未知字段；兼容性说明已更新，不承诺旧版向前兼容。
+- 两页去掉窄卡片、大标题、常驻长说明与重复滚动层，改为满宽剩余空间表格、紧凑新增工具栏和默认收起的使用说明，保留固定表头、固定索引、32px输入及原多语言展开规则。配置页不占用运行日志空间，不改变界面/流程页的日志开关偏好；构建时仍可显示实时输出并按实际可见状态定位进度。
+- 修改 `src/core/types.ts`、`src/core/themePresets.ts`、`src/core/validation.ts`、`src/core/componentPackage.ts`、`src/App.tsx`、`src/panels/AppearancePanel.tsx`、`src/panels/appearance.css`、`src/panels/TranslationsPanel.tsx`、`src/panels/translations.css`、`src/styles.css`；移除原外观卡片与色块预设的未使用样式，无源文件删除或重命名。修改 `tests/theme-presets.test.ts`、`tests/e2e/appearance-colors.spec.ts`、`tests/e2e/project-theme.spec.ts`、`tests/e2e/translations.spec.ts`，新增 `tests/theme-palettes.test.ts`；修改 `README.md`、`docs/architecture.md`、`docs/project-compatibility.md` 和本文件。无新增依赖。
+- 新增10项核心回归，覆盖3种旧模式只读、稀疏键、双方案独立编辑与反复切换、窗口背景、撤销、严格校验、工程/组件包ZIP和跨工程资源往返。两页专项扩为15项，覆盖新增双色单次撤销、非当前列不改当前画面、画布/预览/导出/刷新、旧工程与自定义色保留、日志偏好及宽窄亮暗布局；1100×700与1440×920表格宽度至少占工作区90%、高度至少占资源页60%且分别不少于340/480px，完整可见行分别至少6/10行。首轮14/15通过，剩余一项因颜色选择器也映射为textbox而误计数，已改为按类型及精确标签严格验证每格1个色块和1个文本值，不改产品迎合定位，也不放宽超时。
+- 最终 `npm run check` 的TypeScript及285项单测、隔离Chromium全量89/89和WebKit专项15/15通过，正式测试配置与超时保持不变；已目视核对紧凑双色表及多语言表的宽窄亮暗截图。`npx tauri build --debug --bundles app` 的前置生产构建与本机应用打包成功，更新 `target/debug/bundle/macos/QuickGUI.app`（78.01 MiB）。实际命令行导出带双色方案的独立源码，逐字段确认两套配色及活动令牌完整保留，并在导出目录通过前端构建；此构建复用本机已有依赖，不视为全新环境安装或独立原生发布验收。
+- Prettier与Git差异检查通过，保留既有Monaco体积与桥接混合导入提示。`cargo test --workspace` 仍受未改动的 `crates/quickgui-engine/src/serial_demo_test.rs:154` E0502阻断，未记为通过；无Rust业务、C SDK、进程协议或编译路径变更，未重复C/AOT专项。报告、截图、导出源码和应用包按生成物处理；用户 `QuickGUI_Icons/` 未修改或暂存。
+
 ## 2026-10-20 — 紧凑翻译输入、双语并排与三列颜色编辑
 
 - 翻译改为32px单行输入，正文行高约45px，移除“恢复回退”按钮及对应样式。已有缺省与显式空字符串语义保持，旧工程多行文本仅折叠显示，未经用户编辑不会重写原文。

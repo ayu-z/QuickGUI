@@ -1,6 +1,13 @@
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 export type Locale = 'zh-CN' | 'en';
 export type ThemeMode = 'light' | 'dark' | 'system';
+export interface ThemeDefinition {
+  mode: ThemeMode;
+  /** Effective tokens used by the canvas, preview and standalone runtime. */
+  tokens: Record<string, string>;
+  /** Saved variants; omitted by legacy documents until the theme is edited. */
+  palettes?: { light: Record<string, string>; dark: Record<string, string> };
+}
 export type JsonPath = Array<string | number>;
 export type VariableType = 'number' | 'string' | 'boolean' | 'json';
 export type ValueRef =
@@ -215,7 +222,7 @@ export interface Project {
   name: string;
   revision: number;
   locale: Locale;
-  theme: { mode: ThemeMode; tokens: Record<string, string> };
+  theme: ThemeDefinition;
   window: WindowConfig;
   /** Additional windows only. The fixed main window remains in window/widgets. */
   windows?: ProjectWindow[];
@@ -232,7 +239,7 @@ export interface Project {
 }
 export interface ResourceScope {
   id: string;
-  theme: { mode: ThemeMode; tokens: Record<string, string> };
+  theme: ThemeDefinition;
   translations: Record<string, Record<string, string>>;
   locale: Locale;
   localeVariableId?: string;

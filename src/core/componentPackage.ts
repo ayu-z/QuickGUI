@@ -2,6 +2,7 @@ import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { z } from 'zod';
 import type { ComponentModule, Json, Project, ResourceScope } from './types';
 import { propertyDefinitionSchema } from './propertySchema';
+import { themeSchema } from './themePresets';
 
 export const COMPONENT_PACKAGE_LIMIT = 16_000_000;
 const SOURCE_FILE_LIMIT = 1_000_000;
@@ -74,9 +75,7 @@ export const componentManifestSchema = z
 const packageResourcesSchema = z
   .object({
     id: z.string(),
-    theme: z
-      .object({ mode: z.enum(['dark', 'light', 'system']), tokens: z.record(z.string()) })
-      .strict(),
+    theme: themeSchema,
     translations: z.record(z.record(z.string())),
     locale: z.enum(['zh-CN', 'en']),
     localeVariableId: z.string().optional(),
@@ -311,12 +310,12 @@ export function exportComponentPackage(module: ComponentModule, project?: Projec
   for (const asset of [...(resources?.assets ?? []), ...scopeAssets, ...(project?.assets ?? [])])
     if (!portableAssets.has(asset.id)) portableAssets.set(asset.id, asset);
   const portableResources = resources
-    ? {
+    ? packageResourcesSchema.parse({
         ...resources,
         localeVariableId: undefined,
         assetAliases: undefined,
         assets: [...portableAssets.values()],
-      }
+      })
     : undefined;
   const modern = Boolean(packageIdentity || parsed.propertyDefinitions || resources);
   const json = strToU8(

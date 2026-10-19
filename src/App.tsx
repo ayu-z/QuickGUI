@@ -280,10 +280,12 @@ function ProjectWorkspace({
   const consoleLogs = [...snapshot.logs, ...buildLogs].sort((a, b) => a.time - b.time).slice(-1000);
   const [showConsole, setShowConsole] = useState(true),
     [simulate, setSimulate] = useState(false);
+  const resourceSection = section === 'appearance' || section === 'languages';
+  const workspaceConsoleVisible = showConsole && (!resourceSection || buildProgress !== null);
   useEffect(() => {
     if (followConsole.current && consoleContent.current)
       consoleContent.current.scrollTop = consoleContent.current.scrollHeight;
-  }, [snapshot.logs, buildLogs, showConsole]);
+  }, [snapshot.logs, buildLogs, workspaceConsoleVisible]);
   const [toast, setToast] = useState<{ text: string; error?: boolean }>();
   const [moduleId, setModuleId] = useState<string | null>(null);
   const [pendingModule, setPendingModule] = useState<ComponentModule | null>(null);
@@ -1426,7 +1428,7 @@ function ProjectWorkspace({
           {section === 'connections' && (
             <ConnectionsPanel project={project} onChange={(p) => store.update(p)} notify={notify} />
           )}
-          {showConsole && (
+          {workspaceConsoleVisible && (
             <section className="console-panel">
               <header>
                 <button onClick={() => setShowConsole(false)}>
@@ -1560,10 +1562,12 @@ function ProjectWorkspace({
           <span className="saved-dot" />
           {native.isDesktop() ? t.desktop : t.browser}
         </span>
-        <button onClick={() => setShowConsole(!showConsole)}>
-          <Terminal size={12} />
-          {t.console}
-        </button>
+        {(!resourceSection || buildProgress !== null) && (
+          <button onClick={() => setShowConsole(!showConsole)}>
+            <Terminal size={12} />
+            {t.console}
+          </button>
+        )}
         <div className="status-spacer" />
         <span>
           {activeWindow.widgets.length} {zh ? '个控件' : 'widgets'} ·{' '}
@@ -1806,7 +1810,7 @@ function ProjectWorkspace({
         </div>
       )}
       {buildProgress !== null && (
-        <div className={`build-progress${showConsole ? ' console-open' : ''}`}>
+        <div className={`build-progress${workspaceConsoleVisible ? ' console-open' : ''}`}>
           <Activity size={16} />
           <span>{buildProgress.slice(-300)}</span>
           <button className="button" onClick={() => void native.cancelBuild()}>

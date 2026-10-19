@@ -455,3 +455,69 @@ test('handles empty and single-language tables while keeping the remaining langu
   await expect(text(page, 'fr-FR', 'unique')).toHaveValue('Français');
   await expect(toggles(page)).toHaveCount(0);
 });
+
+for (const viewport of [
+  { width: 1100, height: 700 },
+  { width: 1440, height: 920 },
+]) {
+  test(`uses the resource workspace for compact translation rows at ${viewport.width} × ${viewport.height}`, async ({
+    page,
+  }, info) => {
+    await page.setViewportSize(viewport);
+    const project = fixture();
+    for (let row = 0; row < 30; row++) {
+      project.translations!['zh-CN'][`row.${row}`] = `第 ${row} 行`;
+      project.translations!.en[`row.${row}`] = `Row ${row}`;
+    }
+    await open(page, project);
+    await expect(panel(page).locator('details.translations-help')).toHaveJSProperty('open', false);
+    await expect(page.locator('.console-panel')).toHaveCount(0);
+    await expect(toggles(page)).toHaveCount(0);
+    const indexInput = await panel(page)
+      .getByRole('textbox', { name: '新索引', exact: true })
+      .boundingBox();
+    const localeInput = await panel(page)
+      .getByRole('textbox', { name: '语言标识', exact: true })
+      .boundingBox();
+    expect(Math.abs(indexInput!.y - localeInput!.y)).toBeLessThanOrEqual(1);
+    const scroll = panel(page).locator('.translations-table-scroll');
+    for (const theme of ['dark', 'light']) {
+      if (theme === 'light') await page.getByRole('button', { name: 'Theme', exact: true }).click();
+      await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+      await expectExpandedColumnsVisible(page);
+      const dimensions = await scroll.evaluate((element) => {
+        const bounds = element.getBoundingClientRect();
+        const workspace = element.closest('.center-panel')!.getBoundingClientRect();
+        const page = element.closest('.translations-panel')!.getBoundingClientRect();
+        const headerBottom = element.querySelector('thead')!.getBoundingClientRect().bottom;
+        const rows = Array.from(element.querySelectorAll('tbody tr'));
+        return {
+          widthRatio: bounds.width / workspace.width,
+          heightRatio: bounds.height / page.height,
+          height: bounds.height,
+          completeRows: rows.filter((row) => {
+            const rect = row.getBoundingClientRect();
+            return rect.top >= headerBottom - 1 && rect.bottom <= bounds.bottom + 1;
+          }).length,
+          compactRows: rows.every((row) => row.getBoundingClientRect().height <= 48),
+          hasHorizontalOverflow: element.scrollWidth > element.clientWidth + 1,
+        };
+      });
+      expect(dimensions.widthRatio).toBeGreaterThanOrEqual(0.9);
+      expect(dimensions.heightRatio).toBeGreaterThanOrEqual(0.6);
+      expect(dimensions.height).toBeGreaterThanOrEqual(viewport.height === 700 ? 340 : 480);
+      expect(dimensions.completeRows).toBeGreaterThanOrEqual(viewport.height === 700 ? 6 : 10);
+      expect(dimensions.compactRows).toBe(true);
+      expect(dimensions.hasHorizontalOverflow).toBe(false);
+      await expect
+        .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
+        .toBe(true);
+      const screenshot = info.outputPath(`translations-workspace-${viewport.width}-${theme}.png`);
+      await page.screenshot({ path: screenshot, fullPage: true });
+      await info.attach(`translation workspace ${viewport.width} ${theme}`, {
+        path: screenshot,
+        contentType: 'image/png',
+      });
+    }
+  });
+}

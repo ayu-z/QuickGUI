@@ -5,59 +5,68 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  padding: 24px 28px 16px;
-  gap: 16px;
   background: var(--bg);
 }
 .translations-heading {
   display: flex;
-  align-items: flex-start;
+  flex-shrink: 0;
+  align-items: center;
   justify-content: space-between;
-  gap: 20px;
+  gap: 12px;
+  height: 44px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
 }
 .translations-heading h2 {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin: 0 0 8px;
-  font-size: 18px;
+  gap: 7px;
+  margin: 0;
+  font-size: 13px;
   font-weight: 550;
 }
-.translations-heading p,
-.translations-help,
-.translations-footnote {
+.translations-help p {
   margin: 0;
   color: var(--muted);
   line-height: 1.7;
+  font-size: 11px;
 }
 .translations-count {
   flex-shrink: 0;
   color: var(--muted);
-  padding: 5px 0;
+  font-size: 10px;
 }
 .translations-toolbar {
   display: flex;
+  flex-shrink: 0;
   flex-wrap: wrap;
-  gap: 14px 24px;
+  gap: 8px 18px;
+  align-items: center;
+  padding: 10px 14px 6px;
 }
 .translations-toolbar form {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 7px;
 }
 .translations-toolbar label {
   color: var(--muted);
   font-size: 11px;
+  white-space: nowrap;
 }
 .translations-toolbar form > div {
   display: flex;
   gap: 7px;
 }
 .translations-toolbar input {
-  width: 210px;
+  width: 190px;
   min-width: 0;
   height: var(--control-height);
   padding: 6px 9px;
+}
+.translations-toolbar form:last-child input {
+  width: 150px;
 }
 .translations-action {
   display: inline-flex;
@@ -76,19 +85,39 @@
   border-color: var(--accent);
   background: var(--accent-bg);
 }
-.translations-help code,
-.translations-footnote code {
+.translations-help {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0 14px 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.translations-help summary {
+  width: fit-content;
+  padding: 4px 0;
+  cursor: pointer;
+}
+.translations-help[open] {
+  max-height: 160px;
+  overflow: auto;
+}
+.translations-help[open] p {
+  margin: 5px 0;
+}
+.translations-help code {
   color: var(--text);
 }
 .translations-error {
-  margin: 0;
+  flex-shrink: 0;
+  margin: 0 14px 8px;
   color: var(--danger);
   line-height: 1.5;
 }
 .translations-table-scroll {
   flex: 1;
-  min-height: 130px;
+  min-height: 0;
   min-width: 0;
+  margin: 0 12px 12px;
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: 7px;
@@ -132,7 +161,7 @@
   position: sticky;
   top: 0;
   z-index: 2;
-  height: 48px;
+  height: 38px;
   font-weight: 500;
   background: var(--surface);
 }
@@ -260,25 +289,4 @@
   color: var(--muted);
   text-align: center;
   white-space: normal;
-}
-.translations-footnote {
-  font-size: 11px;
-}
-@media (max-width: 1100px) {
-  .translations-panel {
-    padding: 20px 20px 12px;
-    gap: 12px;
-  }
-  .translations-toolbar input {
-    width: 180px;
-  }
-}
-@media (max-height: 720px) {
-  .translations-panel {
-    gap: 10px;
-    padding-top: 16px;
-  }
-  .translations-heading h2 {
-    margin-bottom: 5px;
-  }
 }
