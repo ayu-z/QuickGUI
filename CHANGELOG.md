@@ -1,5 +1,13 @@
 # 变动日志
 
+## 2026-10-20 — 工程界面一键亮暗主题
+
+- 在“应用外观与多语言 → 主题令牌”增加工程界面“一键亮色／一键暗色”，一次事务更新主题模式、9个内置颜色令牌，以及匹配原主题背景色的主/附加窗口背景，支持单步撤销重做、自动保存和工程往返。
+- 保留自定义令牌键、控件固定颜色、自定义窗口背景、独立组件资源与自定义React源码；设计器外观独立控制。共用渲染器为明确亮/暗主题设置 `color-scheme`，画布控件、预览及导出运行器中的原生表单控件不再继承相反的设计器主题；system模式沿用既有继承行为。
+- 新增 `src/core/themePresets.ts`、`tests/theme-presets.test.ts`、`tests/e2e/project-theme.spec.ts`；修改 `src/panels/ProjectSettings.tsx`、`src/runtime/WidgetRenderer.tsx`、`src/styles.css`、`README.md`和本文件。无源文件删除或重命名，无依赖、工程格式、C SDK、进程协议或编译路径变更。
+- 验证：新增5项单测和2项浏览器回归，覆盖示例/多窗口、保留自定义颜色与资源、幂等、撤销重做、设计器主题独立、反向主题下的原生控件配色、预览、导出与刷新恢复。集成 `npm run check` 的TypeScript和275项单测、`npm run build`、隔离Chromium全量76/76及WebKit主题/选择专项6/6通过，未放宽测试超时；Prettier与Git差异检查通过。
+- `npx tauri build --debug --bundles app` 成功，生成 `target/debug/bundle/macos/QuickGUI.app`（78.00 MiB）；报告、隔离脚本、依赖副本及应用包均按生成物处理。保留既有Monaco大包与桥接混合导入提示。Rust全量因同日属性面板记录中的既有E0502阻断，未重复C/AOT专项；不将浏览器回归描述为原生多平台验收。
+
 ## 2026-10-20 — 取消控件选择后默认显示窗口属性
 
 - 界面编辑点击空白处、Escape、清空选择、删除最后一个选中控件或撤销移除该控件时，右侧自动显示当前窗口属性。保留有效多选；属性输入框失焦不取消控件选择，不清除无效 CODE 草稿。空工程和空附加窗口直接显示自身窗口属性。

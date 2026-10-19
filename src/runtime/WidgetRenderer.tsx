@@ -717,6 +717,7 @@ function ModernWidgetView({
         title={String(p.title ?? '')}
         style={{
           ...themeVars,
+          colorScheme: project.theme.mode === 'system' ? undefined : project.theme.mode,
           ...style,
           ...(widget.type === 'panel' ? { overflow: p.overflow as CSSProperties['overflow'] } : {}),
         }}
@@ -844,6 +845,7 @@ export function Scene({
       style={
         {
           ...variables,
+          colorScheme: project.theme.mode === 'system' ? undefined : project.theme.mode,
           width: project.window.width,
           height: project.window.height,
           background: project.window.background,

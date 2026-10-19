@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Palette, Languages, X } from 'lucide-react';
+import { Palette, Languages, Moon, Sun, X } from 'lucide-react';
 import type { Project } from '../core/types';
+import { applyProjectThemePreset } from '../core/themePresets';
 import { CodeEditor } from '../designer/CodeEditor';
 
 export function ProjectSettings({
@@ -66,6 +67,45 @@ export function ProjectSettings({
         <section>
           {tab === 'theme' ? (
             <>
+              <div
+                className="project-theme-presets"
+                aria-label={zh ? '工程界面主题' : 'Project UI theme'}
+              >
+                <strong>{zh ? '工程界面主题' : 'Project UI theme'}</strong>
+                <div>
+                  <button
+                    type="button"
+                    aria-pressed={project.theme.mode === 'light'}
+                    onClick={() => onChange((p) => applyProjectThemePreset(p, 'light'))}
+                  >
+                    <span className="project-theme-swatch light" aria-hidden="true">
+                      <i />
+                      <i />
+                      <i />
+                    </span>
+                    <Sun size={16} />
+                    {zh ? '一键亮色' : 'Apply light theme'}
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={project.theme.mode === 'dark'}
+                    onClick={() => onChange((p) => applyProjectThemePreset(p, 'dark'))}
+                  >
+                    <span className="project-theme-swatch dark" aria-hidden="true">
+                      <i />
+                      <i />
+                      <i />
+                    </span>
+                    <Moon size={16} />
+                    {zh ? '一键暗色' : 'Apply dark theme'}
+                  </button>
+                </div>
+              </div>
+              <p>
+                {zh
+                  ? '预设会覆盖内置颜色令牌，仅同步匹配原主题背景色的窗口背景，画布、预览与导出同步生效。保留自定义令牌、控件固定颜色、独立组件资源和自定义窗口背景；设计器主题不受影响。'
+                  : 'Presets replace built-in color tokens and window backgrounds matching the previous theme background, updating the canvas, preview and exports. Custom tokens, fixed widget colors, isolated component resources and custom window backgrounds are preserved. The designer theme is unchanged.'}
+              </p>
               <p>
                 {zh
                   ? '组件通过 $color.primary 等令牌引用样式。修改会同步到画布和预览。'
