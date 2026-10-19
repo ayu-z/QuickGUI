@@ -135,7 +135,7 @@ export class EditorStore {
         : [],
       transactionLabel: null,
       section: 'design',
-      inspector: 'widget',
+      inspector: activeWidgets.length ? 'widget' : 'window',
       past: [],
       future: [],
       dirty: false,
@@ -156,6 +156,18 @@ export class EditorStore {
     for (const listener of this.listeners) listener();
   }
   private set(patch: Partial<EditorState>) {
+    if (
+      Object.hasOwn(patch, 'project') &&
+      !Object.hasOwn(patch, 'selectedId') &&
+      !Object.hasOwn(patch, 'selectedIds')
+    ) {
+      const project = patch.project,
+        windowId = patch.activeWindowId ?? this.state.activeWindowId;
+      patch.selectedId = project ? editorSelection(project, windowId, this.state.selectedId) : null;
+      patch.selectedIds = project
+        ? this.state.selectedIds.filter((id) => editorSelection(project, windowId, id))
+        : [];
+    }
     if (Object.hasOwn(patch, 'selectedId') && !Object.hasOwn(patch, 'selectedIds'))
       patch.selectedIds = patch.selectedId ? [patch.selectedId] : [];
     if (patch.selectedIds) {
@@ -163,6 +175,8 @@ export class EditorStore {
       if (!primary || !patch.selectedIds.includes(primary))
         patch.selectedId = patch.selectedIds.at(-1) ?? null;
     }
+    if (Object.hasOwn(patch, 'selectedId') || Object.hasOwn(patch, 'selectedIds'))
+      patch.inspector = patch.selectedId ? 'widget' : 'window';
     this.state = { ...this.state, ...patch };
     this.emit();
   }
@@ -171,7 +185,10 @@ export class EditorStore {
     if (this.state.project && !this.state.closing) this.set({ section });
   };
   select = (selectedId: string | null) => {
-    if (this.state.project && !this.state.closing) this.set({ selectedId, inspector: 'widget' });
+    if (this.state.project && !this.state.closing)
+      this.set({
+        selectedId: editorSelection(this.state.project, this.state.activeWindowId, selectedId),
+      });
   };
   setSelection = (ids: string[], primaryId?: string | null) => {
     if (!this.state.project || this.state.closing) return;
@@ -180,7 +197,7 @@ export class EditorStore {
     );
     const selectedId =
       primaryId && selectedIds.includes(primaryId) ? primaryId : (selectedIds.at(-1) ?? null);
-    this.set({ selectedIds, selectedId, inspector: 'widget' });
+    this.set({ selectedIds, selectedId });
   };
   beginTransaction = (label = 'Edit') => {
     if (!this.state.project || this.state.closing) return;

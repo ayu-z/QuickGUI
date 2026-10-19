@@ -1512,7 +1512,7 @@ function ProjectWorkspace({
         </section>
         {section === 'design' && (
           <aside className="right-panel">
-            {state.inspector === 'window' ? (
+            {state.inspector === 'window' || !selected ? (
               <WindowInspector
                 key={activeWindowId}
                 project={windowProject}
@@ -1529,7 +1529,7 @@ function ProjectWorkspace({
                 }
                 locale={project.locale}
               />
-            ) : selected ? (
+            ) : (
               <>
                 <Inspector
                   widget={selected}
@@ -1549,20 +1549,6 @@ function ProjectWorkspace({
                   locale={project.locale}
                 />
               </>
-            ) : (
-              <div className="inspector-empty">
-                <MousePointerIcon />
-                <h3>{t.noSelection}</h3>
-                <p>
-                  {zh
-                    ? '在画布或图层中选择控件，使用 UI / CODE 调整属性和样式。'
-                    : 'Select a widget in the canvas or layers. Edit its properties with UI / CODE.'}
-                </p>
-                <button className="button" onClick={inspectActiveWindow}>
-                  <Monitor size={14} />
-                  {t.window}
-                </button>
-              </div>
             )}
           </aside>
         )}
@@ -1899,21 +1885,6 @@ function ProjectWorkspace({
         }}
       />
     </div>
-  );
-}
-
-function MousePointerIcon() {
-  return (
-    <svg
-      width="34"
-      height="34"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.3"
-    >
-      <path d="m5 3 14 9-7 2-3 7z" />
-    </svg>
   );
 }
 
