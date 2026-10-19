@@ -171,23 +171,22 @@ test('keeps module insertion and editing scoped to the selected window and prote
   );
   await page
     .locator('.workspace-tabs nav')
-    .getByRole('button', { name: '数据', exact: true })
+    .getByRole('button', { name: '流程', exact: true })
     .click();
-  await page.getByRole('button', { name: '添加变量', exact: true }).click();
   await page
-    .locator('.data-table tbody tr')
-    .last()
-    .locator('td')
-    .nth(1)
-    .locator('select')
-    .selectOption('string');
+    .locator('.qg-node-palette')
+    .getByRole('button', { name: '文本参数', exact: true })
+    .click();
   await page
-    .locator('.data-table tbody tr')
-    .last()
-    .locator('td')
-    .first()
-    .locator('input')
+    .locator('.qg-parameter-inspector')
+    .getByLabel('参数名称', { exact: true })
     .fill('childOnly');
+  await page.locator('.qg-parameter-inspector').getByLabel('参数名称', { exact: true }).blur();
+  // Remove the generated reader so the child-window binding is the only reference.
+  await page
+    .locator('.qg-flow-settings')
+    .getByRole('button', { name: '删除节点', exact: true })
+    .click();
   await page
     .locator('.workspace-tabs nav')
     .getByRole('button', { name: '界面', exact: true })
@@ -204,17 +203,20 @@ test('keeps module insertion and editing scoped to the selected window and prote
     .selectOption({ label: 'childOnly · string' });
   await page
     .locator('.workspace-tabs nav')
-    .getByRole('button', { name: '数据', exact: true })
+    .getByRole('button', { name: '流程', exact: true })
     .click();
   await page
-    .locator('.data-table tbody tr')
-    .last()
-    .getByRole('button', { name: 'Delete', exact: true })
+    .locator('.qg-flow-library-tabs')
+    .getByRole('button', { name: '参数', exact: true })
     .click();
-  await expect(page.getByRole('status')).toContainText('请先移除该变量的绑定和节点引用');
-  await expect(
-    page.locator('.data-table tbody tr').last().locator('td').first().locator('input'),
-  ).toHaveValue('childOnly');
+  await page
+    .locator('.qg-parameter-library')
+    .getByRole('button', { name: '编辑参数 childOnly', exact: true })
+    .click();
+  const parameter = page.locator('.qg-parameter-inspector');
+  await expect(parameter.getByRole('button', { name: '删除参数', exact: true })).toBeDisabled();
+  await expect(parameter.getByLabel('参数类型', { exact: true })).toBeDisabled();
+  await expect(parameter.getByLabel('参数名称', { exact: true })).toHaveValue('childOnly');
 });
 
 test('previews the selected child and shares one live value across independent windows', async ({

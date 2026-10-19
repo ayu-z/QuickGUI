@@ -1,5 +1,17 @@
 # 变动日志
 
+## 2026-10-20 — 删除数据页并引入流程参数组件
+
+- 移除独立数据页、导航、工作区类型与翻译键，将数据定义和运行状态迁入流程中的数值、文本、布尔、JSON参数组件。点击或拖入画布会原子创建变量定义及带类型输出的既有read FB；无流程时创建带手动入口的普通流程，不引入自动触发。新增“节点／参数”库页签，已有参数可直接编辑或拖入复用引用，删除节点不删除共享定义。
+- 参数属性提供稳定ID、名称、类型、初值、运行值、单位、只读、持久化、质量及时间戳；数值参数可按需展开原历史与报警能力。保留JSON无效草稿、有限数值校验、全工程引用保护和运行时修订检查，遗留名称引用在重命名前须先改为ID。原变量、UI绑定、C别名、跨窗口共享与导出语义保持，工程格式和节点种类未改变。
+- 参数属性独立订阅运行快照，父流程编辑器增加稳定项目修改/通知接口，保留拖动与高亮隔离；库与属性正文仍独立滚动。参数点击放置避开已有节点，拖放按真实画布坐标落点。历史面板支持受控参数ID，关闭详情不轮询，沿用现有SQLite、报警确认和浏览器能力诊断。
+- 新增 `src/core/parameters.ts`、`src/designer/ParameterInspector.tsx`、`src/designer/parameters.css`、`tests/parameters.test.ts`、`tests/e2e/parameters.spec.ts`；修改 `src/App.tsx`、`src/core/store.ts`、`src/core/i18n.ts`、`src/designer/FlowEditor.tsx`、`src/designer/designer.css`、`src/panels/HistoryPanel.tsx`、`src/styles.css`、`tests/e2e/dropdowns.spec.ts`、`tests/e2e/multi-window.spec.ts`、`tests/e2e/translations.spec.ts`、`tests/e2e/v3-integration.spec.ts`、`README.md`、`docs/architecture.md` 和本文件。移除App内嵌DataPanel实现与专属样式，无独立源文件删除或重命名，无依赖变更。
+- 新增24项核心测试，覆盖4类型、已有/新流程、唯一命名、复用、原子撤销重做、初值/元数据校验、引用及旧名称保护、实际执行线与数据线传递、工程导出往返；强化数值/文本/布尔/JSON从目标默认值开始真正写入的断言。新增4项浏览器测试，并将旧数据页操作迁入参数属性，保留JSON初值/运行值独立校验、子窗口绑定保护、共享运行值、下拉框尺寸等原验证。
+- 首轮41项目标回归通过40项，发现新连线后立即运行早于200ms热更新，旧图将null传给数值写入节点。运行按钮现等待当前修订被接受后启用，处理函数也检查修订，避免执行旧图；测试等待实际保存与可编辑状态，保留45/81两次运行断言，受控原生IPC回归验证等待期间禁用及接受后恢复。修复后参数专项4/4通过，未放宽超时。
+- 最终 `npm run check` 的TypeScript和309项单测、隔离Chromium全量93/93、WebKit参数/布局/JSON专项20/20通过；包含原拖动隔离与真实滚轮布局回归。已目视核对参数库、类型化节点和属性面板截图。`npx tauri build --debug --bundles app` 的前置生产构建和本机应用打包成功，更新 `target/debug/bundle/macos/QuickGUI.app`（78.01 MiB）。
+- 实际命令行导出四类参数、手动流程、typed read节点及控件绑定，逐字段确认工程完整保留，并在导出源码目录通过前端构建；复用本机已有依赖，不作为全新环境安装、签名或原生多平台验收。Prettier及Git差异检查通过，保留既有Monaco体积与桥接混合导入提示。
+- `cargo test --workspace` 仍因未修改的 `crates/quickgui-engine/src/serial_demo_test.rs:154` 既有E0502借用冲突失败，未记为通过。无Rust业务、C SDK、进程协议或编译路径变更，未重复C/AOT专项；报告、截图、隔离副本、导出源码及应用包按生成物处理，用户 `QuickGUI_Icons/` 未修改或暂存。
+
 ## 2026-10-20 — 删除独立连接页
 
 - 按要求删除独立“连接”页及中英文导航入口，清理页面对应的工作区类型、翻译键、图标/类型导入和专属卡片样式；流程属性中的说明不再指向已移除的页面。工作区页签保留界面、应用外观、多语言、流程、C脚本和数据。

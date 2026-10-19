@@ -1074,11 +1074,6 @@ a {
   white-space: pre-wrap;
   line-height: 1.8;
 }
-.data-panel {
-  padding: 32px;
-  flex: 1;
-  overflow: auto;
-}
 .page-heading {
   display: flex;
   justify-content: space-between;
@@ -1102,46 +1097,6 @@ a {
   color: var(--muted);
   line-height: 1.7;
   margin: 0;
-}
-.data-table-wrap {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  overflow: auto;
-  background: var(--panel);
-}
-.data-table {
-  width: 100%;
-  border-collapse: collapse;
-  text-align: left;
-}
-.data-table th {
-  font-size: 10px;
-  font-weight: 500;
-  color: var(--muted);
-  padding: 14px 15px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-}
-.data-table td {
-  padding: 12px 15px;
-  border-bottom: 1px solid var(--border);
-}
-.data-table tr:last-child td {
-  border-bottom: 0;
-}
-.data-table input:not([type='checkbox']),
-.data-table select {
-  padding: 6px 7px;
-  font-size: 11px;
-  width: 100%;
-  min-width: 65px;
-  max-width: 180px;
-}
-.data-table small {
-  display: block;
-  font-size: 9px;
-  color: var(--muted);
-  margin-top: 5px;
 }
 .quality-tag {
   font-size: 9px;
@@ -1198,9 +1153,6 @@ a {
   }
   .workspace-tabs nav > button {
     padding: 0 11px;
-  }
-  .data-panel {
-    padding: 22px;
   }
   .brand {
     margin-right: 6px;

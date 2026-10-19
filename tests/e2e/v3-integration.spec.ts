@@ -243,16 +243,19 @@ test('cross-project fallback paste reviews mappings and code trust, then imports
   await expect(undoButton(page)).toBeDisabled();
 });
 
-test('DataPanel adds JSON variables and validates initial and runtime JSON independently', async ({
+test('parameter components validate initial and runtime JSON independently', async ({
   page,
 }, info) => {
   await page.goto('/');
   await importProject(page, createEmptyProject('JSON Data Editing'));
-  await selectSection(page, '数据');
-  await page.getByRole('button', { name: '添加变量', exact: true }).click();
-  const row = page.locator('.data-table tbody tr').last();
-  await row.locator('td').first().locator('input').fill('Machine');
-  await row.locator('select').selectOption('json');
+  await selectSection(page, '流程');
+  await page
+    .locator('.qg-node-palette')
+    .getByRole('button', { name: 'JSON参数', exact: true })
+    .click();
+  const row = page.locator('.qg-parameter-inspector');
+  await row.getByLabel('参数名称', { exact: true }).fill('Machine');
+  await row.getByLabel('参数名称', { exact: true }).blur();
   const initial = row.getByLabel('initial Machine', { exact: true });
   const runtime = row.getByLabel('runtime Machine', { exact: true });
   await initial.fill('{"nested":{"temperature":12},"labels":["A","B"]}');
@@ -277,6 +280,16 @@ test('DataPanel adds JSON variables and validates initial and runtime JSON indep
   expect(JSON.parse(await initial.inputValue())).toEqual(saved.variables[0].initial);
   await runtime.fill('{"nested":{"temperature":30},"labels":["Runtime"]}');
   await runtime.press('Tab');
+  expect(JSON.parse(await runtime.inputValue())).toEqual({
+    nested: { temperature: 30 },
+    labels: ['Runtime'],
+  });
+  await runtime.fill('{"unfinished":');
+  await runtime.press('Tab');
+  await expect(row.getByRole('alert')).toBeVisible();
+  await runtime.focus();
+  await runtime.press('Escape');
+  await expect(row.getByRole('alert')).toHaveCount(0);
   expect(JSON.parse(await runtime.inputValue())).toEqual({
     nested: { temperature: 30 },
     labels: ['Runtime'],
@@ -357,7 +370,15 @@ test('two-way JSON leaf writes stay shared across independent preview windows wi
     .locator(':scope > header')
     .getByRole('button', { name: '关闭', exact: true })
     .click();
-  await selectSection(page, '数据');
+  await selectSection(page, '流程');
+  await page
+    .locator('.qg-flow-library-tabs')
+    .getByRole('button', { name: '参数', exact: true })
+    .click();
+  await page
+    .locator('.qg-parameter-library')
+    .getByRole('button', { name: '编辑参数 Machine', exact: true })
+    .click();
   const value = JSON.parse(await page.getByLabel('runtime Machine', { exact: true }).inputValue());
   expect(value).toEqual({
     plant: { temperature: 37, mode: 'service' },

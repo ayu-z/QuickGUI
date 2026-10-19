@@ -1,0 +1,205 @@
+.qg-parameter-inspector {
+  width: 100%;
+  min-width: 0;
+  font-size: 11px;
+}
+.qg-parameter-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.qg-parameter-heading > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.qg-parameter-heading > div > span {
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: var(--muted);
+}
+.qg-parameter-heading strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.qg-parameter-heading > svg {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.qg-parameter-fields,
+.qg-parameter-runtime {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+}
+.qg-parameter-field {
+  display: grid;
+  grid-template-columns: 66px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  min-width: 0;
+}
+.qg-parameter-field > span {
+  color: var(--muted);
+  padding-top: 8px;
+}
+.qg-parameter-inspector input:not([type='checkbox']),
+.qg-parameter-inspector select,
+.qg-parameter-inspector textarea {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  font-size: 11px;
+}
+.qg-parameter-inspector input:not([type='checkbox']),
+.qg-parameter-inspector select {
+  min-height: 30px;
+  padding: 5px 7px;
+}
+.qg-parameter-inspector input[type='checkbox'] {
+  justify-self: start;
+  margin: 7px 0;
+}
+.qg-parameter-input {
+  min-width: 0;
+}
+.qg-parameter-input > .form-error {
+  display: block;
+  overflow-wrap: anywhere;
+  margin-top: 5px;
+}
+.qg-parameter-inspector .json-value-field {
+  min-width: 0;
+}
+.qg-parameter-inspector .json-value-field textarea {
+  min-height: 76px;
+  resize: vertical;
+}
+.qg-parameter-inspector .json-value-field .form-error {
+  overflow-wrap: anywhere;
+}
+.qg-parameter-id {
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono, monospace);
+  color: var(--muted);
+  padding: 7px 0;
+  user-select: text;
+}
+.qg-parameter-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.qg-parameter-toggle > span {
+  color: var(--muted);
+}
+.qg-parameter-runtime {
+  border-top: 1px solid var(--border);
+}
+.qg-parameter-runtime h3 {
+  font-size: 10px;
+  color: var(--muted);
+  font-weight: 500;
+  margin: 0 0 2px;
+}
+.qg-parameter-state {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.qg-parameter-state > span:first-child {
+  width: 66px;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.qg-parameter-state time {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 10px;
+  color: var(--muted);
+}
+.qg-parameter-note {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  margin: 0;
+}
+.qg-parameter-history {
+  border-top: 1px solid var(--border);
+}
+.qg-parameter-history > summary {
+  cursor: pointer;
+  color: var(--muted);
+  padding: 12px 16px;
+  font-size: 11px;
+}
+.qg-parameter-history > .history-panel {
+  padding: 0 16px 14px;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.qg-parameter-history .history-panel > header {
+  margin-bottom: 10px;
+}
+.qg-parameter-history .history-panel > header > div {
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.qg-parameter-history .history-panel h3 {
+  font-size: 10px;
+}
+.qg-parameter-history .history-config {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.qg-parameter-history .history-config label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.qg-parameter-history .history-config input {
+  width: 100%;
+}
+.qg-parameter-history .history-chart {
+  height: 96px;
+  gap: 6px;
+}
+.qg-parameter-history .history-chart > div {
+  width: 32px;
+}
+.qg-parameter-history .alarm-heading {
+  margin: 14px 0 10px;
+  padding-top: 12px;
+}
+.qg-parameter-history .alarm-row {
+  flex-wrap: wrap;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+.qg-parameter-history .alarm-row time {
+  flex-basis: 100%;
+  margin-left: 11px;
+}
+.qg-parameter-history .panel-intro {
+  line-height: 1.6;
+  font-size: 10px;
+}
+.qg-parameter-footer {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--border);
+}
+.qg-parameter-footer > button {
+  width: 100%;
+  justify-content: center;
+}

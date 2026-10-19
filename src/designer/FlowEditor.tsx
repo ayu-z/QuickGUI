@@ -28,7 +28,10 @@ import {
   Trash2,
   Zap,
 } from 'lucide-react';
-import type { Flow, FlowNode, Json, Locale, NodeKind, Project } from '../core/types';
+import type { Flow, FlowNode, Json, Locale, NodeKind, Project, VariableType } from '../core/types';
+import type { RuntimeController } from '../runtime/engine';
+import { addFlowParameter, addParameterReference } from '../core/parameters';
+import { ParameterInspector } from './ParameterInspector';
 import { Field, NumberInput, Toggle } from './Fields';
 import { listProjectWindows } from '../core/windows';
 import { JsonValueField } from '../panels/JsonValueField';
@@ -223,17 +226,33 @@ export interface FlowEditorProps {
   activeNodes?: string[];
   locale: Locale;
   designerTheme?: 'light' | 'dark';
+  engine: RuntimeController;
+  onProjectChange: (mutator: (project: Project) => void) => void;
+  notify: (text: string, error?: boolean) => void;
 }
 const noActiveNodes: string[] = [];
 const nodeColor = (node: QuickNode) => nodeInfo[node.data.model.kind].color;
+const parameterMime = 'application/quickgui-parameter';
+const parameterTypes: { type: VariableType; zh: string; en: string; icon: typeof Binary }[] = [
+  { type: 'number', zh: '数值参数', en: 'Number parameter', icon: Binary },
+  { type: 'string', zh: '文本参数', en: 'Text parameter', icon: MessageSquare },
+  { type: 'boolean', zh: '布尔参数', en: 'Boolean parameter', icon: Zap },
+  { type: 'json', zh: 'JSON参数', en: 'JSON parameter', icon: Code2 },
+];
 
 function FlowEditor({
   project,
   onChange,
   locale,
   designerTheme,
+  engine,
+  onProjectChange,
+  notify,
 }: Omit<FlowEditorProps, 'activeNodes'>) {
   const [paletteSearch, setPaletteSearch] = useState('');
+  const [libraryTab, setLibraryTab] = useState<'nodes' | 'parameters'>('nodes');
+  const [parameterSearch, setParameterSearch] = useState('');
+  const [selectedParameterId, setSelectedParameterId] = useState<string | null>(null);
   const [selectedFlowId, setSelectedFlowId] = useState(project.flows[0]?.id ?? '');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
@@ -245,6 +264,17 @@ function FlowEditor({
   currentFlows.current = project.flows;
   const flow = project.flows.find((item) => item.id === selectedFlowId) ?? project.flows[0];
   const selectedNode = flow?.nodes.find((node) => node.id === selectedNodeId);
+  const selectedParameter = project.variables.find(
+    (variable) => variable.id === selectedParameterId,
+  );
+  const nodeParameter =
+    selectedNode && ['read', 'write'].includes(selectedNode.kind)
+      ? project.variables.find(
+          (variable) =>
+            variable.id === selectedNode.config.variable ||
+            variable.name === selectedNode.config.variable,
+        )
+      : undefined;
   const zh = locale === 'zh-CN';
   const draftRef = useRef<{
     flow: Flow;
@@ -304,14 +334,17 @@ function FlowEditor({
   const selectNode = useCallback((nodeId: string) => {
     setSelectedNodeId(nodeId);
     setSelectedEdgeId(null);
+    setSelectedParameterId(null);
   }, []);
   const selectEdge = useCallback((edgeId: string) => {
     setSelectedEdgeId(edgeId);
     setSelectedNodeId(null);
+    setSelectedParameterId(null);
   }, []);
   const clearSelection = useCallback(() => {
     setSelectedNodeId(null);
     setSelectedEdgeId(null);
+    setSelectedParameterId(null);
   }, []);
   const edges = useMemo(
     () =>
@@ -402,6 +435,7 @@ function FlowEditor({
     ]);
     setSelectedFlowId(flowId);
     setSelectedNodeId(null);
+    setSelectedParameterId(null);
   };
   const addNode = (kind: NodeKind, preset?: Record<string, Json>) => {
     if (!flow) return;
@@ -449,10 +483,74 @@ function FlowEditor({
       }
       updateFlow({ nodes: [...flow.nodes, node] });
       setSelectedNodeId(node.id);
+      setSelectedParameterId(null);
       requestAnimationFrame(() => void instance.current?.fitView({ padding: 0.3, maxZoom: 1 }));
     };
     apply();
   };
+  const placeParameter = (
+    source: { type: VariableType } | { variableId: string },
+    position?: { x: number; y: number },
+  ) => {
+    try {
+      const count = flow?.nodes.length ?? 1;
+      const placement = position ?? {
+        x: 80 + (count % 4) * 320,
+        y: 100 + Math.floor(count / 4) * 200,
+      };
+      if (!position)
+        while (
+          flow?.nodes.some((node) => {
+            const measured = measurements[node.id];
+            return (
+              placement.x < node.position.x + (measured?.width ?? 250) + 24 &&
+              placement.x + 274 > node.position.x &&
+              placement.y < node.position.y + (measured?.height ?? 180) + 24 &&
+              placement.y + 172 > node.position.y
+            );
+          })
+        )
+          placement.y += 204;
+      let placed: ReturnType<typeof addFlowParameter> | undefined;
+      onProjectChange((next) => {
+        placed =
+          'variableId' in source
+            ? addParameterReference(next, flow?.id, source.variableId, placement)
+            : addFlowParameter(next, flow?.id, source.type, placement);
+      });
+      if (!placed) return;
+      setSelectedFlowId(placed.flowId);
+      setSelectedNodeId(placed.nodeId);
+      setSelectedEdgeId(null);
+      setSelectedParameterId(null);
+      requestAnimationFrame(() => void instance.current?.fitView({ padding: 0.3, maxZoom: 1 }));
+    } catch (error) {
+      notify(String(error), true);
+    }
+  };
+  const parameterButtons = (search: string) => (
+    <div className="qg-library-grid qg-parameter-create-grid">
+      {parameterTypes
+        .filter((item) =>
+          `${item.zh} ${item.en} ${item.type}`.toLowerCase().includes(search.trim().toLowerCase()),
+        )
+        .map((item) => (
+          <button
+            key={item.type}
+            className="qg-library-item qg-parameter-create"
+            draggable
+            onDragStart={(event) => {
+              event.dataTransfer.setData(parameterMime, JSON.stringify({ type: item.type }));
+              event.dataTransfer.effectAllowed = 'copy';
+            }}
+            onClick={() => placeParameter({ type: item.type })}
+          >
+            <item.icon size={20} style={{ color: 'var(--accent)' }} />
+            <span>{zh ? item.zh : item.en}</span>
+          </button>
+        ))}
+    </div>
+  );
   const onConnect = (connection: FlowConnection) => {
     if (!flow || !connection.source || !connection.target || !canConnect(connection)) return;
     if (
@@ -568,6 +666,7 @@ function FlowEditor({
     if (selection?.type === 'select') {
       setSelectedNodeId(selection.id);
       setSelectedEdgeId(null);
+      setSelectedParameterId(null);
     }
     const changesToApply = changes.filter(
       (change) => change.type === 'remove' || (change.type === 'position' && !!change.position),
@@ -609,6 +708,7 @@ function FlowEditor({
     if (selection?.type === 'select') {
       setSelectedEdgeId(selection.id);
       setSelectedNodeId(null);
+      setSelectedParameterId(null);
     }
     const removed = new Set(
       changes.filter((change) => change.type === 'remove').map((change) => change.id),
@@ -704,6 +804,7 @@ function FlowEditor({
               setSelectedFlowId(event.target.value);
               setSelectedNodeId(null);
               setSelectedEdgeId(null);
+              setSelectedParameterId(null);
             }}
           >
             {!project.flows.length && <option value="">{zh ? '尚无流程' : 'No flows'}</option>}
@@ -714,77 +815,223 @@ function FlowEditor({
             ))}
           </select>
         </div>
-        <div className="qg-node-palette qg-library">
-          <div className="qg-library-intro">
-            <span>{zh ? '节点库' : 'NODES'}</span>
-            <span className="qg-count">{visibleItems.length}</span>
-          </div>
-          <label className="qg-search">
-            <Search size={14} />
-            <input
-              aria-label={zh ? '搜索节点' : 'Search nodes'}
-              placeholder={zh ? '搜索节点…' : 'Search nodes…'}
-              value={paletteSearch}
-              onChange={(event) => setPaletteSearch(event.target.value)}
-            />
-            {paletteSearch && (
-              <button
-                type="button"
-                className="qg-flow-search-clear"
-                aria-label={zh ? '清空搜索' : 'Clear search'}
-                onClick={() => setPaletteSearch('')}
-              >
-                <X size={12} />
-              </button>
-            )}
-          </label>
-          {(['logic', 'data', 'integration'] as const).map((group) => {
-            const items = visibleItems.filter((item) => item.group === group);
-            return items.length ? (
-              <section className="qg-library-group" key={group}>
-                <h3>
-                  {
-                    {
-                      logic: zh ? '逻辑与事件' : 'LOGIC & EVENTS',
-                      data: zh ? '数据处理' : 'DATA',
-                      integration: zh ? '设备与集成' : 'DEVICES & INTEGRATIONS',
-                    }[group]
-                  }
-                </h3>
-                <div className="qg-library-grid">
-                  {items.map((item) => (
-                    <button
-                      key={item.id}
-                      className="qg-library-item"
-                      disabled={!flow}
-                      title={zh ? `添加${item.label}` : `Add ${item.label}`}
-                      onClick={() => addNode(item.kind, item.preset)}
-                    >
-                      <item.icon size={20} style={{ color: item.color }} />
-                      <span>{item.label}</span>
-                    </button>
-                  ))}
-                </div>
+        <div className="qg-flow-library">
+          <nav
+            className="qg-flow-library-tabs"
+            aria-label={zh ? '流程组件库' : 'Flow component library'}
+          >
+            <button
+              className={libraryTab === 'nodes' ? 'active' : ''}
+              onClick={() => setLibraryTab('nodes')}
+            >
+              {zh ? '节点' : 'Nodes'}
+            </button>
+            <button
+              className={libraryTab === 'parameters' ? 'active' : ''}
+              onClick={() => setLibraryTab('parameters')}
+            >
+              {zh ? '参数' : 'Parameters'}
+            </button>
+          </nav>
+          {libraryTab === 'nodes' ? (
+            <div className="qg-node-palette qg-library">
+              <div className="qg-library-intro">
+                <span>{zh ? '节点库' : 'NODES'}</span>
+                <span className="qg-count">
+                  {visibleItems.length +
+                    parameterTypes.filter((item) =>
+                      `${item.zh} ${item.en} ${item.type}`
+                        .toLowerCase()
+                        .includes(paletteSearch.trim().toLowerCase()),
+                    ).length}
+                </span>
+              </div>
+              <label className="qg-search">
+                <Search size={14} />
+                <input
+                  aria-label={zh ? '搜索节点' : 'Search nodes'}
+                  placeholder={zh ? '搜索节点…' : 'Search nodes…'}
+                  value={paletteSearch}
+                  onChange={(event) => setPaletteSearch(event.target.value)}
+                />
+                {paletteSearch && (
+                  <button
+                    type="button"
+                    className="qg-flow-search-clear"
+                    aria-label={zh ? '清空搜索' : 'Clear search'}
+                    onClick={() => setPaletteSearch('')}
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </label>
+              {parameterTypes.some((item) =>
+                `${item.zh} ${item.en} ${item.type}`
+                  .toLowerCase()
+                  .includes(paletteSearch.trim().toLowerCase()),
+              ) && (
+                <section className="qg-library-group qg-parameter-components">
+                  <h3>{zh ? '参数组件' : 'PARAMETERS'}</h3>
+                  {parameterButtons(paletteSearch)}
+                </section>
+              )}
+              {(['logic', 'data', 'integration'] as const).map((group) => {
+                const items = visibleItems.filter((item) => item.group === group);
+                return items.length ? (
+                  <section className="qg-library-group" key={group}>
+                    <h3>
+                      {
+                        {
+                          logic: zh ? '逻辑与事件' : 'LOGIC & EVENTS',
+                          data: zh ? '数据处理' : 'DATA',
+                          integration: zh ? '设备与集成' : 'DEVICES & INTEGRATIONS',
+                        }[group]
+                      }
+                    </h3>
+                    <div className="qg-library-grid">
+                      {items.map((item) => (
+                        <button
+                          key={item.id}
+                          className="qg-library-item"
+                          disabled={!flow}
+                          title={zh ? `添加${item.label}` : `Add ${item.label}`}
+                          onClick={() => addNode(item.kind, item.preset)}
+                        >
+                          <item.icon size={20} style={{ color: item.color }} />
+                          <span>{item.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                ) : null;
+              })}
+              {!visibleItems.length &&
+                !parameterTypes.some((item) =>
+                  `${item.zh} ${item.en} ${item.type}`
+                    .toLowerCase()
+                    .includes(paletteSearch.trim().toLowerCase()),
+                ) && (
+                  <p className="qg-field-hint qg-flow-search-empty">
+                    {zh ? '没有匹配的节点' : 'No matching nodes'}
+                  </p>
+                )}
+              <div className="qg-library-tip">
+                <MousePointer2 size={14} />
+                <span>
+                  {zh
+                    ? '点击添加节点，拖动端口建立连线。'
+                    : 'Click to add a node. Drag between ports to connect.'}
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="qg-parameter-library qg-library">
+              <div className="qg-library-intro">
+                <span>{zh ? '工程参数' : 'PROJECT PARAMETERS'}</span>
+                <span className="qg-count">{project.variables.length}</span>
+              </div>
+              <label className="qg-search">
+                <Search size={14} />
+                <input
+                  aria-label={zh ? '搜索参数' : 'Search parameters'}
+                  placeholder={zh ? '搜索参数…' : 'Search parameters…'}
+                  value={parameterSearch}
+                  onChange={(event) => setParameterSearch(event.target.value)}
+                />
+              </label>
+              <section className="qg-library-group">
+                <h3>{zh ? '新建参数组件' : 'NEW PARAMETER'}</h3>
+                {parameterButtons('')}
               </section>
-            ) : null;
-          })}
-          {!visibleItems.length && (
-            <p className="qg-field-hint qg-flow-search-empty">
-              {zh ? '没有匹配的节点' : 'No matching nodes'}
-            </p>
+              <section className="qg-library-group qg-parameter-definitions">
+                <h3>{zh ? '已有参数' : 'EXISTING PARAMETERS'}</h3>
+                {project.variables
+                  .filter((variable) =>
+                    `${variable.name} ${variable.id} ${variable.type}`
+                      .toLowerCase()
+                      .includes(parameterSearch.trim().toLowerCase()),
+                  )
+                  .map((variable) => (
+                    <div
+                      className={`qg-parameter-item ${selectedParameterId === variable.id ? 'selected' : ''}`}
+                      key={variable.id}
+                    >
+                      <button
+                        aria-label={
+                          zh ? `编辑参数 ${variable.name}` : `Edit parameter ${variable.name}`
+                        }
+                        onClick={() => {
+                          setSelectedParameterId(variable.id);
+                          setSelectedNodeId(null);
+                          setSelectedEdgeId(null);
+                        }}
+                      >
+                        <span>{variable.name}</span>
+                        <small>{variable.type}</small>
+                      </button>
+                      <button
+                        className="qg-icon-button"
+                        draggable
+                        aria-label={
+                          zh
+                            ? `添加参数引用 ${variable.name}`
+                            : `Add parameter reference ${variable.name}`
+                        }
+                        onDragStart={(event) => {
+                          event.dataTransfer.setData(
+                            parameterMime,
+                            JSON.stringify({ variableId: variable.id }),
+                          );
+                          event.dataTransfer.effectAllowed = 'copy';
+                        }}
+                        onClick={() => placeParameter({ variableId: variable.id })}
+                      >
+                        <Plus size={14} />
+                      </button>
+                    </div>
+                  ))}
+                {!project.variables.length && (
+                  <p className="qg-field-hint">
+                    {zh
+                      ? '添加参数组件以创建共享数据。'
+                      : 'Add a parameter component to create shared data.'}
+                  </p>
+                )}
+              </section>
+            </div>
           )}
-          <div className="qg-library-tip">
-            <MousePointer2 size={14} />
-            <span>
-              {zh
-                ? '点击添加节点，拖动端口建立连线。'
-                : 'Click to add a node. Drag between ports to connect.'}
-            </span>
-          </div>
         </div>
       </aside>
       <div className="qg-flow-workspace">
-        <div className="qg-flow-canvas">
+        <div
+          className="qg-flow-canvas"
+          onDragOver={(event) => {
+            if (event.dataTransfer.types.includes(parameterMime)) {
+              event.preventDefault();
+              event.dataTransfer.dropEffect = 'copy';
+            }
+          }}
+          onDrop={(event) => {
+            const raw = event.dataTransfer.getData(parameterMime);
+            if (!raw) return;
+            event.preventDefault();
+            try {
+              const source = JSON.parse(raw);
+              if (
+                !source ||
+                (typeof source.variableId !== 'string' &&
+                  !parameterTypes.some((item) => item.type === source.type))
+              )
+                return;
+              placeParameter(
+                source,
+                instance.current?.screenToFlowPosition({ x: event.clientX, y: event.clientY }),
+              );
+            } catch (error) {
+              notify(String(error), true);
+            }
+          }}
+        >
           {flow ? (
             <FlowCanvas
               key={flow.id}
@@ -842,15 +1089,22 @@ function FlowEditor({
       >
         <header className="qg-inspector-heading">
           <div>
-            <strong title={selectedNode?.label ?? flow?.name}>
-              {selectedNode?.label ?? flow?.name ?? (zh ? '流程属性' : 'Flow properties')}
+            <strong title={selectedParameter?.name ?? selectedNode?.label ?? flow?.name}>
+              {selectedParameter?.name ??
+                selectedNode?.label ??
+                flow?.name ??
+                (zh ? '流程属性' : 'Flow properties')}
             </strong>
             <span className="qg-widget-type">
-              {selectedNode
-                ? nodeInfo[selectedNode.kind][zh ? 'zh' : 'en']
-                : zh
-                  ? '流程设置'
-                  : 'FLOW SETTINGS'}
+              {selectedParameter
+                ? zh
+                  ? '参数属性'
+                  : 'PARAMETER'
+                : selectedNode
+                  ? nodeInfo[selectedNode.kind][zh ? 'zh' : 'en']
+                  : zh
+                    ? '流程设置'
+                    : 'FLOW SETTINGS'}
             </span>
           </div>
           {selectedNode && (
@@ -864,9 +1118,29 @@ function FlowEditor({
           )}
         </header>
         <div className="qg-flow-settings-body">
-          {flow &&
+          {selectedParameter ? (
+            <ParameterInspector
+              key={selectedParameter.id}
+              project={project}
+              variableId={selectedParameter.id}
+              engine={engine}
+              onChange={onProjectChange}
+              notify={notify}
+            />
+          ) : (
+            flow &&
             (selectedNode ? (
               <>
+                {nodeParameter && (
+                  <ParameterInspector
+                    key={nodeParameter.id}
+                    project={project}
+                    variableId={nodeParameter.id}
+                    engine={engine}
+                    onChange={onProjectChange}
+                    notify={notify}
+                  />
+                )}
                 <div className="qg-section-title">
                   <h3>{zh ? '节点属性' : 'NODE PROPERTIES'}</h3>
                 </div>
@@ -1649,8 +1923,9 @@ function FlowEditor({
                   {zh ? '删除此流程' : 'Delete this flow'}
                 </button>
               </>
-            ))}
-          {!flow && (
+            ))
+          )}
+          {!flow && !selectedParameter && (
             <div className="qg-inspector-empty">
               <GitBranch size={30} />
               <strong>{zh ? '创建流程开始设计' : 'Create a flow to start'}</strong>
@@ -1679,6 +1954,9 @@ const FlowEditorWithActivity = memo(
   (previous, next) =>
     previous.project === next.project &&
     previous.onChange === next.onChange &&
+    previous.onProjectChange === next.onProjectChange &&
+    previous.engine === next.engine &&
+    previous.notify === next.notify &&
     previous.locale === next.locale &&
     previous.designerTheme === next.designerTheme &&
     (previous.activeNodes ?? noActiveNodes).length === (next.activeNodes ?? noActiveNodes).length &&

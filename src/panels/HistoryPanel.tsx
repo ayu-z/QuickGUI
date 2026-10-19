@@ -8,14 +8,17 @@ export function HistoryPanel({
   project,
   engine,
   onChange,
+  variableId,
 }: {
   project: Project;
   engine: RuntimeController;
   onChange: (change: (p: Project) => void) => void;
+  variableId?: string;
 }) {
-  const [selected, setSelected] = useState(
+  const [selection, setSelected] = useState(
     project.variables.find((v) => v.type === 'number')?.id ?? '',
   );
+  const selected = variableId ?? selection;
   const variable = project.variables.find((v) => v.id === selected);
   const [samples, setSamples] = useState<native.HistorySample[]>([]),
     [alarms, setAlarms] = useState<native.AlarmRecord[]>([]);
@@ -100,32 +103,36 @@ export function HistoryPanel({
         </button>
       </header>
       <div className="history-config">
-        <label>
-          {zh ? '变量' : 'Variable'}
-          <select value={selected} onChange={(e) => setSelected(e.target.value)}>
-            {project.variables
-              .filter((v) => v.type === 'number')
-              .map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.name}
-                </option>
-              ))}
-          </select>
-        </label>
+        {variableId === undefined && (
+          <label>
+            {zh ? '变量' : 'Variable'}
+            <select value={selected} onChange={(e) => setSelected(e.target.value)}>
+              {project.variables
+                .filter((v) => v.type === 'number')
+                .map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.name}
+                  </option>
+                ))}
+            </select>
+          </label>
+        )}
         {variable && (
           <>
-            <label>
-              <input
-                type="checkbox"
-                checked={Boolean(variable.persistent)}
-                onChange={(e) =>
-                  onChange((p) => {
-                    p.variables.find((v) => v.id === selected)!.persistent = e.target.checked;
-                  })
-                }
-              />
-              {zh ? '恢复持久值' : 'Persist value'}
-            </label>
+            {variableId === undefined && (
+              <label>
+                <input
+                  type="checkbox"
+                  checked={Boolean(variable.persistent)}
+                  onChange={(e) =>
+                    onChange((p) => {
+                      p.variables.find((v) => v.id === selected)!.persistent = e.target.checked;
+                    })
+                  }
+                />
+                {zh ? '恢复持久值' : 'Persist value'}
+              </label>
+            )}
             <label>
               {zh ? '下限' : 'Low'}
               <input

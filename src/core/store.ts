@@ -4,7 +4,7 @@ import { validateProject } from './validation';
 import { upgradeProject } from './migration';
 import { getProjectWindow, listProjectWindows, MAX_ADDITIONAL_WINDOWS } from './windows';
 
-export type Section = 'design' | 'appearance' | 'languages' | 'flows' | 'scripts' | 'data';
+export type Section = 'design' | 'appearance' | 'languages' | 'flows' | 'scripts';
 export interface ProjectRecovery {
   project: Project;
   drafts: Record<string, string>;

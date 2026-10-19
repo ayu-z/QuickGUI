@@ -84,9 +84,21 @@ for (const theme of ['dark', 'light']) {
       (await designed.boundingBox())!.height,
       2,
     );
-    await page.getByRole('button', { name: '数据', exact: true }).click();
+    await page.getByRole('button', { name: '流程', exact: true }).click();
+    await page
+      .locator('.qg-flow-library-tabs')
+      .getByRole('button', { name: '参数', exact: true })
+      .click();
+    await page
+      .locator('.qg-parameter-library')
+      .getByRole('button', { name: '编辑参数 Number', exact: true })
+      .click();
     await consistentSelects(page);
     await page.getByRole('button', { name: '流程', exact: true }).click();
+    await page
+      .locator('.qg-flow-library-tabs')
+      .getByRole('button', { name: '节点', exact: true })
+      .click();
     await page.locator('.qg-flow-card').first().click();
     await consistentSelects(page);
     await page

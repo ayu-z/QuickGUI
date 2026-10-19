@@ -150,10 +150,12 @@ test('separates appearance and translations and changes from two expanded langua
     '多语言',
     '流程',
     'C 脚本',
-    '数据',
   ]);
   await expect(
     page.locator('.workspace-tabs nav').getByRole('button', { name: '连接', exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.locator('.workspace-tabs nav').getByRole('button', { name: '数据', exact: true }),
   ).toHaveCount(0);
   await expect(page.getByRole('button', { name: '应用外观与多语言', exact: true })).toHaveCount(0);
   const table = panel(page).getByRole('table', { name: '翻译资源', exact: true });
@@ -395,10 +397,12 @@ test('keeps long tables and expanded language columns visible in light and dark 
     'Languages',
     'Flows',
     'C scripts',
-    'Data',
   ]);
   await expect(
     page.locator('.workspace-tabs nav').getByRole('button', { name: 'Connections', exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.locator('.workspace-tabs nav').getByRole('button', { name: 'Data', exact: true }),
   ).toHaveCount(0);
   await expect(
     page.locator('.workspace-tabs nav').getByRole('button', { name: 'Languages', exact: true }),

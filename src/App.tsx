@@ -24,7 +24,6 @@ import {
   RotateCcw,
   RotateCw,
   Save,
-  SlidersHorizontal,
   Square,
   Sun,
   Terminal,
@@ -56,15 +55,7 @@ import {
 import { download, exportProject, importProject, projectFilename } from './core/archive';
 import { errorText, validateProject } from './core/validation';
 import { translations } from './core/i18n';
-import type {
-  Flow,
-  Json,
-  Project,
-  Widget,
-  ComponentModule,
-  Variable,
-  RuntimeLog,
-} from './core/types';
+import type { Flow, Json, Project, Widget, ComponentModule, RuntimeLog } from './core/types';
 import { CanvasEditor } from './designer/CanvasEditor';
 import { LayerTree } from './designer/LayerTree';
 import {
@@ -92,13 +83,11 @@ import * as native from './native/bridge';
 import './designer/designer.css';
 import { AppearancePanel } from './panels/AppearancePanel';
 import { TranslationsPanel } from './panels/TranslationsPanel';
-import { HistoryPanel } from './panels/HistoryPanel';
 import { importComponentPackage, exportComponentPackage } from './core/componentPackage';
 import { WelcomeScreen } from './panels/WelcomeScreen';
 import { ProjectNameDialog } from './panels/ProjectNameDialog';
 import { WindowManager } from './panels/WindowManager';
 import { PasteReviewDialog } from './panels/PasteReviewDialog';
-import { JsonValueField } from './panels/JsonValueField';
 import {
   copySelection,
   writeClipboard,
@@ -110,7 +99,6 @@ import {
   type EditScope,
 } from './core/clipboard';
 import { assertJsonValue } from './core/jsonValue';
-import { variableReferences } from './core/references';
 import { getWidgetDefinition, getBindableProperties, getJsonPath } from './core/widgetDefinitions';
 import { useDismissibleLayer } from './hooks/useDismissibleLayer';
 import { isAutomaticEventSource } from './core/flowV4';
@@ -340,10 +328,10 @@ function ProjectWorkspace({
     setModuleId(null);
     store.inspectWindow();
   };
-  const notify = (text: string, error = false) => {
+  const notify = useCallback((text: string, error = false) => {
     if (!mounted.current) return;
     setToast({ text, error });
-  };
+  }, []);
   const enqueuePreview = (next: Project, windowId?: string) => {
     const generation = previewGeneration.current;
     const task = previewQueue.current
@@ -953,6 +941,10 @@ function ProjectWorkspace({
     );
   const runEntry = runEntries.find((entry) => entry.key === runEntryKey) ?? runEntries[0];
   const run = () => {
+    if (engine.getSnapshot().revision !== project.revision) {
+      notify(zh ? '运行时正在更新，请稍后重试' : 'Runtime is updating. Please retry.');
+      return;
+    }
     if (!snapshot.running) engine.start();
     if (runEntry)
       void engine
@@ -965,7 +957,6 @@ function ProjectWorkspace({
     ['languages', Languages, t.languages],
     ['flows', GitBranch, t.flows],
     ['scripts', Code2, t.scripts],
-    ['data', SlidersHorizontal, t.data],
   ];
 
   return (
@@ -1403,6 +1394,9 @@ function ProjectWorkspace({
               activeNodes={snapshot.activeNodes}
               locale={project.locale}
               designerTheme={designerTheme}
+              engine={engine}
+              onProjectChange={store.update}
+              notify={notify}
             />
           )}
           {section === 'scripts' && (
@@ -1410,14 +1404,6 @@ function ProjectWorkspace({
               project={project}
               onChange={(p) => store.update(p)}
               engine={engine}
-              notify={notify}
-            />
-          )}
-          {section === 'data' && (
-            <DataPanel
-              project={project}
-              engine={engine}
-              onChange={(p) => store.update(p)}
               notify={notify}
             />
           )}
@@ -1469,7 +1455,10 @@ function ProjectWorkspace({
                     className="icon-button"
                     title={t.run}
                     onClick={run}
-                    disabled={!runEntry && snapshot.running}
+                    disabled={
+                      snapshot.revision !== project.revision || (!runEntry && snapshot.running)
+                    }
+                    aria-busy={snapshot.revision !== project.revision || undefined}
                   >
                     <Play size={13} />
                   </button>
@@ -2107,220 +2096,6 @@ function ScriptPanel({
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-function DataPanel({
-  project,
-  onChange,
-  engine,
-  notify,
-}: {
-  project: Project;
-  onChange: (mutator: (p: Project) => void) => void;
-  engine: RuntimeController;
-  notify: (text: string, error?: boolean) => void;
-}) {
-  const snapshot = useSyncExternalStore(engine.subscribe, engine.getSnapshot);
-  const zh = project.locale === 'zh-CN';
-  const runtimePending = snapshot.revision !== project.revision;
-  const writeRuntimeValue = (id: string, value: Json) => {
-    if (engine.getSnapshot().revision !== project.revision)
-      throw new Error(zh ? '运行时正在更新，请稍后重试' : 'Runtime is updating. Please retry.');
-    engine.setVariable(id, value);
-  };
-  const update = (id: string, patch: Partial<Variable>) =>
-    onChange((p) =>
-      Object.assign(
-        p.variables.find((v) => v.id === id)!,
-        patch,
-      ),
-    );
-  return (
-    <div className="data-panel">
-      <header className="page-heading">
-        <div>
-          <span className="eyebrow">DATA MODEL</span>
-          <h2>{zh ? '变量与运行状态' : 'Variables & state'}</h2>
-          <p>
-            {zh
-              ? '类型化数据、质量状态与时间戳，供所有控件和流程共享。'
-              : 'Typed values, quality and timestamps shared by widgets and flows.'}
-          </p>
-        </div>
-        <button
-          className="button primary"
-          onClick={() =>
-            onChange((p) => {
-              const id = uid('value');
-              p.variables.push({ id, name: id, type: 'number', initial: 0 });
-            })
-          }
-        >
-          <Plus size={14} />
-          {zh ? '添加变量' : 'Add variable'}
-        </button>
-      </header>
-      <div className="data-table-wrap">
-        <table className="data-table">
-          <thead>
-            <tr>
-              {[
-                zh ? '变量名称' : 'Name',
-                zh ? '类型' : 'Type',
-                zh ? '初始值' : 'Initial value',
-                zh ? '运行值' : 'Runtime value',
-                zh ? '单位' : 'Unit',
-                zh ? '质量' : 'Quality',
-                '',
-              ].map((s, i) => (
-                <th key={i}>{s}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {project.variables.map((v) => (
-              <tr key={v.id}>
-                <td>
-                  <input value={v.name} onChange={(e) => update(v.id, { name: e.target.value })} />
-                  <small>{v.id}</small>
-                </td>
-                <td>
-                  <select
-                    value={v.type}
-                    onChange={(e) => {
-                      const type = e.target.value as Variable['type'];
-                      const references = variableReferences(project, v);
-                      if (type !== v.type && references.length) {
-                        notify(
-                          `${zh ? '请先调整此变量的引用' : 'Update variable references first'}: ${references.join(', ')}`,
-                          true,
-                        );
-                        return;
-                      }
-                      const apply = () =>
-                        update(v.id, {
-                          type,
-                          initial:
-                            type === 'json'
-                              ? {}
-                              : type === 'number'
-                                ? 0
-                                : type === 'boolean'
-                                  ? false
-                                  : '',
-                          ...(type !== 'number' ? { alarm: undefined } : {}),
-                        });
-                      apply();
-                    }}
-                  >
-                    <option>number</option>
-                    <option>string</option>
-                    <option>boolean</option>
-                    <option>json</option>
-                  </select>
-                </td>
-                <td>
-                  {v.type === 'json' ? (
-                    <JsonValueField
-                      label={`initial ${v.name}`}
-                      value={v.initial}
-                      onCommit={(initial) => update(v.id, { initial })}
-                    />
-                  ) : v.type === 'boolean' ? (
-                    <input
-                      type="checkbox"
-                      checked={Boolean(v.initial)}
-                      onChange={(e) => update(v.id, { initial: e.target.checked })}
-                    />
-                  ) : (
-                    <input
-                      type={v.type === 'number' ? 'number' : 'text'}
-                      value={String(v.initial)}
-                      onChange={(e) =>
-                        update(v.id, {
-                          initial: v.type === 'number' ? Number(e.target.value) : e.target.value,
-                        })
-                      }
-                    />
-                  )}
-                </td>
-                <td>
-                  {v.type === 'json' ? (
-                    <JsonValueField
-                      label={`runtime ${v.name}`}
-                      value={snapshot.values[v.id]?.value ?? null}
-                      disabled={v.readOnly || runtimePending || !snapshot.values[v.id]}
-                      onCommit={(value) => writeRuntimeValue(v.id, value)}
-                    />
-                  ) : v.type === 'boolean' ? (
-                    <input
-                      type="checkbox"
-                      checked={Boolean(snapshot.values[v.id]?.value)}
-                      disabled={v.readOnly || runtimePending || !snapshot.values[v.id]}
-                      onChange={(e) => {
-                        try {
-                          writeRuntimeValue(v.id, e.target.checked);
-                        } catch (error) {
-                          notify(String(error), true);
-                        }
-                      }}
-                    />
-                  ) : (
-                    <input
-                      aria-label={`runtime ${v.name}`}
-                      disabled={v.readOnly || runtimePending || !snapshot.values[v.id]}
-                      type={v.type === 'number' ? 'number' : 'text'}
-                      value={String(snapshot.values[v.id]?.value ?? '')}
-                      onChange={(e) => {
-                        try {
-                          writeRuntimeValue(
-                            v.id,
-                            v.type === 'number' ? Number(e.target.value) : e.target.value,
-                          );
-                        } catch (error) {
-                          notify(String(error), true);
-                        }
-                      }}
-                    />
-                  )}
-                </td>
-                <td>
-                  <input
-                    value={v.unit ?? ''}
-                    onChange={(e) => update(v.id, { unit: e.target.value })}
-                  />
-                </td>
-                <td>
-                  <span className="quality-tag">{snapshot.values[v.id]?.quality ?? '—'}</span>
-                </td>
-                <td>
-                  <button
-                    className="icon-button"
-                    title="Delete"
-                    onClick={() => {
-                      if (variableReferences(project, v).length)
-                        return notify(
-                          zh
-                            ? '请先移除该变量的绑定和节点引用'
-                            : 'Remove bindings and node references first',
-                          true,
-                        );
-                      onChange((p) => {
-                        p.variables = p.variables.filter((x) => x.id !== v.id);
-                      });
-                    }}
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <HistoryPanel project={project} engine={engine} onChange={onChange} />
     </div>
   );
 }
