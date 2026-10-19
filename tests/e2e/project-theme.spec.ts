@@ -5,15 +5,16 @@ import { createEmptyProject, createWidget } from '../../src/core/project';
 import type { Project } from '../../src/core/types';
 
 async function applyTheme(page: Page, mode: 'light' | 'dark') {
-  await page.getByRole('button', { name: '应用外观与多语言', exact: true }).click();
-  const settings = page.locator('.settings-modal');
+  const tabs = page.locator('.workspace-tabs nav');
+  await tabs.getByRole('button', { name: '应用外观', exact: true }).click();
+  const settings = page.locator('.appearance-panel');
   const button = settings.getByRole('button', {
     name: mode === 'light' ? '一键亮色' : '一键暗色',
     exact: true,
   });
   await button.click();
   await expect(button).toHaveAttribute('aria-pressed', 'true');
-  await settings.getByRole('button', { name: 'Close settings', exact: true }).click();
+  await tabs.getByRole('button', { name: '界面', exact: true }).click();
 }
 
 async function exportProject(page: Page, info: TestInfo) {

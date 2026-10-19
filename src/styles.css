@@ -308,6 +308,7 @@ a {
 }
 .workspace-name {
   width: 224px;
+  flex-shrink: 0;
   display: flex;
   gap: 8px;
   align-items: center;
@@ -319,15 +320,19 @@ a {
 .workspace-tabs nav {
   display: flex;
   align-self: stretch;
+  min-width: 0;
+  overflow-x: auto;
   gap: 2px;
 }
 .workspace-tabs nav > button {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 7px;
   padding: 0 17px;
   color: var(--muted);
   font-size: 11px;
+  white-space: nowrap;
   border-bottom: 2px solid transparent;
 }
 .workspace-tabs nav > button.active {
@@ -340,6 +345,7 @@ a {
 .workspace-tools {
   margin-left: auto;
   display: flex;
+  flex-shrink: 0;
   gap: 3px;
   align-items: center;
   padding: 0 18px;
@@ -1267,24 +1273,6 @@ a {
   font-size: 13px;
   font-weight: 500;
 }
-.settings-modal > nav {
-  display: flex;
-  gap: 5px;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--border);
-}
-.settings-modal > nav button {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 8px 12px;
-  color: var(--muted);
-  border-radius: 5px;
-}
-.settings-modal > nav button.active {
-  background: var(--accent-bg);
-  color: var(--accent);
-}
 .settings-modal > section {
   padding: 20px;
 }
@@ -1293,6 +1281,62 @@ a {
   color: var(--muted);
   line-height: 1.8;
   margin-top: 0;
+}
+.project-settings-page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.project-settings-heading {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 28px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+.project-settings-heading h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 550;
+}
+.project-settings-heading p,
+.appearance-section > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.8;
+}
+.project-settings-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px 28px;
+}
+.appearance-section {
+  max-width: 840px;
+  margin-bottom: 20px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.appearance-section > h3 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 550;
+}
+.appearance-section .settings-field {
+  padding-top: 0;
+  border-top: 0;
 }
 .project-theme-presets {
   margin-bottom: 12px;
@@ -1353,7 +1397,7 @@ a {
   border-color: var(--accent);
   background: var(--accent-bg);
 }
-.theme-token-list > label {
+.theme-token-list > .theme-token-row {
   display: flex;
   align-items: center;
   gap: 10px;

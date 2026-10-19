@@ -1,5 +1,15 @@
 # 变动日志
 
+## 2026-10-20 — 拆分应用外观与表格式多语言工作区
+
+- 工作空间导航改为“界面 → 应用外观 → 多语言 → 流程 → C脚本 → 数据 → 连接”，移除顶部合并设置入口。应用外观作为独立页面保留工程亮暗预设、令牌颜色/文本编辑及主窗口背景；设计器主题仍由原工具栏按钮独立切换。导航支持窄窗口滚动，保持右侧撤销等操作可用。
+- 多语言使用普通表格，首列为固定索引（控件通过 `@key` 引用），第二列起每列对应一种语言。支持新增/删除语言、增删索引、跨语言安全重命名及文本编辑；语言列可全部收起，同一时刻最多展开一列，展开时自动滚动并避让固定索引，保持完整编辑区域可见。
+- 重复或空索引/语言拒绝写入，索引回车/失焦保存、Esc取消，组合输入选词不提前提交；翻译即时进入工程历史与自动保存。缺失翻译与显式空字符串保留区别，“恢复回退”仅取消当前语言的单个翻译覆盖；新增语言不批量补齐旧字典，导入的其他语言/索引保留。重命名索引需同步修改控件引用，界面中已说明。
+- 删除 `src/panels/ProjectSettings.tsx`，原因是合并弹窗被两个工作区替代；其中外观内容由旧路径迁至新增的 `src/panels/AppearancePanel.tsx`，同时移除弹窗与JSON翻译编辑，补充输入可访问名称。另新增 `src/panels/TranslationsPanel.tsx`、`src/panels/translations.css`、`tests/e2e/translations.spec.ts`；修改 `src/App.tsx`、`src/core/i18n.ts`、`src/core/store.ts`、`src/styles.css`、`tests/e2e/project-theme.spec.ts`、`README.md`、`docs/architecture.md` 和本文件。Git记录为新增/删除，无其他删除或重命名。
+- 新增4项端到端回归，覆盖导航分离、首列及语言列结构、展开互斥与全部收起、多语言增删/编辑、重复拒绝、索引重命名/删除与撤销、受控组合输入事件、空字符串/缺省回退、自动保存/刷新/导出导入、运行时locale变量切换及1100×700紧凑布局。主题回归改用新页面入口，保留原有画布、预览、导出与自定义资源断言。
+- 验证：最终 `npm run check` 的TypeScript与275项单测、`npm run build`（桌面打包前置命令）、隔离Chromium全量80/80及WebKit外观/多语言专项6/6通过，沿用正式测试配置与超时；已目视核对应用外观及紧凑表格暗亮截图，修复初轮发现的右侧列展开后仅部分可见问题。`npx tauri build --debug --bundles app` 成功，更新 `target/debug/bundle/macos/QuickGUI.app`（78.00 MiB）；Prettier及Git差异检查通过。报告、截图、隔离依赖与应用包按生成物处理，不作为原生跨平台交互验收。
+- `cargo test --workspace` 仍被未改动的 `crates/quickgui-engine/src/serial_demo_test.rs:154` 既有E0502借用冲突阻断，未记为通过。无工程格式、依赖、Rust业务、C SDK、进程协议或编译路径变更，未重复C/AOT专项；保留既有Monaco大包与桥接混合导入提示。用户 `QuickGUI_Icons/` 未修改、未暂存。
+
 ## 2026-10-20 — 隐藏设计器原生标题文字
 
 - 将设计器主窗口 `title` 置空，并启用macOS `hiddenTitle`，移除系统标题栏中的QuickGUI文字；保留系统窗口装饰、应用名称和设计器内部品牌。工程窗口仍使用各自的标题配置。

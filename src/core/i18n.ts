@@ -1,6 +1,8 @@
 export const translations = {
   'zh-CN': {
     design: '界面',
+    appearance: '应用外观',
+    languages: '多语言',
     flows: '流程',
     scripts: 'C 脚本',
     data: '数据',
@@ -43,6 +45,8 @@ export const translations = {
   },
   en: {
     design: 'Design',
+    appearance: 'Appearance',
+    languages: 'Languages',
     flows: 'Flows',
     scripts: 'C scripts',
     data: 'Data',

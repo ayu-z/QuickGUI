@@ -17,6 +17,7 @@ import {
   Maximize2,
   Monitor,
   Moon,
+  Palette,
   PanelLeftClose,
   Play,
   Plus,
@@ -24,7 +25,6 @@ import {
   RotateCcw,
   RotateCw,
   Save,
-  Settings2,
   SlidersHorizontal,
   Square,
   Sun,
@@ -93,7 +93,8 @@ import { getProjectWindow, listProjectWindows, projectForWindow } from './core/w
 import * as native from './native/bridge';
 import './designer/designer.css';
 import { ConnectionsPanel } from './panels/ConnectionsPanel';
-import { ProjectSettings } from './panels/ProjectSettings';
+import { AppearancePanel } from './panels/AppearancePanel';
+import { TranslationsPanel } from './panels/TranslationsPanel';
 import { HistoryPanel } from './panels/HistoryPanel';
 import { importComponentPackage, exportComponentPackage } from './core/componentPackage';
 import { WelcomeScreen } from './panels/WelcomeScreen';
@@ -254,7 +255,6 @@ function ProjectWorkspace({
   }, [engine]);
   const snapshot = useSyncExternalStore(engine.subscribe, engine.getSnapshot);
   const [leftTab, setLeftTab] = useState<'layers' | 'library' | 'modules' | 'assets'>('layers');
-  const [settings, setSettings] = useState(false);
   const clipboardSession = useRef(crypto.randomUUID());
   const [pasteReview, setPasteReview] = useState<{
     bundle: ClipboardBundle;
@@ -962,6 +962,8 @@ function ProjectWorkspace({
   };
   const tabs: [Section, typeof LayoutDashboard, string][] = [
     ['design', LayoutDashboard, t.design],
+    ['appearance', Palette, t.appearance],
+    ['languages', Languages, t.languages],
     ['flows', GitBranch, t.flows],
     ['scripts', Code2, t.scripts],
     ['data', SlidersHorizontal, t.data],
@@ -1051,13 +1053,6 @@ function ProjectWorkspace({
         <div className="topbar-spacer" />
         <button
           className="icon-button"
-          title={zh ? '应用外观与多语言' : 'Application settings'}
-          onClick={() => setSettings(true)}
-        >
-          <Settings2 size={17} />
-        </button>
-        <button
-          className="icon-button"
           title="Language"
           onClick={() =>
             store.update((p) => {
@@ -1139,6 +1134,7 @@ function ProjectWorkspace({
             <button
               key={id}
               className={section === id ? 'active' : ''}
+              aria-current={section === id ? 'page' : undefined}
               onClick={() => store.setSection(id)}
             >
               <Icon size={15} />
@@ -1395,6 +1391,12 @@ function ProjectWorkspace({
               canRedo={!!state.future.length}
               onAdd={addWidget}
             />
+          )}
+          {section === 'appearance' && (
+            <AppearancePanel project={project} onChange={store.update} />
+          )}
+          {section === 'languages' && (
+            <TranslationsPanel project={project} onChange={store.update} />
           )}
           {section === 'flows' && (
             <FlowEditor
@@ -1697,13 +1699,6 @@ function ProjectWorkspace({
               notify(zh ? '工程名称已保存' : 'Project name saved');
             }
           }}
-        />
-      )}
-      {settings && (
-        <ProjectSettings
-          project={project}
-          onChange={store.update}
-          onClose={() => setSettings(false)}
         />
       )}
       {pendingModule && (
