@@ -166,6 +166,70 @@ describe('v4 portable runtime', () => {
     engine.dispose();
   });
 
+  it('keeps a pending delay alive when flow nodes move or their labels change', async () => {
+    vi.useFakeTimers();
+    const p = project();
+    flow(p, 'work', [
+      node('entry', 'event'),
+      node('delay', 'delay', { ms: 500 }),
+      node('write', 'write', { variable: 'counter', value: 7 }),
+    ]);
+    const engine = new RuntimeController(p);
+    engine.start();
+    const work = engine.runFlow('work');
+    await vi.advanceTimersByTimeAsync(100);
+    expect(engine.getSnapshot().activeNodes).toContain('delay');
+    const moved = structuredClone(p);
+    moved.revision++;
+    moved.flows[0].nodes[1].position = { x: 320, y: 144 };
+    engine.applyProject(moved);
+    await vi.advanceTimersByTimeAsync(100);
+    const renamed = structuredClone(moved);
+    renamed.revision++;
+    renamed.flows[0].name = 'Renamed flow';
+    renamed.flows[0].nodes[1].label = 'Renamed delay';
+    engine.applyProject(renamed);
+    expect(engine.getSnapshot().activeNodes).toContain('delay');
+    expect(engine.getSnapshot().values.counter.value).toBe(0);
+    await vi.advanceTimersByTimeAsync(300);
+    await work;
+    expect(engine.getSnapshot().values.counter.value).toBe(7);
+    expect(engine.getSnapshot().revision).toBe(renamed.revision);
+    expect(engine.getSnapshot().logs.some((log) => log.message === 'Execution cancelled')).toBe(
+      false,
+    );
+    engine.dispose();
+  });
+
+  it('cancels a pending delay when executable node configuration changes', async () => {
+    vi.useFakeTimers();
+    const p = project();
+    flow(p, 'work', [
+      node('entry', 'event'),
+      node('delay', 'delay', { ms: 500 }),
+      node('write', 'write', { variable: 'counter', value: 7 }),
+    ]);
+    const engine = new RuntimeController(p);
+    engine.start();
+    const work = engine.runFlow('work');
+    await vi.advanceTimersByTimeAsync(100);
+    const changed = structuredClone(p);
+    changed.revision++;
+    changed.flows[0].nodes[2].config.value = 9;
+    engine.applyProject(changed);
+    await work;
+    await vi.advanceTimersByTimeAsync(500);
+    expect(engine.getSnapshot().values.counter.value).toBe(0);
+    expect(engine.getSnapshot().logs.some((log) => log.message === 'Execution cancelled')).toBe(
+      true,
+    );
+    const updatedWork = engine.runFlow('work');
+    await vi.advanceTimersByTimeAsync(500);
+    await updatedWork;
+    expect(engine.getSnapshot().values.counter.value).toBe(9);
+    engine.dispose();
+  });
+
   it('does not block a UI flow behind a suspended v4 execution', async () => {
     vi.useFakeTimers();
     const p = project();

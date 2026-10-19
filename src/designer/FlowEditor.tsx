@@ -1,14 +1,8 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
-  ReactFlow,
-  Background,
-  Controls,
-  MiniMap,
   Handle,
   Position,
-  BackgroundVariant,
   useUpdateNodeInternals,
-  type Node,
   type NodeProps,
   type Connection as FlowConnection,
   type NodeChange,
@@ -51,6 +45,7 @@ import {
 } from '../core/functionBlocks';
 import '@xyflow/react/dist/style.css';
 import './designer.css';
+import { FlowActivityContext, FlowCanvas, type QuickFlowNode } from './FlowCanvas';
 
 const nodeInfo: Record<NodeKind, { icon: typeof Zap; zh: string; en: string; color: string }> = {
   event: { icon: Zap, zh: '事件入口', en: 'Event', color: '#a78bfa' },
@@ -83,7 +78,7 @@ const serialActions = [
   ['setReconnect', '设置重连', 'Set reconnect'],
   ['resetCounters', '重置串口计数', 'Reset serial counters'],
 ] as const;
-type QuickNode = Node<{ model: FlowNode; active: boolean; locale: Locale }, 'quickgui'>;
+type QuickNode = QuickFlowNode;
 const FlowCard = memo(
   function FlowCard({ id, data, selected }: NodeProps<QuickNode>) {
     const { model, active, locale } = data,
@@ -225,7 +220,10 @@ export interface FlowEditorProps {
   activeNodes?: string[];
   locale: Locale;
 }
-export function FlowEditor({ project, onChange, activeNodes = [], locale }: FlowEditorProps) {
+const noActiveNodes: string[] = [];
+const nodeColor = (node: QuickNode) => nodeInfo[node.data.model.kind].color;
+
+function FlowEditor({ project, onChange, locale }: Omit<FlowEditorProps, 'activeNodes'>) {
   const [selectedFlowId, setSelectedFlowId] = useState(project.flows[0]?.id ?? '');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
@@ -238,20 +236,34 @@ export function FlowEditor({ project, onChange, activeNodes = [], locale }: Flow
   const flow = project.flows.find((item) => item.id === selectedFlowId) ?? project.flows[0];
   const selectedNode = flow?.nodes.find((node) => node.id === selectedNodeId);
   const zh = locale === 'zh-CN';
-  const [positionDraft, setPositionDraft] = useState<{
+  const draftRef = useRef<{
     flow: Flow;
     positions: Map<string, FlowNode['position']>;
   } | null>(null);
-  const draftRef = useRef(positionDraft);
   useLayoutEffect(() => {
-    if (draftRef.current && draftRef.current.flow !== flow) {
-      draftRef.current = null;
-      setPositionDraft(null);
-    }
+    if (draftRef.current?.flow !== flow) draftRef.current = null;
   }, [flow]);
-  const baseNodes = useMemo<QuickNode[]>(
-    () =>
-      (flow?.nodes ?? []).map((node) => ({
+  const nodeIndex = useMemo(
+    () => new Map((flow?.nodes ?? []).map((node) => [node.id, node])),
+    [flow?.nodes],
+  );
+  const nodeCache = useRef(new Map<string, QuickNode>());
+  const baseNodes = useMemo<QuickNode[]>(() => {
+    const nextCache = new Map<string, QuickNode>();
+    const nodes = (flow?.nodes ?? []).map((node): QuickNode => {
+      const previous = nodeCache.current.get(node.id);
+      const selected = selectedNodeId === node.id;
+      const measured = measurements[node.id];
+      if (
+        previous?.data.model === node &&
+        previous.data.locale === locale &&
+        previous.selected === selected &&
+        previous.measured === measured
+      ) {
+        nextCache.set(node.id, previous);
+        return previous;
+      }
+      const view: QuickNode = {
         id: node.id,
         type: 'quickgui',
         position: node.position,
@@ -263,30 +275,44 @@ export function FlowEditor({ project, onChange, activeNodes = [], locale }: Flow
               flowNodePorts(node).inputs.length + (node.block?.inputs.length ?? 0),
               flowNodePorts(node).outputs.length + (node.block?.outputs.length ?? 0),
             ),
-        measured: measurements[node.id],
-        selected: selectedNodeId === node.id,
-        data: { model: node, active: activeNodes.includes(node.id), locale },
-      })),
-    [flow?.nodes, measurements, selectedNodeId, activeNodes, locale],
-  );
-  const nodes =
-    positionDraft?.flow === flow
-      ? baseNodes.map((node) => {
-          const position = positionDraft.positions.get(node.id);
-          return position ? { ...node, position } : node;
-        })
-      : baseNodes;
+        measured,
+        selected,
+        data:
+          previous?.data.model === node && previous.data.locale === locale
+            ? previous.data
+            : { model: node, active: false, locale },
+      };
+      nextCache.set(node.id, view);
+      return view;
+    });
+    nodeCache.current = nextCache;
+    return nodes;
+  }, [flow?.nodes, measurements, selectedNodeId, locale]);
+  const initializeCanvas = useCallback((value: ReactFlowInstance<QuickNode>) => {
+    instance.current = value;
+  }, []);
+  const selectNode = useCallback((nodeId: string) => {
+    setSelectedNodeId(nodeId);
+    setSelectedEdgeId(null);
+  }, []);
+  const selectEdge = useCallback((edgeId: string) => {
+    setSelectedEdgeId(edgeId);
+    setSelectedNodeId(null);
+  }, []);
+  const clearSelection = useCallback(() => {
+    setSelectedNodeId(null);
+    setSelectedEdgeId(null);
+  }, []);
   const edges = useMemo(
     () =>
       (flow?.edges ?? []).map((edge) => ({
         ...edge,
         selected: selectedEdgeId === edge.id,
-        sourceHandle:
-          edge.sourceHandle ??
-          flowNodePorts(flow!.nodes.find((node) => node.id === edge.source)!).defaultOutput,
+        sourceHandle: edge.sourceHandle ?? flowNodePorts(nodeIndex.get(edge.source)!).defaultOutput,
         targetHandle: edge.targetHandle ?? 'input',
         type: 'smoothstep',
-        animated: !isDataEdge(edge) && activeNodes.includes(edge.source),
+        data: { execution: !isDataEdge(edge) },
+        animated: false,
         style: {
           stroke:
             selectedEdgeId === edge.id
@@ -302,7 +328,7 @@ export function FlowEditor({ project, onChange, activeNodes = [], locale }: Flow
           strokeDasharray: isDataEdge(edge) ? '5 3' : undefined,
         },
       })),
-    [flow, selectedEdgeId, activeNodes],
+    [flow?.edges, nodeIndex, selectedEdgeId],
   );
   const updateFlow = (patch: Partial<Flow>) => {
     if (!flow) return;
@@ -510,16 +536,24 @@ export function FlowEditor({ project, onChange, activeNodes = [], locale }: Flow
   };
   const onNodesChange = (changes: NodeChange<QuickNode>[]) => {
     if (!flow) return;
-    for (const change of changes)
-      if (change.type === 'dimensions' && change.dimensions) {
-        const dimensions = change.dimensions;
-        setMeasurements((previous) =>
-          previous[change.id]?.width === dimensions.width &&
-          previous[change.id]?.height === dimensions.height
-            ? previous
-            : { ...previous, [change.id]: dimensions },
-        );
-      }
+    const dimensions = changes.filter(
+      (change) => change.type === 'dimensions' && change.dimensions,
+    );
+    if (dimensions.length)
+      setMeasurements((previous) => {
+        let next = previous;
+        for (const change of dimensions)
+          if (
+            change.type === 'dimensions' &&
+            change.dimensions &&
+            (previous[change.id]?.width !== change.dimensions.width ||
+              previous[change.id]?.height !== change.dimensions.height)
+          ) {
+            if (next === previous) next = { ...previous };
+            next[change.id] = change.dimensions;
+          }
+        return next;
+      });
     const selection = changes.find((change) => change.type === 'select' && change.selected);
     if (selection?.type === 'select') {
       setSelectedNodeId(selection.id);
@@ -529,21 +563,22 @@ export function FlowEditor({ project, onChange, activeNodes = [], locale }: Flow
       (change) => change.type === 'remove' || (change.type === 'position' && !!change.position),
     );
     if (!changesToApply.length) return;
-    const positions = new Map(draftRef.current?.flow === flow ? draftRef.current.positions : []);
+    const positions =
+      draftRef.current?.flow === flow
+        ? draftRef.current.positions
+        : new Map<string, FlowNode['position']>();
     const removed = new Set<string>();
     for (const change of changesToApply) {
       if (change.type === 'remove') removed.add(change.id);
       if (change.type === 'position' && change.position) positions.set(change.id, change.position);
     }
     if (changesToApply.every((change) => change.type === 'position' && change.dragging === true)) {
-      // React Flow owns the live positions; project validation/history run once on release.
+      // Only the canvas renders live positions; project/history update once on release.
       const next = { flow, positions };
       draftRef.current = next;
-      setPositionDraft(next);
       return;
     }
     draftRef.current = null;
-    setPositionDraft(null);
     const nextNodes = flow.nodes
       .filter((node) => !removed.has(node.id))
       .map((node) => {
@@ -670,55 +705,23 @@ export function FlowEditor({ project, onChange, activeNodes = [], locale }: Flow
       <div className="qg-flow-workspace">
         <div className="qg-flow-canvas">
           {flow ? (
-            <ReactFlow<QuickNode>
-              onInit={(value) => {
-                instance.current = value;
-              }}
+            <FlowCanvas
               key={flow.id}
-              nodes={nodes}
+              flow={flow}
+              nodes={baseNodes}
               edges={edges}
               nodeTypes={nodeTypes}
+              onInit={initializeCanvas}
               onConnect={onConnect}
               isValidConnection={canConnect}
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
-              onNodeClick={(_event, node) => {
-                setSelectedNodeId(node.id);
-                setSelectedEdgeId(null);
-              }}
-              onEdgeClick={(_event, edge) => {
-                setSelectedEdgeId(edge.id);
-                setSelectedNodeId(null);
-              }}
-              onPaneClick={() => {
-                setSelectedNodeId(null);
-                setSelectedEdgeId(null);
-              }}
-              fitView
-              fitViewOptions={{ padding: 0.3, maxZoom: 1 }}
-              minZoom={0.1}
-              maxZoom={1.5}
-              connectionRadius={28}
-              snapToGrid
-              snapGrid={[16, 16]}
+              onSelectNode={selectNode}
+              onSelectEdge={selectEdge}
+              onClearSelection={clearSelection}
               colorMode={project.theme.mode}
-              deleteKeyCode={['Backspace', 'Delete']}
-              proOptions={{ hideAttribution: true }}
-            >
-              <Background
-                variant={BackgroundVariant.Dots}
-                gap={20}
-                size={1}
-                color="var(--border, #30343b)"
-              />
-              <Controls showInteractive={false} />
-              <MiniMap
-                pannable
-                zoomable
-                nodeColor={(node) => nodeInfo[(node.data as QuickNode['data']).model.kind].color}
-                style={{ width: 135, height: 85 }}
-              />
-            </ReactFlow>
+              nodeColor={nodeColor}
+            />
           ) : (
             <div className="qg-inspector-empty">
               <GitBranch size={34} />
@@ -1067,7 +1070,11 @@ export function FlowEditor({ project, onChange, activeNodes = [], locale }: Flow
                                 ? { operation, value: { source: 'input', path: [] } }
                                 : operation === 'object'
                                   ? { operation, fields: {} }
-                                  : { operation, items: { source: 'input', path: [] }, fields: {} },
+                                  : {
+                                      operation,
+                                      items: { source: 'input', path: [] },
+                                      fields: {},
+                                    },
                           });
                         }}
                       >
@@ -1524,4 +1531,22 @@ export function FlowEditor({ project, onChange, activeNodes = [], locale }: Flow
   );
 }
 
-export default FlowEditor;
+const MemoFlowEditor = memo(FlowEditor);
+const FlowEditorWithActivity = memo(
+  function FlowEditorWithActivity({ activeNodes = noActiveNodes, ...props }: FlowEditorProps) {
+    return (
+      <FlowActivityContext.Provider value={activeNodes}>
+        <MemoFlowEditor {...props} />
+      </FlowActivityContext.Provider>
+    );
+  },
+  (previous, next) =>
+    previous.project === next.project &&
+    previous.onChange === next.onChange &&
+    previous.locale === next.locale &&
+    (previous.activeNodes ?? noActiveNodes).length === (next.activeNodes ?? noActiveNodes).length &&
+    (previous.activeNodes ?? noActiveNodes).every((id, index) => id === next.activeNodes?.[index]),
+);
+
+export { FlowEditorWithActivity as FlowEditor };
+export default FlowEditorWithActivity;

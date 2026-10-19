@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   Box,
   ChevronDown,
@@ -58,6 +58,7 @@ import { download, exportProject, importProject, projectFilename } from './core/
 import { errorText, validateProject } from './core/validation';
 import { translations } from './core/i18n';
 import type {
+  Flow,
   Json,
   Project,
   Widget,
@@ -221,6 +222,28 @@ function ProjectWorkspace({
 }) {
   const { project, section, selectedId, selectedIds, drafts, activeWindowId } = state;
   const [engine] = useState(() => createRuntime(project));
+  const updateFlows = useCallback(
+    (flows: Flow[]) => {
+      store.update((p) => {
+        const previous = p.flows;
+        p.flows = flows;
+        if (flows.some((flow) => flow.nodes.some((node) => node.kind === 'window'))) {
+          p.windows ??= [];
+        }
+        for (const w of [
+          ...listProjectWindows(p).flatMap((window) => window.widgets),
+          ...p.modules.flatMap((m) => m.widgets),
+        ])
+          w.events = Object.fromEntries(
+            Object.entries(w.events).flatMap(([event, binding]) => {
+              const next = reconcileFlowBinding(binding, previous, flows);
+              return next === undefined ? [] : [[event, next]];
+            }),
+          );
+      });
+    },
+    [store],
+  );
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -1374,25 +1397,7 @@ function ProjectWorkspace({
           {section === 'flows' && (
             <FlowEditor
               project={project}
-              onChange={(flows) =>
-                store.update((p) => {
-                  const previous = p.flows;
-                  p.flows = flows;
-                  if (flows.some((flow) => flow.nodes.some((node) => node.kind === 'window'))) {
-                    p.windows ??= [];
-                  }
-                  for (const w of [
-                    ...listProjectWindows(p).flatMap((window) => window.widgets),
-                    ...p.modules.flatMap((m) => m.widgets),
-                  ])
-                    w.events = Object.fromEntries(
-                      Object.entries(w.events).flatMap(([event, binding]) => {
-                        const next = reconcileFlowBinding(binding, previous, flows);
-                        return next === undefined ? [] : [[event, next]];
-                      }),
-                    );
-                })
-              }
+              onChange={updateFlows}
               activeNodes={snapshot.activeNodes}
               locale={project.locale}
             />

@@ -1,5 +1,17 @@
 # 变动日志
 
+## 2026-10-19 — 流程块拖动隔离与渲染优化
+
+- 将节点拖动临时位置移入独立 FlowCanvas，按 requestAnimationFrame 合并高频移动，松手立即使用最新坐标；父 FlowEditor 和 FB 属性表单不再随拖动帧重新渲染。切换流程或卸载取消待执行帧，工程及恢复记录仍只在松手更新，单次拖动只形成一条撤销记录。
+- 稳定父回调、画布选项、节点视图和 data 引用；运行高亮通过独立 Context 直接更新画布，相同高亮跳过发布，变化的高亮也不重绘属性表单，未改节点和连线继续复用。尺寸变化批量处理，连线使用节点索引查询端口，减少重复构建与线性查找。属性/命名端口编辑、边跟随、节点增删和主题继续响应。
+- 浏览器运行指纹与原生一致，排除节点坐标、显示标签、流程和连接显示名称，保留有序节点、配置、FB 端口、连线及窗口 ID 等运行定义；拖动/重命名不再中断等待中的流程，实际配置修改仍取消旧执行。
+- 新增 `src/designer/FlowCanvas.tsx`、`tests/e2e/flow-drag.spec.ts`；修改 `src/designer/FlowEditor.tsx`、`src/App.tsx`、`src/runtime/engine.ts`、`tests/runtime-v4.test.ts`、`docs/architecture.md` 和本文件。无删除或重命名，无依赖、工程格式、C SDK、进程协议或编译路径变更；原有 QuickGUI_Icons/ 保持未跟踪，不纳入提交。
+- Chromium 开发环境同一 FB 工程、预先选中节点后执行 45 步真实鼠标移动：基线 6a982c6 的 FlowEditor/FunctionBlockEditor 各渲染 13 次，修后均为 0，仅 FlowCanvas 更新 13 次。使用同一 DevTools 提交统计，过滤复用 fiber 的陈旧标记；对照数据在忽略的 artifacts/flow-drag-render-comparison.json。该结果说明渲染工作隔离，不作为 FPS、原生实机或硬件性能验收。
+- 新增浏览器回归覆盖拖动中修订/恢复数据不变、松手一次保存、单步撤销/重做、切换流程后位置保持、属性/命名端口编辑与连线跟随，以及后台定时/延时流程真实高亮持续切换时的拖动隔离；新增运行时回归覆盖延时流程跨移动/重命名继续执行、配置变更取消旧执行。
+- 验证：TypeScript 与 262 项单测、生产构建通过；新增拖动 E2E 3/3 通过，包含运行高亮真实变化的回归。最终 `node artifacts/run-isolated-e2e.mjs` 在完整独立依赖/缓存的 1421 服务上沿用正式配置与标准超时，61/61 Chromium E2E 一次全部通过（1.4 分钟），原有 1420 开发服务保留。`npx tauri build --debug --bundles app` 通过，更新 `target/debug/bundle/macos/QuickGUI.app`（78.00 MiB）。Prettier 与 Git 差异检查通过，保留已有 Monaco 大包与桥接混合导入提示。
+- 首轮复用 1420 时 55/60 通过，5 项动态导入夹具因有/无查询参数的双 React DOM 实例失败。隔离准备曾因依赖软链越过组件边界、部分依赖复制造成双 React 而失败或中止，另有一次 JSON 输入断言失败；改用完整独立依赖目录后，受影响 8 项定向复跑及最终 61 项全量均通过，未修改正式用例或放宽超时。对照、隔离脚本、依赖快照及报告属于忽略的生成物，日志保留在 `artifacts/isolated-e2e/`。
+- `cargo test --workspace` 未能进入执行：基线已有 `crates/quickgui-engine/src/serial_demo_test.rs:154` 的 E0502 借用冲突，port 借用 delivery.event.kind 后又可变刷新 delivery.event；已核对 HEAD 同一代码，本次未修改该测试或 Rust 源文件。C 专项未重跑，本次未触及 SDK/协议/编译路径。
+
 ## 2026-10-19 — 借鉴 SerialWatch 的通信缓冲与界面批处理
 
 - 审阅 `mini-berry/serialwatch` 修订 `24f8404e0dd1edd6acde4b9daa3f5d393418d9c8` 的接收缓冲与显示批处理。独立实现容量为一个最新快照的后台界面发布器，首次更新立即调度，后续以 16ms 间隔合并显示；WebView 序列化和广播移出 Engine 锁与异步 I/O 工作线程，慢界面不积压旧快照，最后一次更新在无新事件时仍会发出。发布前校验工程、修订、会话与工程代次。

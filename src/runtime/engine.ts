@@ -576,13 +576,30 @@ export class RuntimeController {
         }
   }
   private runtimeDefinition(project: Project): string {
+    // Match the native execution key: editor layout and display names must not
+    // interrupt active work, while ordered nodes, FB ports and wiring still do.
     return JSON.stringify({
       id: project.id,
       schemaVersion: project.schemaVersion,
       variables: project.variables,
-      flows: project.flows,
+      flows: project.flows.map((flow) => ({
+        id: flow.id,
+        enabled: flow.enabled,
+        nodes: flow.nodes.map((node) => ({
+          id: node.id,
+          kind: node.kind,
+          config: node.config,
+          block: node.block,
+        })),
+        edges: flow.edges,
+      })),
       scripts: project.scripts,
-      connections: project.connections,
+      connections: project.connections.map((connection) => ({
+        id: connection.id,
+        protocol: connection.protocol,
+        config: connection.config,
+      })),
+      windows: (project.windows ?? []).map((window) => window.id),
     });
   }
   private resolveVariable(key: string) {
